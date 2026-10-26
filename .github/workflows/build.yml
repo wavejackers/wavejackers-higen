@@ -1,0 +1,93 @@
+# Wavejackers HitGen: Windows, macOS ve Linux için VST3 / AU / Standalone derler,
+# üretici tutarlılık testini, kararlılık testini ve pluginval doğrulamasını çalıştırır.
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            os: windows-latest
+            pluginval: https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip
+          - name: macos
+            os: macos-latest
+            pluginval: https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip
+          - name: linux
+            os: ubuntu-22.04
+            pluginval: https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Linux.zip
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux bağımlılıkları
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxcursor-dev \
+            libxcomposite-dev libfreetype6-dev libfontconfig1-dev libgl1-mesa-dev xvfb ninja-build
+
+      - name: Yapılandır
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          else
+            cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          fi
+
+      - name: Derle
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Üretici testi (web motoruyla birebir aynı MIDI)
+        shell: bash
+        run: |
+          exe=$(find build -type f \( -name "HitGenGenTest" -o -name "HitGenGenTest.exe" \) | head -1)
+          "$exe" > gen.txt
+          diff <(tr -d '\r' < gen.txt) <(tr -d '\r' < tests/reference.txt)
+
+      - name: Kararlılık testi
+        shell: bash
+        run: |
+          exe=$(find build -type f \( -name "HitGenStressTest" -o -name "HitGenStressTest.exe" \) | head -1)
+          mkdir -p shots
+          if [ "$RUNNER_OS" == "Linux" ]; then xvfb-run -a "$exe" shots; else "$exe" shots; fi
+
+      - name: pluginval (katılık 7)
+        shell: bash
+        run: |
+          curl -L -o pv.zip "${{ matrix.pluginval }}"
+          7z x pv.zip -opv > /dev/null
+          vst3=$(find build -type d -name "Wavejackers HitGen.vst3" | head -1)
+          if [ "$RUNNER_OS" == "macOS" ]; then pv="pv/pluginval.app/Contents/MacOS/pluginval"; elif [ "$RUNNER_OS" == "Windows" ]; then pv="pv/pluginval.exe"; else pv="pv/pluginval"; fi
+          chmod +x "$pv" || true
+          if [ "$RUNNER_OS" == "Linux" ]; then xvfb-run -a "$pv" --strictness-level 7 --skip-gui-tests "$vst3"; else "$pv" --strictness-level 7 "$vst3"; fi
+
+      - name: macOS imzası (ad-hoc)
+        if: runner.os == 'macOS'
+        run: |
+          find build -name "*.vst3" -maxdepth 6 -type d -exec codesign --force --deep -s - {} \;
+          find build -name "*.component" -maxdepth 6 -type d -exec codesign --force --deep -s - {} \;
+          find build -name "*.app" -maxdepth 6 -type d -exec codesign --force --deep -s - {} \;
+
+      - name: Paketle
+        shell: bash
+        run: |
+          mkdir -p dist
+          art=$(find build -type d -name "WavejackersHitGen_artefacts" | head -1)
+          cp -R "$art"/Release/* dist/ 2>/dev/null || cp -R "$art"/* dist/
+          rm -f dist/*.a dist/*.lib
+          cp README.md dist/
+          cp -R shots dist/screenshots
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WavejackersHitGen-${{ matrix.name }}
+          path: dist

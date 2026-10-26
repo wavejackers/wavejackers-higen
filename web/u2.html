@@ -1,0 +1,128 @@
+<a class="skip" href="#main" data-i="skip">Skip to content</a>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <h1>Wavejackers <i>HitGen</i></h1>
+      <span data-i="tagline">MIDI generator and sound design station</span>
+    </div>
+    <div class="tport">
+      <button class="btn pri play" id="play" type="button" aria-pressed="false"><svg viewBox="0 0 14 14" aria-hidden="true"><path id="playico" d="M3 1.5v11l9-5.5z"/></svg><span id="playtxt" data-i="play">Play</span></button>
+      <label class="chipnum"><small data-i="bpm">BPM</small><input id="bpm" type="number" min="60" max="190" step="1" value="126"></label>
+      <label class="chipnum"><small data-i="seed">Seed</small><input id="seed" type="text" inputmode="numeric" value="7" style="width:6ch"></label>
+      <button class="btn" id="gen" type="button" aria-keyshortcuts="N" data-i="newIdea">New idea</button>
+    </div>
+    <div class="prefs">
+      <label class="pref"><span class="lab" data-i="lang">Language</span><select id="lang"></select></label>
+      <label class="pref"><span class="lab" data-i="perf">Performance</span><select id="quality"><option value="eco" data-i="pEco">Eco</option><option value="bal" data-i="pBal" selected>Balanced</option><option value="high" data-i="pHigh">High</option></select></label>
+      <div class="pref" role="group" data-ia="textSize"><span class="lab" data-i="textSize">Text size</span><span class="tg"><button class="btn sm" id="fs-" type="button" data-ia="smaller">A−</button><button class="btn sm" id="fs+" type="button" data-ia="larger">A+</button></span></div>
+      <button class="btn sm" id="theme" type="button">Theme</button>
+    </div>
+  </header>
+
+  <section class="path hello" data-ia="signal">
+    <svg class="cables" id="cables" aria-hidden="true"></svg>
+    <div class="nodes" id="nodes"></div>
+    <div class="strip">
+      <canvas id="specmini" aria-hidden="true"></canvas>
+      <span class="st" id="meta" aria-live="polite"></span>
+    </div>
+  </section>
+
+  <div class="tabs" role="tablist" id="tablist">
+    <button class="tab" role="tab" id="t-hit" aria-controls="p-hit" aria-selected="true" tabindex="0" data-tab="hit" data-i="tabHit">Beats</button>
+    <button class="tab" role="tab" id="t-sound" aria-controls="p-sound" aria-selected="false" tabindex="-1" data-tab="sound" data-i="tabSound">Sound design</button>
+    <button class="tab" role="tab" id="t-bank" aria-controls="p-bank" aria-selected="false" tabindex="-1" data-tab="bank" data-i="tabBank">Sound bank</button>
+    <button class="tab" role="tab" id="t-export" aria-controls="p-export" aria-selected="false" tabindex="-1" data-tab="export" data-i="tabExport">Export</button>
+  </div>
+
+  <main id="main" tabindex="-1">
+    <div class="pane" id="p-hit" role="tabpanel" aria-labelledby="t-hit">
+      <div class="tg" id="groups" role="group" data-ia="groups"></div>
+      <div class="wall" id="wall" role="group" data-ia="styles"></div>
+      <div class="two">
+        <section class="card" data-ia="controls">
+          <div class="field"><span class="lab" id="varlab" data-i="variation">Variation</span><div class="vars" id="vars" role="group" aria-labelledby="varlab"></div></div>
+          <div class="field"><label class="lab" for="orig"><span data-i="orig">Originality</span> <em id="origv"></em></label><input id="orig" type="range" min="0" max="100" value="30"></div>
+          <div class="field"><label class="lab" for="energy"><span data-i="energy">Energy</span> <em id="energyv"></em></label><input id="energy" type="range" min="10" max="100" value="60"></div>
+          <div class="field"><label class="lab" for="thick"><span data-i="thick">Thickness</span> <em id="thickv"></em></label><input id="thick" type="range" min="0" max="100" value="70" aria-describedby="thickhint"><span class="fine" id="thickhint" data-i="thickHint"></span></div>
+          <div class="field"><label class="lab" for="human"><span data-i="human">Human feel</span> <em id="humanv"></em></label><input id="human" type="range" min="0" max="100" value="20"></div>
+          <div class="field"><label class="lab" for="pump"><span data-i="pump">Sidechain pump</span> <em id="pumpv"></em></label><input id="pump" type="range" min="0" max="100" value="100"></div>
+          <div class="row2">
+            <div class="field"><label class="lab" for="key" data-i="key">Key</label><select id="key"></select></div>
+            <div class="field"><label class="lab" for="scale" data-i="scale">Scale</label><select id="scale"></select></div>
+          </div>
+          <div class="row2">
+            <div class="field"><label class="lab" for="bars" data-i="length">Length</label><select id="bars"><option value="4">4</option><option value="8" selected>8</option><option value="16">16</option></select></div>
+            <div class="field"><label class="lab" for="swing"><span data-i="swing">Swing</span> <em id="swingv"></em></label><input id="swing" type="range" min="0" max="60" value="0"></div>
+          </div>
+          <label class="checkrow"><input type="checkbox" id="sevenths"> <span data-i="sevenths">7th chords</span></label>
+          <p class="fine" id="note"></p>
+          <p class="fine" data-i="shortcuts"></p>
+        </section>
+        <div class="col">
+          <div class="prog" id="prog" role="list"></div>
+          <div id="tracks" class="col"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pane" id="p-sound" role="tabpanel" aria-labelledby="t-sound" hidden>
+      <div class="card">
+        <div class="sel3">
+          <span class="lab" id="sdlab" data-i="editTrack">Editing track</span>
+          <div class="tg" id="sd-track" role="group" aria-labelledby="sdlab"></div>
+          <select id="sd-base" data-ia="baseSound" style="max-width:260px"></select>
+          <button class="btn sm" id="sd-rand" type="button" data-i="rand">Random sound</button>
+          <button class="btn sm" id="sd-reset" type="button" data-i="reset">Back to start</button>
+          <button class="btn sm" id="sd-save" type="button" data-i="savePatch">Save patch</button>
+          <label class="btn sm" for="sd-load" style="cursor:pointer" data-i="loadPatch">Load patch</label><input id="sd-load" type="file" accept=".json,application/json" class="vh">
+        </div>
+        <p data-i="sdHelp"></p>
+      </div>
+      <div class="synth" id="synth"></div>
+      <div class="card"><div class="kbd" id="kbd" role="group" data-ia="kbd"></div></div>
+    </div>
+
+    <div class="pane" id="p-bank" role="tabpanel" aria-labelledby="t-bank" hidden>
+      <div class="card">
+        <h2><span data-i="bankTitle">Sound bank</span> <span class="meta" id="bankcount"></span></h2>
+        <p data-i="bankHelp"></p>
+        <div class="tg" id="bankbar" role="group" data-ia="bankCats"></div>
+        <div class="bank" id="bank"></div>
+      </div>
+    </div>
+
+    <div class="pane" id="p-export" role="tabpanel" aria-labelledby="t-export" hidden>
+      <div class="two">
+        <section class="card">
+          <h2 data-i="files">Files</h2>
+          <div class="btns" style="flex-direction:column;align-items:stretch">
+            <button class="btn pri" id="dl-loop" type="button" data-i="dlLoop">Loop MIDI pack</button>
+            <button class="btn" id="dl-song" type="button" data-i="dlSong">Full track MIDI</button>
+            <button class="btn" id="dl-wav" type="button" data-i="dlWav">Loop audio</button>
+            <button class="btn" id="dl-stems" type="button" data-i="dlStems">Stems</button>
+            <span class="drag big" draggable="true" data-drag="all" data-i="dragAll">Drag all</span>
+          </div>
+          <div class="toast" id="toast" role="status" aria-live="polite"></div>
+          <p class="fine" data-i="dragNote"></p>
+        </section>
+        <section class="card">
+          <h2 data-i="arrTitle">Arrangement</h2>
+          <div class="arr" id="arr"></div>
+          <div class="mx" id="mx" aria-hidden="true"></div>
+        </section>
+      </div>
+      <section class="card">
+        <h2 data-i="dawTitle">Into your DAW</h2>
+        <div class="daws" id="daws"></div>
+      </section>
+      <section class="card">
+        <h2 data-i="knowTitle">Good to know</h2>
+        <p class="fine" data-ih="know1"></p>
+        <p class="fine" data-ih="know2"></p>
+        <p class="fine" data-ih="know3"></p>
+      </section>
+    </div>
+  </main>
+  <div class="vh" id="announce" aria-live="assertive"></div>
+</div>
