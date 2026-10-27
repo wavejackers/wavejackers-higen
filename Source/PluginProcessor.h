@@ -3,6 +3,8 @@
 #include "Data.h"
 #include "Generator.h"
 #include "Synth.h"
+#include "SoundParams.h"
+#include "Presets.h"
 
 // Ses iş parçacığının çaldığı desen: PPQ (çeyrek nota) cinsinden olaylar
 struct SeqEvent { double ppq = 0, len = 0; int track = 0, note = 0, vel = 0; };
@@ -47,7 +49,20 @@ public:
     juce::String lang = "en";
     float uiScale = 1.0f; bool highContrast = false;
     std::function<void()> onResultChanged;
-    juce::File writeMidi (int which);   // 0..3 tek iz, 4 tüm izler (döngü), 5 tam parça; geçici klasöre yazar
+    juce::File writeMidi (int which);
+    // ---- ses tasarımı (part: 0 akor, 1 bas, 2 melodi)
+    void resetSoundDesign (int part);          // seçili sesin ilk haline dön
+    void randomizeSound (int part);            // role uygun rastgele ses
+    juce::var currentSoundVar (int part) const;   // parametrelerden kurulan güncel ses
+    juce::MidiKeyboardState keyboardState;     // ekran klavyesi
+    std::atomic<int> auditionPart { -1 };      // ses tasarımı açıkken klavye bu izi çalar (-1: ayara göre)
+    // ---- sanatçı presetleri
+    hg::PresetStore presets;
+    juce::String userArtist, userPreset;       // yüklü/kaydedilmiş presetin sanatçı ve adı
+    bool savePreset (const juce::String& artist, const juce::String& name, juce::String& fileOut);
+    bool loadPreset (const juce::File& f);
+    juce::ValueTree stateTree();
+    void idle() { timerCallback(); }   // testler: mesaj iş parçacığı işlerini hemen yap   // 0..3 tek iz, 4 tüm izler (döngü), 5 tam parça; geçici klasöre yazar
     juce::MemoryBlock midiBytes (int which) const;
     juce::String baseName() const;
 
@@ -61,7 +76,16 @@ private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout (const hg::Data& d);
     void parameterChanged (const juce::String& id, float) override;
     void timerCallback() override;
-    void loadPatch (int track);
+    void loadPatch (int track, bool live = false);
+    void applySoundToParams (int part);
+    void readSd (int part, float* out) const;
+    void writeSd (int part, const float* vals);
+    void restoreFromTree (const juce::ValueTree& tree, bool includeUi);
+    std::array<std::array<std::atomic<float>*, hg::kNumSp>, 3> sdPtr {};
+    std::array<std::atomic<bool>, 3> sdDirty {};
+    bool suppressSd = false, loadingPreset = false;
+    std::array<std::unique_ptr<hg::Patch>, 3> tableCache;
+    juce::MidiBuffer kbBuf;
     hg::GenParams currentParams() const;
     void pushPattern (const hg::Result& r);
 

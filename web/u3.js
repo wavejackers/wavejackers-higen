@@ -323,7 +323,7 @@ const UI = {};
 
   // ---------- Stil duvarı ve kontroller
   const AW = { house: 'awHouse', techno: 'awTechno', trance: 'awTrance', psy: 'awPsy', hard: 'awHard', group: 'awGroup' };
-  const GK = { all: 'gAll', techno: 'gTechno', house: 'gHouse', main: 'gMain', trance: 'gTrance', hard: 'gHard' };
+  const GK = { all: 'gAll', techno: 'gTechno', house: 'gHouse', main: 'gMain', trance: 'gTrance', hard: 'gHard', afro: 'gAfro' };
   function buildGroups() {
     const h = $('groups'); h.innerHTML = '';
     HG.GROUPS.forEach(g => {
@@ -354,7 +354,7 @@ const UI = {};
     });
   }
   function selectStyle(id) {
-    const S = HG.STYLE[id]; st.style = id; st.vi = 0; st.bpm = S.bpmDef; st.key = S.key == null ? st.key : S.key; st.scale = 'auto'; st.swing = S.swing || 0;
+    const S = HG.STYLE[id]; st.style = id; st.vi = 0; st.bpm = S.bpmDef; st.key = S.key == null ? st.key : S.key; st.scale = 'auto'; st.swing = S.swing || 0; st.sevenths = !!S.sev; $('sevenths').checked = st.sevenths;
     KEYS.forEach(k => { manual[k] = false; });
     $('bpm').value = st.bpm; $('key').value = st.key; $('scale').value = 'auto'; $('swing').value = st.swing; $('swingv').textContent = st.swing + '%';
     document.querySelectorAll('.sty').forEach(b => b.setAttribute('aria-pressed', b.dataset.id === id));

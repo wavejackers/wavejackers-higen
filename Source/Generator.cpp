@@ -474,7 +474,7 @@ Result assemble (const Data& data, const Result& res)
 
 KeyInfo keyInfo (const Data& data, int key, const juce::String& scale)
 {
-    static const std::map<juce::String, int> offs { { "major", 0 }, { "minor", 3 }, { "dorian", 10 }, { "phrygian", 8 }, { "mixolydian", 5 }, { "harmonic", 3 } };
+    static const std::map<juce::String, int> offs { { "major", 0 }, { "minor", 3 }, { "dorian", 10 }, { "phrygian", 8 }, { "mixolydian", 5 }, { "harmonic", 3 }, { "hijaz", 8 } };
     KeyInfo k;
     int off = offs.count (scale) ? offs.at (scale) : 3;
     int rp = (key + off) % 12, n = ((7 + (rp * 7) % 12) % 12) + 1;
@@ -483,7 +483,7 @@ KeyInfo keyInfo (const Data& data, int key, const juce::String& scale)
     k.cam = juce::String (n) + letter;
     k.compat = { juce::String (down) + letter, juce::String (up) + letter, juce::String (n) + other };
     k.sf = ((rp * 7 + 6) % 12) - 6;
-    k.mi = (scale == "minor" || scale == "harmonic") ? 1 : 0;
+    k.mi = (scale == "minor" || scale == "harmonic" || scale == "hijaz") ? 1 : 0;
     for (auto i : intArray (data.scale (scale)["iv"])) k.notes.add (data.noteNames[(key + i) % 12]);
     return k;
 }

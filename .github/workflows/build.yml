@@ -113,4 +113,4 @@ jobs:
             (cd art/WavejackersHitGen-$n && zip -qr ../../out/Wavejackers-HitGen-$n.zip . -x "screenshots/*")
           done
           tag="build-${{ github.run_number }}"
-          gh release create "$tag" out/*.zip --repo "${{ github.repository }}" --title "Wavejackers HitGen — indirilebilir sürüm ($tag)" --notes "Windows, macOS ve Linux için hazır dosyalar. Kurulum: README.md" --latest
+          gh release create "$tag" out/*.zip --repo "${{ github.repository }}" --title "Wavejackers HitGen 2.2 — indirilebilir sürüm ($tag)" --notes "Windows, macOS ve Linux için hazır dosyalar. Kurulum: README.md" --latest

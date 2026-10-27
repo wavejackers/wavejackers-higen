@@ -55,6 +55,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout HitGenProcessor::createLayou
         L.add (std::make_unique<AudioParameterFloat> (pid ("rev_" + n), "Reverb " + n, NormalisableRange<float> (-1, 1, .01f), 0, sgn));
         L.add (std::make_unique<AudioParameterFloat> (pid ("dly_" + n), "Delay " + n, NormalisableRange<float> (-1, 1, .01f), 0, sgn));
     }
+    hg::addSoundParams (L);
     return L;
 }
 
@@ -64,6 +65,13 @@ HitGenProcessor::HitGenProcessor()
       apvts (*this, nullptr, "HitGen", createLayout (data))
 {
     for (auto* id : kGenParams) apvts.addParameterListener (id, this);
+    for (int part = 0; part < 3; ++part)
+        for (int i = 0; i < hg::kNumSp; ++i)
+        {
+            const auto id = hg::spId (part, i);
+            sdPtr[(size_t) part][(size_t) i] = apvts.getRawParameterValue (id);
+            apvts.addParameterListener (id, this);
+        }
     for (int t = 0; t < 4; ++t)
     {
         const juce::String n (kPartIds[t]); auto& q = pp[(size_t) t];
@@ -79,8 +87,10 @@ HitGenProcessor::HitGenProcessor()
     for (int t = 0; t < 4; ++t) sounds[(size_t) t] = S["sound"][kPartIds[t]].toString();
     lastStyle = 0;
     engine.prepare (44100, 512);
+    for (int part = 0; part < 3; ++part) applySoundToParams (part);
     for (int t = 0; t < 4; ++t) loadPatch (t);
     applyStyleDefaults();
+    presets.rescan();
     regenerateNow();
     startTimerHz (30);
 }
@@ -89,6 +99,7 @@ HitGenProcessor::~HitGenProcessor()
 {
     stopTimer();
     for (auto* id : kGenParams) apvts.removeParameterListener (id, this);
+    for (int part = 0; part < 3; ++part) for (int i = 0; i < hg::kNumSp; ++i) apvts.removeParameterListener (hg::spId (part, i), this);
     delete pendingPattern.exchange (nullptr);
     delete livePattern;
     int s1, n1, s2, n2; patTrash.prepareToRead (patTrash.getNumReady(), s1, n1, s2, n2);
@@ -106,26 +117,79 @@ bool HitGenProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 void HitGenProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     sr = sampleRate; blockSize = samplesPerBlock;
+    kbBuf.ensureSize (4096);
+    for (auto& c : tableCache) c.reset();
     engine.prepare (sampleRate, juce::jmax (512, samplesPerBlock));
     for (int t = 0; t < 4; ++t) loadPatch (t);   // wavetable seviyeleri örnekleme hızına bağlı
     numOffs = 0; wasRunning = false;
 }
 
-void HitGenProcessor::loadPatch (int track)
+namespace { int partOfTrack (int t) { return t == hg::kMelody ? 2 : t; } int trackOfPart (int p) { return p == 2 ? hg::kMelody : p; } }
+
+void HitGenProcessor::loadPatch (int track, bool live)
 {
     if (track == hg::kDrums)
     {
         auto ki = data.kitIndex (sounds[2]); engine.setKit (data.kit (ki >= 0 ? ki : 0));
         return;
     }
-    const auto& v = data.soundById (sounds[(size_t) track]);
-    if (v.isVoid()) return;
-    engine.setPatch (track == hg::kMelody ? 2 : track, hg::Patch::fromVar (v, data, sr));
+    const auto& base = data.soundById (sounds[(size_t) track]);
+    if (base.isVoid()) return;
+    const int part = partOfTrack (track);
+    float vals[hg::kNumSp]; readSd (part, vals);
+    auto np = hg::Patch::fromVar (hg::spToSound (base, vals), data, sr, tableCache[(size_t) part].get());
+    if (np->usesTable()) tableCache[(size_t) part] = std::make_unique<hg::Patch> (*np);
+    engine.setPatch (track == hg::kMelody ? 2 : track, std::move (np), live);
+}
+
+void HitGenProcessor::readSd (int part, float* out) const
+{
+    for (int i = 0; i < hg::kNumSp; ++i) out[i] = sdPtr[(size_t) part][(size_t) i]->load();
+}
+
+void HitGenProcessor::writeSd (int part, const float* vals)
+{
+    const juce::ScopedValueSetter<bool> sv (suppressSd, true);
+    for (int i = 0; i < hg::kNumSp; ++i)
+        if (auto* pr = apvts.getParameter (hg::spId (part, i)))
+        {
+            const float nv = pr->convertTo0to1 (vals[i]);
+            if (std::abs (pr->getValue() - nv) > 1e-7f) pr->setValueNotifyingHost (nv);
+        }
+    sdDirty[(size_t) part].store (false);
+}
+
+void HitGenProcessor::applySoundToParams (int part)
+{
+    float vals[hg::kNumSp];
+    hg::spFromSound (data.soundById (sounds[(size_t) trackOfPart (part)]), vals);
+    writeSd (part, vals);
+}
+
+juce::var HitGenProcessor::currentSoundVar (int part) const
+{
+    float vals[hg::kNumSp]; readSd (part, vals);
+    return hg::spToSound (data.soundById (sounds[(size_t) trackOfPart (part)]), vals);
+}
+
+void HitGenProcessor::resetSoundDesign (int part)
+{
+    applySoundToParams (part);
+    loadPatch (trackOfPart (part), true);
+}
+
+void HitGenProcessor::randomizeSound (int part)
+{
+    float vals[hg::kNumSp];
+    hg::spRandom (part == 0 ? 'c' : part == 1 ? 'b' : 'm', juce::Random::getSystemRandom(), vals);
+    writeSd (part, vals);
+    loadPatch (trackOfPart (part), true);
 }
 
 void HitGenProcessor::setSound (int track, const juce::String& id, bool isManual)
 {
     sounds[(size_t) track] = id; if (isManual) manual[(size_t) track] = true;
+    if (track != hg::kDrums) applySoundToParams (partOfTrack (track));
     loadPatch (track);
 }
 
@@ -133,9 +197,10 @@ void HitGenProcessor::applyStyleDefaults()
 {
     const int si = (int) p ("style")->load();
     const auto& S = data.style (juce::jlimit (0, data.numStyles() - 1, si));
-    for (int t = 0; t < 4; ++t) if (! manual[(size_t) t]) { sounds[(size_t) t] = S["sound"][kPartIds[t]].toString(); loadPatch (t); }
+    for (int t = 0; t < 4; ++t) if (! manual[(size_t) t]) setSound (t, S["sound"][kPartIds[t]].toString(), false);
     auto setP = [this] (const char* id, float plain) { if (auto* pr = apvts.getParameter (id)) pr->setValueNotifyingHost (pr->convertTo0to1 (plain)); };
     setP ("key", (float) (int) S["key"]); setP ("scale", 0); setP ("swing", (float) (double) S["swing"]); setP ("bpm", (float) (int) S["bpmDef"]); setP ("variation", 0);
+    setP ("sevenths", (bool) S["sev"] ? 1.0f : 0.0f);   // stil varsayılanı (ör. Black Coffee 7'li akorlarla gelir)
     for (int t : { 0, 1, 3 })
     {
         auto pm = S["pump"][kPartIds[t]];
@@ -145,6 +210,8 @@ void HitGenProcessor::applyStyleDefaults()
 
 void HitGenProcessor::parameterChanged (const juce::String& id, float)
 {
+    const int part = hg::spPartOfId (id);
+    if (part >= 0) { if (! suppressSd) sdDirty[(size_t) part].store (true); return; }   // ses iş parçacığından da gelebilir: yalnızca bayrak
     if (id == "style") styleChanged.store (true);
     regenPending.store (true);
 }
@@ -202,8 +269,10 @@ void HitGenProcessor::timerCallback()
     if (styleChanged.exchange (false))
     {
         const int si = (int) p ("style")->load();
-        if (si != lastStyle) { lastStyle = si; manual = {}; applyStyleDefaults(); }
+        if (si != lastStyle) { lastStyle = si; manual = {}; userArtist.clear(); userPreset.clear(); applyStyleDefaults(); }
     }
+    for (int part = 0; part < 3; ++part)
+        if (sdDirty[(size_t) part].exchange (false)) loadPatch (trackOfPart (part), true);
     if (regenPending.exchange (false)) regenerateNow();
 }
 
@@ -250,7 +319,8 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     if (preview) ppq = previewPos;
     const bool run = pPattern->load() > .5f && (hostPlay || preview) && livePattern != nullptr;
     const bool mOut = pMidiOut->load() > .5f;
-    const int keysSel = (int) pKeysTo->load(), keysTrack = keysSel == 0 ? hg::kChords : keysSel == 1 ? hg::kBass : hg::kMelody;
+    const int keysSel = (int) pKeysTo->load(), aud = auditionPart.load();
+    const int keysTrack = aud >= 0 ? trackOfPart (aud) : keysSel == 0 ? hg::kChords : keysSel == 1 ? hg::kBass : hg::kMelody;
 
     numBlockEv = 0;
     for (const auto meta : midi)
@@ -259,6 +329,14 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         if (msg.isNoteOn()) blockEv[(size_t) numBlockEv++] = { meta.samplePosition, 1, keysTrack, msg.getNoteNumber(), msg.getVelocity(), -1 };
         else if (msg.isNoteOff()) blockEv[(size_t) numBlockEv++] = { meta.samplePosition, 2, keysTrack, msg.getNoteNumber(), 0, 0 };
         else if (msg.isAllNotesOff() || msg.isAllSoundOff()) engine.allNotesOff();
+    }
+    kbBuf.clear();
+    keyboardState.processNextMidiBuffer (kbBuf, 0, n, true);   // ekran klavyesinden gelen notalar
+    for (const auto meta : kbBuf)
+    {
+        const auto msg = meta.getMessage(); if (numBlockEv >= (int) blockEv.size()) break;
+        if (msg.isNoteOn()) blockEv[(size_t) numBlockEv++] = { meta.samplePosition, 1, keysTrack, msg.getNoteNumber(), msg.getVelocity(), -1 };
+        else if (msg.isNoteOff()) blockEv[(size_t) numBlockEv++] = { meta.samplePosition, 2, keysTrack, msg.getNoteNumber(), 0, 0 };
     }
     midi.clear();
     if (! run && wasRunning)
@@ -326,7 +404,7 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
 juce::String HitGenProcessor::baseName() const
 {
     auto r = current; if (! r) return "HitGen";
-    auto artist = data.styleById (r->P.style)["artist"].toString().toLowerCase();
+    auto artist = (userArtist.isNotEmpty() ? userArtist : data.styleById (r->P.style)["artist"].toString()).toLowerCase();
     juce::String slug; for (auto c : artist) slug << (juce::CharacterFunctions::isLetterOrDigit (c) && c < 128 ? juce::String::charToString (c) : juce::String ("-"));
     while (slug.contains ("--")) slug = slug.replace ("--", "-");
     slug = slug.trimCharactersAtStart ("-").trimCharactersAtEnd ("-");
@@ -355,25 +433,42 @@ juce::File HitGenProcessor::writeMidi (int which)
     return f;
 }
 
-void HitGenProcessor::getStateInformation (juce::MemoryBlock& dest)
+juce::ValueTree HitGenProcessor::stateTree()
 {
     auto state = apvts.copyState();
     juce::ValueTree extra ("extra");
     for (int t = 0; t < 4; ++t) { extra.setProperty (juce::String ("sound_") + kPartIds[t], sounds[(size_t) t], nullptr); extra.setProperty (juce::String ("manual_") + kPartIds[t], manual[(size_t) t], nullptr); }
     extra.setProperty ("lang", lang, nullptr); extra.setProperty ("uiScale", uiScale, nullptr); extra.setProperty ("contrast", highContrast, nullptr);
+    extra.setProperty ("sdv", 1, nullptr);   // ses tasarımı parametreleri geçerli (2.2+)
+    extra.setProperty ("userArtist", userArtist, nullptr); extra.setProperty ("userPreset", userPreset, nullptr);
     state.removeChild (state.getChildWithName ("extra"), nullptr);
     state.appendChild (extra, nullptr);
-    if (auto xml = state.createXml()) copyXmlToBinary (*xml, dest);
+    return state;
+}
+
+void HitGenProcessor::getStateInformation (juce::MemoryBlock& dest)
+{
+    if (auto xml = stateTree().createXml()) copyXmlToBinary (*xml, dest);
 }
 
 void HitGenProcessor::setStateInformation (const void* d, int size)
 {
     auto xml = getXmlFromBinary (d, size);
     if (xml == nullptr || ! xml->hasTagName (apvts.state.getType())) return;
-    auto tree = juce::ValueTree::fromXml (*xml);
+    restoreFromTree (juce::ValueTree::fromXml (*xml), true);
+}
+
+void HitGenProcessor::restoreFromTree (const juce::ValueTree& source, bool includeUi)
+{
+    if (! source.isValid() || ! source.hasType (apvts.state.getType())) return;
+    auto tree = source.createCopy();
     auto extra = tree.getChildWithName ("extra");
-    apvts.replaceState (tree);
+    {
+        const juce::ScopedValueSetter<bool> sv (suppressSd, true);
+        apvts.replaceState (tree);
+    }
     styleChanged.store (false); lastStyle = (int) p ("style")->load();
+    bool sdValid = false;
     if (extra.isValid())
     {
         for (int t = 0; t < 4; ++t)
@@ -383,14 +478,43 @@ void HitGenProcessor::setStateInformation (const void* d, int size)
             if (ok) sounds[(size_t) t] = id;
             manual[(size_t) t] = (bool) extra.getProperty (juce::String ("manual_") + kPartIds[t]);
         }
-        auto l = extra.getProperty ("lang").toString(); if (data.langCodes.contains (l)) lang = l;
-        uiScale = juce::jlimit (.75f, 2.0f, (float) (double) extra.getProperty ("uiScale", 1.0));
-        highContrast = (bool) extra.getProperty ("contrast", false);
+        sdValid = (int) extra.getProperty ("sdv", 0) >= 1;
+        userArtist = extra.getProperty ("userArtist").toString().substring (0, 80);
+        userPreset = extra.getProperty ("userPreset").toString().substring (0, 80);
+        if (includeUi)
+        {
+            auto l = extra.getProperty ("lang").toString(); if (data.langCodes.contains (l)) lang = l;
+            uiScale = juce::jlimit (.75f, 2.0f, (float) (double) extra.getProperty ("uiScale", 1.0));
+            highContrast = (bool) extra.getProperty ("contrast", false);
+        }
     }
+    if (! sdValid) for (int part = 0; part < 3; ++part) applySoundToParams (part);   // 2.1 ve öncesi projeler: seçili sesin değerleri
+    for (auto& f : sdDirty) f.store (false);
     const auto& S = data.style (juce::jlimit (0, data.numStyles() - 1, lastStyle));
     for (int t : { 0, 1, 3 }) { auto pm = S["pump"][kPartIds[t]]; engine.setPump (t, (float) (double) pm[0], (float) (double) pm[1]); }
     for (int t = 0; t < 4; ++t) loadPatch (t);
     regenPending.store (true);
+}
+
+bool HitGenProcessor::savePreset (const juce::String& artist, const juce::String& name, juce::String& fileOut)
+{
+    const auto a = artist.trim().substring (0, 80), n = name.trim().substring (0, 80);
+    if (a.isEmpty() || n.isEmpty()) return false;
+    userArtist = a; userPreset = n;
+    const int si = juce::jlimit (0, data.numStyles() - 1, (int) p ("style")->load());
+    auto f = presets.fileFor (a, n);
+    fileOut = f.getFullPathName();
+    return presets.write (f, a, n, data.styleId (si), stateTree());
+}
+
+bool HitGenProcessor::loadPreset (const juce::File& f)
+{
+    hg::PresetInfo info;
+    auto tree = hg::PresetStore::readState (f, &info);
+    if (! tree.isValid() || ! tree.hasType (apvts.state.getType())) return false;
+    restoreFromTree (tree, false);
+    userArtist = info.artist; userPreset = info.name;
+    return true;
 }
 
 juce::AudioProcessorEditor* HitGenProcessor::createEditor() { return new HitGenEditor (*this); }

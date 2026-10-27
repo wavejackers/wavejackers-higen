@@ -6,7 +6,8 @@ MB.SCALES = {
   dorian:     { n: 'Dorian',         iv: [0,2,3,5,7,9,10] },
   phrygian:   { n: 'Phrygian',       iv: [0,1,3,5,7,8,10] },
   mixolydian: { n: 'Mixolydian',     iv: [0,2,4,5,7,9,10] },
-  harmonic:   { n: 'Harmonik minör', iv: [0,2,3,5,7,8,11] }
+  harmonic:   { n: 'Harmonik minör', iv: [0,2,3,5,7,8,11] },
+  hijaz:      { n: 'Hicaz',          iv: [0,1,4,5,7,8,10] }
 };
 // Akor ilerlemeleri: gam derecesi indeksleri (0 = I/i)
 MB.POOLS = {
@@ -15,7 +16,8 @@ MB.POOLS = {
   dorian:     [[0,3,0,6],[0,1,3,0],[0,6,3,0],[0,3,6,3]],
   phrygian:   [[0,1,0,6],[0,1,2,1],[0,6,5,6],[0,5,6,1]],
   mixolydian: [[0,6,3,0],[0,3,6,3],[0,6,5,6],[0,4,6,3]],
-  harmonic:   [[0,3,4,0],[0,5,4,0],[0,3,4,4],[0,5,3,4]]
+  harmonic:   [[0,3,4,0],[0,5,4,0],[0,3,4,4],[0,5,3,4]],
+  hijaz:      [[0,1,0,6],[0,1,6,1],[0,6,5,1],[0,1,0,1]]
 };
 const GM = { kick: 36, rim: 37, snare: 38, clap: 39, chat: 42, ohat: 46, perc: 64 };
 MB.GM = GM;

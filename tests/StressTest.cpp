@@ -5,6 +5,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "../Source/PluginProcessor.h"
 #include "../Source/PluginEditor.h"
+#include "../Source/SoundParams.h"
 #include <iostream>
 
 struct FakeHead : juce::AudioPlayHead
@@ -34,12 +35,14 @@ static Stats run (HitGenProcessor& p, FakeHead& head, double sr, int block, doub
         if (fuzz != nullptr && fuzz->nextInt (40) == 0)
         {
             const char* ids[] = { "orig", "energy", "thick", "pump", "cut_chords", "res_bass", "atk_melody", "rel_chords", "drv_bass", "rev_melody", "dly_chords", "vol_drums", "master", "quality", "swing", "human" };
-            auto* pr = p.apvts.getParameter (ids[fuzz->nextInt (16)]); if (pr) pr->setValueNotifyingHost (fuzz->nextFloat());
+            auto* pr = fuzz->nextBool() ? p.apvts.getParameter (ids[fuzz->nextInt (16)]) : p.apvts.getParameter (hg::spId (fuzz->nextInt (3), fuzz->nextInt (hg::kNumSp)));   // ses tasarımı otomasyonu da
+            if (pr) pr->setValueNotifyingHost (fuzz->nextFloat());
         }
         if (fuzz != nullptr && fuzz->nextInt (25) == 0) midi.addEvent (juce::MidiMessage::noteOn (1, 40 + fuzz->nextInt (40), (juce::uint8) (20 + fuzz->nextInt (100))), fuzz->nextInt (n));
         if (fuzz != nullptr && fuzz->nextInt (25) == 0) midi.addEvent (juce::MidiMessage::noteOff (1, 40 + fuzz->nextInt (40)), fuzz->nextInt (n));
         buf.setSize (2, n, false, false, true);
         p.processBlock (buf, midi);
+        if (fuzz != nullptr && fuzz->nextInt (60) == 0) p.idle();   // zamanlayıcı: canlı yama yenileme
         for (int c = 0; c < 2; ++c)
             for (int i = 0; i < n; ++i)
             {
@@ -123,6 +126,85 @@ int main (int argc, char** argv)
         for (int w = 0; w < 6; ++w) { auto f = p.writeMidi (w); if (! f.existsAsFile() || f.getSize() < 30) fail ("midi file " + juce::String (w)); }
         std::cout << "midi files ok: " << p.writeMidi (4).getFullPathName() << "\n";
     }
+    // 4b) ses tasarımı: her ses parametrelere açılıp geri kurulunca aynı yamayı vermeli
+    {
+        HitGenProcessor p; int bad = 0;
+        for (int i = 0; i < p.data.numSounds(); ++i)
+        {
+            const auto& v = p.data.sound (i); float x[hg::kNumSp]; hg::spFromSound (v, x);
+            auto a = hg::Patch::fromVar (v, p.data, 48000), b = hg::Patch::fromVar (hg::spToSound (v, x), p.data, 48000);
+            bool same = a->numOsc == b->numOsc && a->uniN == b->uniN && a->ftype == b->ftype && a->slope24 == b->slope24 && a->hasFm == b->hasFm && a->vowel == b->vowel;
+            auto near = [] (float u, float w) { return std::abs (u - w) <= 1e-3f * juce::jmax (1.0f, std::abs (u)); };
+            for (int j = 0; same && j < a->numOsc; ++j)
+            {
+                const auto& o1 = a->osc[(size_t) j]; const auto& o2 = b->osc[(size_t) j];
+                const double f1 = o1.octave * 1200.0 + o1.detune, f2 = o2.octave * 1200.0 + o2.detune;
+                same = o1.wave == o2.wave && std::abs (f1 - f2) < .01 && near (o1.gain, o2.gain);
+            }
+            for (auto [u, w] : { std::pair<float, float> { a->cut, b->cut }, { a->q, b->q }, { a->envAmt, b->envAmt }, { a->envDec, b->envDec }, { a->A, b->A }, { a->D, b->D }, { a->S, b->S }, { a->R, b->R },
+                                 { a->uniSpread, b->uniSpread }, { a->rv, b->rv }, { a->dl, b->dl }, { a->ch, b->ch }, { a->dr, b->dr }, { a->fd, b->fd }, { a->vol, b->vol }, { a->kt, b->kt }, { a->sub, b->sub }, { a->noi, b->noi },
+                                 { a->lfo[0].rate, b->lfo[0].rate }, { a->lfo[0].depth, b->lfo[0].depth }, { a->lfo[1].depth, b->lfo[1].depth }, { a->lfo[2].depth, b->lfo[2].depth } })
+                if (! near (u, w)) same = false;
+            if (a->usesTable()) for (int k = 0; same && k < 2048; k += 97) same = near (a->table.lv[0][(size_t) k], b->table.lv[0][(size_t) k]);
+            if (! same) { ++bad; std::cout << "sound roundtrip differs: " << v["id"].toString() << "\n"; }
+        }
+        if (bad) fail ("sound param roundtrip " + juce::String (bad));
+        std::cout << "sound design roundtrip ok for " << p.data.numSounds() << " sounds\n";
+    }
+    // 4c) rastgele ses + canlı düğme çevirme, tutulan notalarla (ses iş parçacığında yama göçü)
+    {
+        HitGenProcessor p; FakeHead head; head.playing = false; p.setPlayHead (&head);
+        p.setPlayConfigDetails (0, 2, 48000, 256); p.prepareToPlay (48000, 256);
+        juce::AudioBuffer<float> buf (2, 256); juce::MidiBuffer midi; double peak = 0; bool nan = false;
+        juce::Random r (99);
+        for (int round = 0; round < 40; ++round)
+        {
+            const int part = round % 3; p.auditionPart.store (part);
+            p.randomizeSound (part);
+            for (int n : { 48, 55, 60, 64 }) p.keyboardState.noteOn (1, n, .8f);
+            for (int b = 0; b < 60; ++b)
+            {
+                if (b % 3 == 0) if (auto* pr = p.apvts.getParameter (hg::spId (part, r.nextInt (hg::kNumSp)))) pr->setValueNotifyingHost (r.nextFloat());
+                p.idle();
+                midi.clear(); p.processBlock (buf, midi);
+                for (int c = 0; c < 2; ++c) for (int i = 0; i < 256; ++i) { const float x = buf.getSample (c, i); if (! std::isfinite (x)) nan = true; else peak = juce::jmax (peak, (double) std::abs (x)); }
+            }
+            p.keyboardState.allNotesOff (1);
+            p.resetSoundDesign (part);
+        }
+        if (nan) fail ("NaN in live sound design"); if (peak > 1.0) fail ("clip in live sound design");
+        std::cout << "live sound design ok, peak " << juce::String (peak, 3) << "\n";
+    }
+    // 4d) sanatçı presetleri: kaydet, değiştir, yükle; eski proje (ses tasarımı olmadan) uyumu
+    {
+        auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("hitgen-preset-test"); dir.deleteRecursively(); dir.createDirectory();
+        HitGenProcessor a; a.presets.overrideDir = dir; a.presets.rescan();
+        setP (a, "style", (float) a.data.styleIndex ("blackcoffee")); a.applyStyleDefaults(); setP (a, "seed", 777);
+        a.setSound (1, "bc-afro-sub", true); setP (a, "sd_b_cut", 900); setP (a, "sd_m_o1w", 5);
+        juce::String path;
+        if (! a.savePreset ("DJ Test", "Gece 1", path)) fail ("preset save");
+        if (a.presets.items().size() != 1) fail ("preset list");
+        a.regenerateNow(); const auto before = a.midiBytes (4);
+        setP (a, "style", 0); a.applyStyleDefaults(); setP (a, "seed", 5); setP (a, "sd_b_cut", 300);
+        if (! a.loadPreset (juce::File (path))) fail ("preset load");
+        a.regenerateNow();
+        if (a.midiBytes (4) != before) fail ("preset midi mismatch");
+        if (std::abs (a.apvts.getRawParameterValue ("sd_b_cut")->load() - 900) > 1) fail ("preset sound design");
+        if (a.soundId (1) != "bc-afro-sub" || a.userArtist != "DJ Test") fail ("preset sound/artist");
+        if (! a.baseName().contains ("dj-test")) fail ("artist in file name: " + a.baseName());
+        if (a.apvts.getRawParameterValue ("sevenths")->load() < .5f) fail ("style sevenths default");
+        // bozuk preset dosyası
+        auto junk = dir.getChildFile ("bozuk.hgpreset"); junk.replaceWithText ("<HitGenPreset artist='x'><nope/></HitGenPreset>");
+        if (a.loadPreset (junk)) fail ("junk preset accepted");
+        // eski durum: ses tasarımı parametreleri yok -> seçili sesin değerleri
+        HitGenProcessor b; auto tree = b.stateTree(); auto extra = tree.getChildWithName ("extra"); extra.removeProperty ("sdv", nullptr);
+        for (int i = 0; i < tree.getNumChildren(); ++i) { auto c = tree.getChild (i); if (c.getProperty ("id").toString() == "sd_c_cut") c.setProperty ("value", 31.0f, nullptr); }
+        juce::MemoryBlock mb; if (auto x = tree.createXml()) juce::AudioProcessor::copyXmlToBinary (*x, mb);
+        HitGenProcessor c; c.setStateInformation (mb.getData(), (int) mb.getSize());
+        float vals[hg::kNumSp]; hg::spFromSound (c.data.soundById (c.soundId (0)), vals);
+        if (std::abs (c.apvts.getRawParameterValue ("sd_c_cut")->load() - vals[hg::cut]) > 1) fail ("old state sound design");
+        std::cout << "presets ok: " << path << "\n";
+    }
     // 5) editör: 6 dilde ekran görüntüsü
     {
         HitGenProcessor p; p.regenerateNow();
@@ -134,6 +216,17 @@ int main (int argc, char** argv)
             auto f = outDir.getChildFile ("plugin-" + l + ".png"); f.deleteFile();
             juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os);
         }
+        // ses tasarımı ve preset sekmeleri
+        for (auto l : p.data.langCodes)
+            for (int tb : { 1, 2 })
+            {
+                ed->setLanguage (l); ed->setTab (tb);
+                if (tb == 1) ed->sounds().setPart (l == "tr" ? 0 : l == "ar" ? 2 : 1);
+                auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f);
+                auto f = outDir.getChildFile ("plugin-" + l + (tb == 1 ? "-sound" : "-presets") + ".png"); f.deleteFile();
+                juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os);
+            }
+        ed->setTab (0);
         p.highContrast = true; ed->setLanguage ("tr");
         // yüksek kontrast görüntüsü
         ed.reset(); auto* e2 = dynamic_cast<HitGenEditor*> (p.createEditor());

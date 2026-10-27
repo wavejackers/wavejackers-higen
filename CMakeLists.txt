@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(WavejackersHitGen VERSION 2.0.0 LANGUAGES C CXX)
+project(WavejackersHitGen VERSION 2.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -60,7 +60,7 @@ set(HITGEN_DSP_SOURCES Source/Synth.cpp)
 
 target_sources(WavejackersHitGen PRIVATE
   ${HITGEN_CORE_SOURCES} ${HITGEN_DSP_SOURCES}
-  Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/Ui.cpp)
+  Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/Ui.cpp Source/SoundParams.cpp Source/Presets.cpp Source/SoundPage.cpp Source/PresetPage.cpp)
 
 set(HITGEN_DEFS
   JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0
@@ -85,7 +85,7 @@ if(HITGEN_BUILD_TESTS)
   # Kararlılık testi: işlemciyi doğrudan çalıştırır (rastgele parametre, durum kaydet/yükle, NaN, CPU ölçümü)
   juce_add_console_app(HitGenStressTest PRODUCT_NAME "HitGenStressTest")
   target_sources(HitGenStressTest PRIVATE tests/StressTest.cpp ${HITGEN_CORE_SOURCES} ${HITGEN_DSP_SOURCES}
-    Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/Ui.cpp)
+    Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/Ui.cpp Source/SoundParams.cpp Source/Presets.cpp Source/SoundPage.cpp Source/PresetPage.cpp)
   target_compile_definitions(HitGenStressTest PRIVATE ${HITGEN_DEFS} JucePlugin_Build_Standalone=0 HITGEN_TEST_BUILD=1)
   target_link_libraries(HitGenStressTest PRIVATE HitGenData juce::juce_audio_utils juce::juce_dsp PUBLIC juce::juce_recommended_config_flags)
 endif()

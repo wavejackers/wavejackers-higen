@@ -45,7 +45,11 @@ struct Patch
     bool hasVib = false; float vibRate = 5, vibCents = 0, vibDelay = 0;
     int vowel = -1; bool male = false; bool chordsHalf = false;
     WaveTable table;   // wavetable osilatörleri için (A/B/geçiş/parlaklık)
-    static std::unique_ptr<Patch> fromVar (const juce::var& v, const Data& data, double sampleRate);
+    // cached: aynı wavetable ayarı daha önce kurulduysa tablolar oradan kopyalanır (ses tasarımında hızlı yeniden kurulum)
+    static std::unique_ptr<Patch> fromVar (const juce::var& v, const Data& data, double sampleRate, const Patch* cached = nullptr);
+    bool usesTable() const noexcept { for (int i = 0; i < numOsc; ++i) if (osc[(size_t) i].wave == 4) return true; return false; }
+    bool sameTable (const Patch& o) const noexcept;
+    double tableRate = 0;
 };
 
 // Kullanıcının parça başına makro ayarları (otomasyonlanabilir parametrelerden okunur)
@@ -91,7 +95,8 @@ public:
     void reset();
 
     // Mesaj iş parçacığından: yeni yama / kit (ses iş parçacığı bir sonraki blokta alır)
-    void setPatch (int track, std::unique_ptr<Patch> p);
+    // live = true: çalan notalar yeni yamaya hemen geçer (ses tasarımı düğmeleri); false: eski notalar eski sesle biter
+    void setPatch (int track, std::unique_ptr<Patch> p, bool live = false);
     void setKit (const juce::var& kit);
     void setPump (int track, float depth, float release) { pumpDepth[(size_t) track] = depth; pumpRel[(size_t) track] = release; }
     void collectGarbage();   // eski yamaları mesaj iş parçacığında siler
@@ -114,6 +119,7 @@ private:
     double sr = 44100; int maxBlockSize = 512;
     WaveTable basic[4];    // testere, kare, üçgen, sinüs
     std::array<std::atomic<Patch*>, 4> pending {};
+    std::array<std::atomic<bool>, 4> pendingLive {};
     std::array<Patch*, 4> cur {};
     std::array<Patch*, 16> retiring {};   // hâlâ çalan seslerin kullandığı eski yamalar
     juce::AbstractFifo trashFifo { 64 }; std::array<Patch*, 64> trash {};
@@ -135,6 +141,7 @@ private:
     int lastActive = 0; double voiceClock = 0;
 
     void startVoice (Voice& v, const Patch& p, int track, int note, int vel, double durSec);
+    void migrateVoice (Voice& v, const Patch& p);
     void renderVoice (Voice& v, const Patch& p, const Macros& m, float* L, float* R, int n);
     void renderDrum (DrumVoice& d, float* L, float* R, int n);
     void applyChorus (int track, float amt, float* L, float* R, int n);

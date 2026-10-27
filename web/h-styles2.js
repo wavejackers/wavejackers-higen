@@ -76,5 +76,52 @@ HG.BP.rumble = [[2,1,1,104],[3,1,1,84],[6,1,1,104],[7,1,1,84],[10,1,1,104],[11,1
     pump: { chords: [.5, .2], bass: [.7, .15], melody: [.3, .15] },
     arr: [['Intro', 16], ['Build', 16], ['Peak', 32], ['Break', 16], ['Peak', 32], ['Outro', 16]],
     var: [{ prog: [0, 0, 0, 6] }, { scale: 'phrygian', prog: [0, 1, 0, 1], md: .5 }, { prog: [0, 5, 6, 0], cm: 'sustain', cp: 'whole', mm: 'hook', hr: ['h4'], md: .5 }, { prog: [0, 0, 5, 6], bp: 'roll16', dr: { chat: H8 } }] });
-  HG.GROUPS = ['all', 'techno', 'house', 'main', 'trance', 'hard'];
+  // ---- 2026 eklemeleri: melodik, afro ve organik house (Solomun, Miss Monique, Mahmut Orhan, HUGEL, Black Coffee)
+  HG.CP.montuno = [[0,1,96],[2,1,84],[3,1,92],[5,1,84],[6,1,96],[8,1,88],[10,1,96],[11,1,84],[13,1,92],[14,1,86]];
+  HG.CP.afroStab = [[0,3,96],[6,2,84],[10,3,92]];
+  HG.BP.solo = [[0,3,1,104],[3,1,1,86],[6,2,1,96],[8,1,1,100],[10,2,2,90],[13,1,3,86],[14,2,1,94]];
+  HG.BP.deepSync = [[0,2,1,100],[3,1,1,84],[6,1,3,90],[7,1,1,82],[10,2,1,96],[12,1,2,86],[14,2,1,92]];
+  HG.BP.tumbao = [[0,2,1,104],[6,2,2,98],[10,1,3,90],[12,2,1,100],[14,1,2,88]];
+  HG.BP.afroSub = [[0,3,1,104],[6,1,1,88],[7,2,3,92],[10,2,1,96],[14,2,2,88]];
+  add({ id: 'solomun', artist: 'Solomun', grp: 'house', rank: 41, accent: '#e8b86b', bpm: [120, 124], bpmDef: 122, key: 4, scales: ['minor', 'dorian'], swing: 6,
+    chord: { mode: 'sustain', pats: ['long', 'whole'] }, bass: { pats: ['solo'], oct: 36 },
+    drums: { kick: K4, clap: C24, chat: H8O, ohat: OFF, rim: '...x.......x..x.', perc: '......x.......x.', fill: 'clap' },
+    mel: { mode: 'hook', hr: ['h5', 'h2', 'h6'], dens: .4, oct: 72, rep: .45 },
+    sound: { chords: 'so-velvet-pad', bass: 'so-deep-bass', melody: 'so-emotive-lead', drums: 'deep' },
+    pump: { chords: [.4, .25], bass: [.35, .2], melody: [.15, .2] },
+    arr: [['Intro', 32], ['Build', 16], ['Drop', 32], ['Breakdown', 32], ['Build', 16], ['Drop', 32], ['Outro', 32]],
+    var: [{ prog: [0, 5, 2, 6] }, { scale: 'dorian', prog: [0, 3, 0, 6], cm: 'stab', cp: 'house' }, { prog: [0, 6, 5, 4], mm: 'arp', arp: 'pp', md: .7 }, { prog: [0, 3, 5, 6], cm: 'arp', mm: 'hook', hr: ['h2'], md: .5 }] });
+  add({ id: 'monique', artist: 'Miss Monique', grp: 'techno', rank: 61, accent: '#ff7eb6', bpm: [122, 126], bpmDef: 124, key: 7, scales: ['minor', 'dorian'], swing: 0,
+    chord: { mode: 'arp', pats: ['whole'], arp: 'skip' }, bass: { pats: ['roll16'], oct: 36 },
+    drums: { kick: K4, clap: C24, chat: H8O, ohat: OFF, rim: '.......x.......x', perc: '..x.......x.....', fill: 'snare' },
+    mel: { mode: 'arp', arp: 'up', dens: .55, oct: 72 },
+    sound: { chords: 'mm-dream-pluck', bass: 'mm-prog-bass', melody: 'mm-silk-lead', drums: 'warehouse' },
+    pump: { chords: [.45, .22], bass: [.5, .2], melody: [.2, .2] },
+    arr: [['Intro', 32], ['Build', 16], ['Drop', 32], ['Breakdown', 32], ['Build', 16], ['Drop', 32], ['Outro', 32]],
+    var: [{ prog: [0, 5, 6, 4] }, { prog: [0, 3, 6, 5], cm: 'sustain', cp: 'long', mm: 'hook', hr: ['h5', 'h2'], md: .5 }, { scale: 'dorian', prog: [0, 3, 0, 6], arp: 'pp' }, { prog: [5, 6, 0, 0], bp: 'trance16', md: .8 }] });
+  add({ id: 'orhan', artist: 'Mahmut Orhan', grp: 'afro', accent: '#ffb057', bpm: [118, 124], bpmDef: 121, key: 4, scales: ['hijaz', 'minor', 'harmonic'], swing: 8,
+    chord: { mode: 'stab', pats: ['offbeat', 'house'] }, bass: { pats: ['deepSync'], oct: 36 },
+    drums: { kick: K4, clap: C24, chat: H8O, ohat: OFF, rim: '.......x.......x', perc: 'x..x..x...x..x..', fill: 'clap' },
+    mel: { mode: 'hook', hr: ['h6', 'h1', 'h3'], dens: .45, oct: 72, rep: .4 },
+    sound: { chords: 'mo-warm-keys', bass: 'mo-deep-bass', melody: 'mo-sax-lead', drums: 'deep' },
+    pump: { chords: [.4, .25], bass: [.35, .2], melody: [.15, .2] },
+    arr: [['Intro', 16], ['Verse', 16], ['Build', 8], ['Drop', 32], ['Breakdown', 16], ['Build', 8], ['Drop', 32], ['Outro', 16]],
+    var: [{ prog: [0, 1, 0, 6] }, { scale: 'minor', prog: [0, 5, 2, 6], hr: ['h5', 'h2'], md: .8 }, { scale: 'harmonic', prog: [0, 3, 4, 0], cm: 'sustain', cp: 'long' }, { prog: [0, 1, 6, 1], mm: 'arp', arp: 'pp', md: .6 }] });
+  add({ id: 'hugel', artist: 'HUGEL', grp: 'afro', rank: 48, accent: '#ff5e3a', bpm: [122, 126], bpmDef: 124, key: 9, scales: ['minor', 'harmonic'], swing: 4,
+    chord: { mode: 'stab', pats: ['montuno', 'tres'] }, bass: { pats: ['tumbao'], oct: 36 },
+    drums: { kick: K4, clap: C24, chat: H8O, ohat: OFF, rim: '...x..x.....x...', perc: 'x..x..x...x.x...', fill: 'snare' },
+    mel: { mode: 'chop', dens: .5, oct: 72 },
+    sound: { chords: 'hu-latin-piano', bass: 'hu-latin-bass', melody: 'hu-brass', drums: 'house' },
+    pump: { chords: [.45, .2], bass: [.45, .18], melody: [.25, .2] },
+    arr: [['Intro', 16], ['Verse', 16], ['Build', 8], ['Drop', 16], ['Break', 16], ['Build', 8], ['Drop', 16], ['Outro', 16]],
+    var: [{ prog: [0, 6, 5, 6] }, { scale: 'harmonic', prog: [0, 3, 5, 4] }, { prog: [0, 0, 5, 6], mm: 'hook', hr: ['h1', 'h4'], md: .6 }, { scale: 'dorian', prog: [0, 3, 0, 3], bp: 'funk', md: 1.1 }] });
+  add({ id: 'blackcoffee', artist: 'Black Coffee', grp: 'afro', rank: 14, accent: '#c89a63', bpm: [118, 122], bpmDef: 120, key: 5, scales: ['minor', 'dorian'], swing: 14, sev: true,
+    chord: { mode: 'stab', pats: ['afroStab', 'sparse'] }, bass: { pats: ['afroSub'], oct: 36 },
+    drums: { kick: K4, clap: '........x.......', chat: H8, ohat: OFF, rim: '...x...x..x....x', perc: '..x..x.x..x..x.x', fill: 'none' },
+    mel: { mode: 'hook', hr: ['h2', 'h5', 'h6'], dens: .3, oct: 72, rep: .5 },
+    sound: { chords: 'bc-soul-keys', bass: 'bc-afro-sub', melody: 'bc-kalimba', drums: 'afro' },
+    pump: { chords: [.3, .25], bass: [.3, .2], melody: [.1, .2] },
+    arr: [['Intro', 32], ['Groove', 32], ['Break', 16], ['Groove', 32], ['Outro', 32]],
+    var: [{ prog: [0, 3, 0, 3] }, { scale: 'dorian', prog: [0, 3, 6, 3] }, { prog: [0, 5, 3, 4], cm: 'sustain', cp: 'long', md: .6 }, { prog: [0, 6, 5, 6], mm: 'arp', arp: 'gate', md: .6 }] });
+  HG.GROUPS = ['all', 'techno', 'house', 'main', 'trance', 'hard', 'afro'];
 })();

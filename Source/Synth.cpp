@@ -68,7 +68,13 @@ void WaveTable::build (const std::vector<float>& harm, double sampleRate)
 }
 
 // ---------------------------------------------------------------- Patch
-std::unique_ptr<Patch> Patch::fromVar (const juce::var& v, const Data& data, double sampleRate)
+bool Patch::sameTable (const Patch& o) const noexcept
+{
+    auto q = [] (float x) { return (int) std::round (x * 16); };
+    return (int) wtA == (int) o.wtA && (int) wtB == (int) o.wtB && q (wtMorph) == q (o.wtMorph) && q (wtBright) == q (o.wtBright) && tableRate == o.tableRate;
+}
+
+std::unique_ptr<Patch> Patch::fromVar (const juce::var& v, const Data& data, double sampleRate, const Patch* cached)
 {
     auto p = std::make_unique<Patch>();
     p->id = v["id"].toString(); p->cat = v["cat"].toString(); p->trim = (float) data.trim (p->id);
@@ -105,6 +111,8 @@ std::unique_ptr<Patch> Patch::fromVar (const juce::var& v, const Data& data, dou
     p->male = (bool) v["male"];
     // wavetable (web ile aynı: 48 harmonik, geçiş ve parlaklık 1/16 adımlı)
     bool needWt = false; for (int i = 0; i < p->numOsc; ++i) if (p->osc[(size_t) i].wave == 4) needWt = true;
+    p->tableRate = sampleRate;
+    if (needWt && cached != nullptr && cached->usesTable() && p->sameTable (*cached)) { p->table = cached->table; return p; }
     if (needWt)
     {
         const auto& W = data.wavetables(); const int A = juce::jlimit (0, 11, (int) p->wtA), B = juce::jlimit (0, 11, (int) p->wtB);
@@ -153,9 +161,10 @@ void Engine::reset()
     pumpG = { 1, 1, 1, 1 }; pumpWait = { 0, 0, 0, 0 };
 }
 
-void Engine::setPatch (int track, std::unique_ptr<Patch> p)
+void Engine::setPatch (int track, std::unique_ptr<Patch> p, bool live)
 {
     auto* raw = p.release();
+    pendingLive[(size_t) track].store (live);
     if (auto* old = pending[(size_t) track].exchange (raw)) delete old;   // ses iş parçacığı henüz almadıysa
 }
 
@@ -249,6 +258,20 @@ void Engine::startVoice (Voice& v, const Patch& p, int track, int note, int vel,
         for (int j = 0; j < 3; ++j) v.ph[j][u] = (frand (v.rng) + 1) * .5;
     }
     v.ctl = 0;
+}
+
+void Engine::migrateVoice (Voice& v, const Patch& p)
+{
+    const Macros& m = macros[(size_t) (v.track == 2 ? 3 : v.track)];
+    const float relM = std::pow (2.0f, m.release * 3);
+    const double D = juce::jmax (.01, (double) p.D), R = juce::jmax (.02, (double) p.R * relM);
+    v.patch = &p; v.ctl = 0;
+    v.peak = p.vol * p.trim * (.4f + .6f * v.vel);
+    v.cD = (float) std::exp (-1.0 / (D / 3.0 * sr)); v.cR = (float) std::exp (-1.0 / (R / 3.0 * sr));
+    v.endT = juce::jmax (v.endT, v.relT + R * 2 + .05);
+    v.uniN = juce::jmin (v.uniN, juce::jmin (p.uniN, quality.maxUnison));   // unison sayısı yalnızca azalabilir (dizi durumları hazır)
+    for (int u = 0; u < v.uniN; ++u) { const float pos = v.uniN > 1 ? (u / (float) (v.uniN - 1)) * 2 - 1 : 0; v.uniDet[u] = pos * p.uniSpread; }
+    v.cfF[0][0] = 0; v.cfN[0] = 0;
 }
 
 void Engine::renderVoice (Voice& v, const Patch& p, const Macros& m, float* L, float* R, int n)
@@ -473,6 +496,14 @@ void Engine::render (juce::AudioBuffer<float>& out, int start, int num)
     for (size_t t = 0; t < 4; ++t)
         if (auto* p = pending[t].exchange (nullptr))
         {
+            if (cur[t] != nullptr && pendingLive[t].exchange (false))
+            {
+                // canlı ayar: bu izde çalan notalar yeni yamaya geçer, eski yama hemen çöpe gider
+                const int ti = (int) t;
+                for (auto& v : voices) if (v.active && v.track == ti && v.patch == cur[t]) migrateVoice (v, *p);
+                bool used = false; for (auto& v : voices) if (v.active && v.patch == cur[t]) { used = true; break; }
+                if (! used) { retireNow (cur[t]); cur[t] = p; continue; }
+            }
             if (cur[t] != nullptr)
             {
                 bool placed = false;

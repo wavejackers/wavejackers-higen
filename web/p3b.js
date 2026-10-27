@@ -39,7 +39,7 @@ MB.ARR = {
 
 // ---- Tonalite bilgisi: Camelot kodu, uyumlu tonlar, gam notaları, MIDI anahtar imzası
 MB.keyInfo = function (key, scale) {
-  const off = { major: 0, minor: 3, dorian: 10, phrygian: 8, mixolydian: 5, harmonic: 3 }[scale];
+  const off = { major: 0, minor: 3, dorian: 10, phrygian: 8, mixolydian: 5, harmonic: 3, hijaz: 8 }[scale];
   const rp = (key + off) % 12;                         // ilişkili majör tonik
   const num = ((7 + (rp * 7) % 12) % 12) + 1;
   const letter = (scale === 'major' || scale === 'mixolydian') ? 'B' : 'A';
@@ -49,7 +49,7 @@ MB.keyInfo = function (key, scale) {
     cam: num + letter,
     compat: [down + letter, up + letter, num + other],
     sf: ((rp * 7 + 6) % 12) - 6,
-    mi: (scale === 'minor' || scale === 'harmonic') ? 1 : 0,
+    mi: (scale === 'minor' || scale === 'harmonic' || scale === 'hijaz') ? 1 : 0,
     notes: MB.SCALES[scale].iv.map(i => MB.NOTES[(key + i) % 12])
   };
 };

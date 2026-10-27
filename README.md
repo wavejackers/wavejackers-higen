@@ -1,4 +1,4 @@
-# Wavejackers HitGen 2.0
+# Wavejackers HitGen 2.2
 
 MIDI üretici ve synth eklentisi. VST3 (FL Studio, Ableton Live, Cubase, Reaper, Bitwig, Studio One), AU (Logic Pro, GarageBand) ve tek başına uygulama (Standalone) olarak çalışır.
 
@@ -6,7 +6,18 @@ MIDI üretici ve synth eklentisi. VST3 (FL Studio, Ableton Live, Cubase, Reaper,
 
 ## Neler yapar
 
-- **18 sanatçı ilhamlı stil** (DJ Mag Top 100 2026 analizine göre): Wavejackers, David Guetta, Martin Garrix, Anyma, Alok, Dimitri Vegas & Like Mike, Charlotte de Witte, Armin van Buuren, Timmy Trumpet, Fred again.., Carl Cox, Indira Paganotto, Mau P, Sara Landry, FISHER, Tiësto, Dom Dolla, Ummet Ozcan. Her stilin 4 varyasyonu var.
+- **23 sanatçı ilhamlı stil** (DJ Mag Top 100 2026 analizine göre): Wavejackers, David Guetta, Martin Garrix, Anyma, Alok, Dimitri Vegas & Like Mike, Charlotte de Witte, Armin van Buuren, Timmy Trumpet, Fred again.., Carl Cox, Indira Paganotto, Mau P, Sara Landry, FISHER, Tiësto, Dom Dolla, Ummet Ozcan, Solomun, Miss Monique, Mahmut Orhan, HUGEL, Black Coffee. Her stilin 4 varyasyonu var.
+  - 2.2'de eklenen stiller: Solomun (melodik house), Miss Monique (progressive melodik house), Mahmut Orhan (Hicaz makamlı oryantal deep house), HUGEL (latin/afro house: montuno piyano, tumbao bas, clave), Black Coffee (7'li akorlu soulful afro house). Her birine özel 3 imza ses var (toplam 16 yeni ses) ve yeni "Afro ve organik" grubu.
+- **Ses tasarımı sekmesi.** Akor, bas ve melodi için ayrı ayrı:
+  - 3 osilatör (testere, kare, üçgen, sinüs, wavetable; oktav, yarım ses, ince ayar, seviye), 12 wavetable ile A→B geçişi ve parlaklık, unison (7 sese kadar) ve açılım, sub ve gürültü.
+  - Filtre (alçak/yüksek/bant geçiren, 12/24 dB), kesim, rezonans, zarf miktarı/atak/düşüş, tuş takibi, filtre sürücüsü.
+  - Genlik zarfı (ADSR), 2 LFO (kesim, perde ya da ses; dört dalga biçimi, tempo kilidi).
+  - Efektler: doygunluk, chorus, delay, reverb, seviye.
+  - Dalga biçimi, filtre eğrisi ve zarf önizlemesi; ekran klavyesi (fare, bilgisayar klavyesi ya da MIDI klavye ile çalar).
+  - "Rastgele ses" role uygun sınırlar içinde yeni bir ses kurar, "Başlangıca dön" seçili sesi geri getirir.
+  - Toplam 153 ses tasarımı parametresi DAW'da otomasyona açıktır ve projeyle birlikte kaydedilir. Düğmeyi çevirdiğinde çalan notalar da anında değişir.
+- **Sanatçı presetleri.** "Presetlerim" sekmesinde kendi sanatçı adın ve bir preset adıyla kaydet. Preset; stili, tüm üretici ayarlarını, dört sesi ve ses tasarımını saklar. Yükle, sil, dosyaya aktar, dosyadan al. Presetler stil listesindeki "Presetlerim" grubunda da görünür. Bir preset yüklüyken MIDI dosya adlarında senin sanatçı adın kullanılır.
+  - Klasör: Windows `%APPDATA%\Wavejackers\HitGen\Presets`, macOS `~/Library/Wavejackers/HitGen/Presets`, Linux `~/.config/Wavejackers/HitGen/Presets`.
 - Akor, bas, davul ve melodi üretir. Üretim ayarlarla belirlenir: aynı tohum ve ayar her zaman aynı MIDI'yi verir. Web sürümüyle birebir aynı motoru kullanır.
 - **DAW tempo senkronu.** DAW çalınca eklenti desenini DAW'ın zamanıyla çalar. DAW durunca eklentideki Çal düğmesiyle önizleme yapılabilir.
 - **MIDI'yi sürükle bırak.** İz kutularını (Akor .mid, Bas .mid…, Döngü, Tam parça) doğrudan DAW'a sürükle. Kutunun üzerinde Enter'a basarak ya da tıklayarak dosyaya da kaydedebilirsin.
@@ -28,7 +39,7 @@ MIDI üretici ve synth eklentisi. VST3 (FL Studio, Ableton Live, Cubase, Reaper,
   - Tüm kontroller ekran okuyucu adı ve açıklaması taşır (Windows Narrator, NVDA, macOS VoiceOver).
   - Tam klavye gezinmesi ve görünür odak halkası vardır.
   - Yüksek kontrast teması, %75–200 arayüz boyutu ve piyano rulosunun metin özeti bulunur.
-  - Kısayollar: Boşluk çal/durdur, N yeni fikir, Ctrl/Cmd+S döngüyü kaydet.
+  - Kısayollar: Boşluk çal/durdur, N yeni fikir, Ctrl/Cmd+S döngüyü kaydet, Ctrl/Cmd+1/2/3 sekmeler.
 
 ## Kurulum
 
@@ -63,7 +74,8 @@ cmake --build build --config Release
 
 Testler:
 - `HitGenGenTest` çıktısı `tests/reference.txt` ile birebir aynı olmalı. 2160 kombinasyonda web motoruyla aynı MIDI baytlarını doğrular.
-- `HitGenStressTest` şunları dener: 18 stil × 3 kalite, rastgele otomasyon, 44.1/48/96 kHz, durum kaydet/yükle ve 6 dilde arayüz görüntüsü.
+- `HitGenGenTest` 23 stil için 2760 kombinasyonu denetler.
+- `HitGenStressTest` şunları dener: 23 stil × 3 kalite, ses tasarımı dahil rastgele otomasyon, 44.1/48/96 kHz, 114 sesin parametrelere açılıp birebir geri kurulması, tutulan notalarda canlı düğme çevirme, preset kaydet/yükle, eski proje uyumu, durum kaydet/yükle ve 6 dilde üç sekmenin ekran görüntüsü.
 
 `web/` klasörü tarayıcı sürümüdür (`web/build.sh` → `hitgen.html`). Stil, ses ve çeviri verisi buradan üretilir:
 `node tools/export-data.js web Resources/hitgen-data.json`
@@ -81,7 +93,9 @@ Testler:
 
 Wavejackers HitGen is a MIDI generator and synth plugin: VST3 (FL Studio, Ableton Live, Cubase, Reaper, Bitwig, Studio One), AU (Logic, GarageBand) and Standalone.
 
-- It has 18 artist-inspired styles with 4 variations each. Output is deterministic and matches the web version byte for byte.
+- It has 23 artist-inspired styles with 4 variations each, including Solomun, Miss Monique, Mahmut Orhan (Hijaz scale), HUGEL and Black Coffee. Output is deterministic and matches the web version byte for byte.
+- A full sound design tab for chords, bass and melody: 3 oscillators, 12 wavetables, unison, filter, envelope, 2 LFOs, effects, a preview and an on-screen keyboard. All 153 sound parameters can be automated.
+- Artist presets: save the whole setup under your own artist name; load, delete, export and import `.hgpreset` files.
 - It plays in sync with your DAW transport. You can also preview without the DAW.
 - You can drag MIDI tiles straight into your DAW, or press Enter on a tile to save the file.
 - The synth offers band-limited wavetables, SVF filters, sidechain pump, effects and a -1 dBFS limiter.
