@@ -5,6 +5,7 @@
 #include "Synth.h"
 #include "SoundParams.h"
 #include "Presets.h"
+#include "Import.h"
 
 // Ses iş parçacığının çaldığı desen: PPQ (çeyrek nota) cinsinden olaylar
 struct SeqEvent { double ppq = 0, len = 0; int track = 0, note = 0, vel = 0; };
@@ -46,8 +47,9 @@ public:
     void applyStyleDefaults();          // stil değişince ses, tempo ve pump ayarları
     void regenerateNow();
     void newIdea();
+    void suggestAlternative (int track);   // yalnızca o izin MIDI'sini başka bir fikirle değiştir
     juce::String lang = "en";
-    float uiScale = 1.0f; bool highContrast = false;
+    float uiScale = 1.0f; bool highContrast = false; bool animations = true;
     std::function<void()> onResultChanged;
     juce::File writeMidi (int which);
     // ---- ses tasarımı (part: 0 akor, 1 bas, 2 melodi)
@@ -61,6 +63,8 @@ public:
     juce::String userArtist, userPreset;       // yüklü/kaydedilmiş presetin sanatçı ve adı
     bool savePreset (const juce::String& artist, const juce::String& name, juce::String& fileOut);
     bool loadPreset (const juce::File& f);
+    // FXP/FXB/Serum 2 dosyasından ses al; part: 0 akor, 1 bas, 2 melodi, -1 = dosya adından tahmin et. Çeviri anahtarı döner.
+    juce::String importSynthFile (const juce::File& f, int part, hg::ImportedSound* info = nullptr);
     juce::ValueTree stateTree();
     void idle() { timerCallback(); }   // testler: mesaj iş parçacığı işlerini hemen yap   // 0..3 tek iz, 4 tüm izler (döngü), 5 tam parça; geçici klasöre yazar
     juce::MemoryBlock midiBytes (int which) const;

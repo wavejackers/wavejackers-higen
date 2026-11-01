@@ -33,7 +33,9 @@ private:
     juce::String lang = "en"; bool rtl = false; int part = 0;
     std::array<juce::TextButton, 3> partBtns;
     juce::ComboBox baseBox; juce::StringArray baseIds; juce::String shownBase;
-    juce::TextButton randBtn, resetBtn;
+    juce::TextButton randBtn, resetBtn, importBtn;
+    std::unique_ptr<juce::FileChooser> chooser; juce::int64 msgUntil = 0;
+    void doImport();
     juce::Label hint, kbdHint;
     std::map<int, std::unique_ptr<hgui::Knob>> knobs;
     std::map<int, std::unique_ptr<juce::ComboBox>> combos;

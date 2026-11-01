@@ -205,6 +205,76 @@ int main (int argc, char** argv)
         if (std::abs (c.apvts.getRawParameterValue ("sd_c_cut")->load() - vals[hg::cut]) > 1) fail ("old state sound design");
         std::cout << "presets ok: " << path << "\n";
     }
+    // 4d) içe aktarma: sentetik Serum 2 + FXP, bozuk veri çökmemeli
+    {
+        const juce::File fx (HITGEN_FIXTURES);
+        auto s2 = hg::importSoundFile (fx.getChildFile ("synthetic.SerumPreset"));
+        if (! s2.ok || ! s2.exact) fail ("serum2 import");
+        else
+        {
+            auto& x = s2.x;
+            if ((int) x[hg::uni] != 5 || x[hg::sub] < .39f || x[hg::sub] > .41f || x[hg::fxReverb] <= 0 || x[hg::fxDrive] <= 0) fail ("serum2 fields");
+            if (std::abs (x[hg::cut] - 631.0f) > 8 || (int) x[hg::fslope] != 1 || (int) x[hg::ftype] != 0) fail ("serum2 filter");
+            if (std::abs (x[hg::envA] - .4f) > .001f || std::abs (x[hg::envR] - .9f) > .001f) fail ("serum2 env");
+            if ((int) x[hg::o1w] != 1 || (int) x[hg::o2w] != 5 || (int) x[hg::o1oct] != -1) fail ("serum2 osc");
+            if (s2.name != "Synthetic Test Pad") fail ("serum2 name");
+        }
+        auto f1 = hg::importSoundFile (fx.getChildFile ("synthetic.fxp"));
+        if (! f1.ok || f1.exact || f1.name != "Synthetic Bass" || f1.part != 1 || f1.fallbackId != "ws-fat-roll") fail ("fxp import " + f1.name + " " + f1.fallbackId);
+        // fuzz: kesik ve bozulmuş baytlar
+        juce::MemoryBlock src; fx.getChildFile ("synthetic.SerumPreset").loadFileAsData (src);
+        juce::Random r (5); int accepted = 0;
+        for (int i = 0; i < 3000; ++i)
+        {
+            juce::MemoryBlock m (src);
+            if (i % 3 == 0) m.setSize (r.nextInt ((int) m.getSize()));
+            else for (int k = 0; k < 1 + r.nextInt (6); ++k) m[(size_t) r.nextInt ((int) m.getSize())] = (char) r.nextInt (256);
+            auto res = hg::importSoundBytes (m.getData(), m.getSize(), "x.SerumPreset");
+            if (res.ok) { ++accepted; for (float v : res.x) if (! std::isfinite (v)) fail ("import nan"); }
+        }
+        for (int i = 0; i < 500; ++i) { juce::MemoryBlock m ((size_t) r.nextInt (300)); for (size_t k = 0; k < m.getSize(); ++k) m[k] = (char) r.nextInt (256); hg::importSoundBytes (m.getData(), m.getSize(), "z.fxp"); }
+        // işlemciye uygula
+        HitGenProcessor p; p.regenerateNow();
+        if (p.importSynthFile (fx.getChildFile ("synthetic.SerumPreset"), -1, nullptr) != "impOk") fail ("apply serum2");
+        p.idle();
+        if (std::abs (p.apvts.getRawParameterValue ("sd_c_uni")->load() - 5.0f) > .01f) fail ("applied unison");
+        if (p.importSynthFile (fx.getChildFile ("synthetic.fxp"), -1, nullptr) != "impApprox" || p.soundId (hg::kBass) != "ws-fat-roll") fail ("apply fxp");
+        std::cout << "import ok (fuzz accepted " << accepted << "/3000)\n";
+    }
+    // 4e) "başka öner": yalnızca o iz değişir
+    {
+        HitGenProcessor p; p.regenerateNow(); auto base = p.result();
+        for (int t = 0; t < 4; ++t)
+        {
+            p.suggestAlternative (t); p.idle(); auto r = p.result();
+            for (int k = 0; k < 4; ++k)
+            {
+                bool same = r->tracks[(size_t) k].size() == base->tracks[(size_t) k].size();
+                for (size_t i = 0; same && i < r->tracks[(size_t) k].size(); ++i) same = r->tracks[(size_t) k][i].n == base->tracks[(size_t) k][i].n && r->tracks[(size_t) k][i].s == base->tracks[(size_t) k][i].s;
+                if (k == t && same) fail ("alt did not change track " + juce::String (t));
+                if (k != t && ! same && ! (t == 1 && k == 3)) fail ("alt changed other track " + juce::String (k) + " via " + juce::String (t));
+            }
+            for (auto* an : { "altC", "altB", "altD", "altM" }) if (auto* pr = p.apvts.getParameter (an)) pr->setValueNotifyingHost (0);
+            p.idle();
+        }
+        std::cout << "alternatives ok\n";
+    }
+    // 4f) güvenli seviye: en yüksek ayarlarda bile tepe -1 dBFS (0.891) altında
+    {
+        HitGenProcessor p; FakeHead head; head.playing = true; p.setPlayHead (&head);
+        p.setPlayConfigDetails (0, 2, 48000, 256); p.prepareToPlay (48000, 256);
+        for (auto* id : { "master", "vol_chords", "vol_bass", "vol_drums", "vol_melody" }) if (auto* pr = p.apvts.getParameter (id)) pr->setValueNotifyingHost (1.0f);
+        if (auto* pr = p.apvts.getParameter ("energy")) pr->setValueNotifyingHost (1.0f);
+        p.regenerateNow();
+        juce::AudioBuffer<float> buf (2, 256); juce::MidiBuffer midi; float pk = 0;
+        for (int blk = 0; blk < 48000 * 6 / 256; ++blk)
+        {
+            head.ppq = blk * 256.0 / 48000.0 * 2.1; buf.clear(); midi.clear(); p.processBlock (buf, midi);
+            pk = std::max ({ pk, buf.getMagnitude (0, 0, 256), buf.getMagnitude (1, 0, 256) });
+        }
+        std::cout << "max-setting peak " << pk << " (" << 20 * std::log10 (pk + 1e-9) << " dBFS)\n";
+        if (pk > .8914f) fail ("peak above -1 dBFS: " + juce::String (pk));
+    }
     // 5) editör: 6 dilde ekran görüntüsü
     {
         HitGenProcessor p; p.regenerateNow();

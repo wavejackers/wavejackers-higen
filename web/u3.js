@@ -11,7 +11,7 @@ const UI = {};
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const toast = m => { const e = $('toast'); if (e) e.textContent = m; const a = $('announce'); if (a) { a.textContent = ''; setTimeout(() => { a.textContent = m; }, 30); } };
   const store = { get: k => { try { return localStorage.getItem('hg-' + k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem('hg-' + k, v); } catch (e) {} } };
-  const st = { style: 'wavejackers', vi: 0, seed: 7, key: 9, scale: 'auto', bpm: 126, bars: 8, orig: 30, energy: 60, human: 20, pump: 100, swing: 0, sevenths: false, thick: 70, quality: 'bal', grp: 'all', fs: 1 };
+  const st = { style: 'wavejackers', vi: 0, seed: 7, key: 9, scale: 'auto', bpm: 126, bars: 8, orig: 30, energy: 60, human: 20, pump: 100, swing: 0, sevenths: false, thick: 70, alt: [0, 0, 0, 0], quality: 'bal', grp: 'all', fs: 1 };
   const snd = {}, manual = {}, patches = {}, muted = {};
   const rt = { ac: null, mx: null, playing: false, next: 0, nextT: 0, timer: 0, log: [], cur: null, opts: { muted, patches, pump: null, pumpAmt: 1, thick: .7, quality: 'bal' } };
   let res = null, cards = {}, theme = 'system';
@@ -158,9 +158,18 @@ const UI = {};
       }
     }
     // Eco modda analiz çizimleri yarı hızda, durunca hiç çizilmez
+    drawMeter();
     const live = rt.playing || (UI.liveUntil || 0) > performance.now();
     if ((live || fcount < 3) && (!eco || fcount % 2 === 0)) { drawSpecMini(); if (UI.onFrame) UI.onFrame(); }
     else if (!rt.playing && fcount % 30 === 0) drawSpecMini();
+  }
+  let mtV = 0, mtH = 0, mtBuf = null;
+  function drawMeter() {
+    const mt = $('mt'); if (!mt) return;
+    let pk = 0; const an = rt.mx && rt.mx.an;
+    if (an && rt.playing) { if (!mtBuf || mtBuf.length !== an.fftSize) mtBuf = new Float32Array(an.fftSize); an.getFloatTimeDomainData(mtBuf); for (let i = 0; i < mtBuf.length; i++) { const a = Math.abs(mtBuf[i]); if (a > pk) pk = a; } }
+    mtV = pk > mtV ? pk : mtV * .86; mtH = pk > mtH ? pk : Math.max(0, mtH - .012);
+    mt.style.width = Math.min(100, mtV / .891 * 100) + '%'; $('mh').style.left = 'calc(' + Math.min(100, mtH / .891 * 100) + '% - 2px)';
   }
   function drawSpecMini() {
     const c = $('specmini'); if (!c) return;
@@ -184,7 +193,7 @@ const UI = {};
   // ---------- Üretim
   function generate() {
     autoSounds(); fillSelects();
-    const P = { style: st.style, vi: st.vi, seed: st.seed, bars: st.bars, key: st.key, scale: st.scale === 'auto' ? undefined : st.scale, orig: st.orig, energy: st.energy, human: st.human, sevenths: st.sevenths, bpm: st.bpm, swing: st.swing, thick: st.thick };
+    const P = { style: st.style, vi: st.vi, seed: st.seed, bars: st.bars, key: st.key, scale: st.scale === 'auto' ? undefined : st.scale, orig: st.orig, energy: st.energy, human: st.human, sevenths: st.sevenths, bpm: st.bpm, swing: st.swing, thick: st.thick, alt: st.alt.slice() };
     let r;
     try { r = HG.generate(P); if (!r || !r.tracks.drums.length) throw new Error('empty'); }
     catch (e) { toast(T('genFail')); if (res) return; throw e; }
@@ -246,6 +255,7 @@ const UI = {};
   function setBeat() { document.documentElement.style.setProperty('--beat', (60 / st.bpm).toFixed(3) + 's'); }
 
   // ---------- İz kartları ve piyano roll
+  const rnd999 = () => Math.floor(Math.random() * 998);
   function buildCards() {
     const host = $('tracks'); host.innerHTML = '';
     KEYS.forEach(k => {
@@ -253,13 +263,14 @@ const UI = {};
       el.innerHTML = '<div class="th"><i aria-hidden="true"></i><b></b><span class="inf"></span>' +
         '<button type="button" class="btn sm" data-mute="' + k + '" aria-pressed="' + !!muted[k] + '"></button>' +
         '<span class="drag" draggable="true" data-drag="' + k + '" role="button" tabindex="0">⠿ .mid</span></div>' +
-        '<div class="sr"><select data-snd="' + k + '" id="snd-' + k + '"></select><button type="button" class="btn sm" data-aud="' + k + '"></button>' +
+        '<div class="sr"><select data-snd="' + k + '" id="snd-' + k + '"></select><button type="button" class="btn sm alt" data-alt="' + k + '"></button><button type="button" class="btn sm" data-aud="' + k + '"></button>' +
         (k === 'drums' ? '' : '<button type="button" class="btn sm" data-edit="' + k + '"></button>') + '</div>' +
         '<div class="wrap"><canvas class="roll" role="img" style="height:' + HEIGHT[k] + 'px"></canvas><div class="ph" aria-hidden="true"></div></div>';
       el.querySelector('b').textContent = T(k);
       const mb = el.querySelector('[data-mute]'); mb.textContent = muted[k] ? T('unmute') : T('mute'); mb.setAttribute('aria-label', (muted[k] ? T('unmute') : T('mute')) + ': ' + T(k));
       const dg = el.querySelector('[data-drag]'); dg.title = T('dragMid'); dg.setAttribute('aria-label', T('dragMid') + ': ' + T(k));
       el.querySelector('select').setAttribute('aria-label', T('soundOf', { t: T(k) }));
+      const al = el.querySelector('[data-alt]'); al.textContent = '↻ ' + T('pAlt'); al.title = T('pAltHint'); al.setAttribute('aria-label', T('pAlt') + ': ' + T(k));
       const ab = el.querySelector('[data-aud]'); ab.textContent = T('listen'); ab.setAttribute('aria-label', T('listen') + ': ' + T(k));
       const eb = el.querySelector('[data-edit]'); if (eb) { eb.textContent = T('design'); eb.setAttribute('aria-label', T('design') + ': ' + T(k)); }
       host.appendChild(el);
@@ -270,6 +281,10 @@ const UI = {};
       if (rt.mx && rt.mx.bus[k]) rt.mx.bus[k].gain.value = muted[k] ? 0 : 1;
     }));
     host.querySelectorAll('[data-aud]').forEach(b => b.addEventListener('click', () => audition(b.dataset.aud)));
+    host.querySelectorAll('[data-alt]').forEach(b => b.addEventListener('click', () => {
+      const i = KEYS.indexOf(b.dataset.alt); let n; do n = 1 + rnd999(); while (n === st.alt[i]);
+      st.alt[i] = n; generate(); b.classList.add('spin'); setTimeout(() => b.classList.remove('spin'), 600);
+    }));
     host.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => { UI.editTrack(b.dataset.edit); UI.tab('sound'); }));
     host.querySelectorAll('[data-snd]').forEach(s => s.addEventListener('change', () => { UI.assign(s.dataset.snd, s.value, true); audition(s.dataset.snd); }));
   }
@@ -377,9 +392,26 @@ const UI = {};
     $('sevenths').addEventListener('change', () => { st.sevenths = $('sevenths').checked; generate(); });
     $('bpm').addEventListener('change', () => { st.bpm = Math.max(60, Math.min(190, parseInt($('bpm').value, 10) || 120)); $('bpm').value = st.bpm; setBeat(); if (res) { res.P.bpm = st.bpm; rebuildMix(); } });
     $('seed').addEventListener('change', () => { st.seed = Math.max(1, Math.min(9999999, Math.abs(parseInt($('seed').value, 10)) || 1)); $('seed').value = st.seed; generate(); });
-    const newIdea = () => { st.seed = 1 + Math.floor(Math.random() * 99999); $('seed').value = st.seed; generate(); };
+    const rnd = n => Math.floor(Math.random() * n);
+    const setSl = (id, v) => { st[id] = v; $(id).value = v; $(id + 'v').textContent = v + '%'; };
+    // Fikir üret: tohum + varyasyon + (stile uygun) ton, makam, enerji, özgünlük, swing ve tempo birlikte değişir
+    const newIdea = () => {
+      const S = HG.STYLE[st.style] || {}, hop = [0, 7, 5, 3, -3, 2, -2];
+      st.alt = [0, 0, 0, 0];
+      st.vi = rnd(4); buildVars();
+      st.key = (((Math.random() < .45 && S.key != null ? S.key : st.key) + hop[rnd(7)]) % 12 + 12) % 12; $('key').value = st.key;
+      if (S.scales && S.scales.length) { st.scale = S.scales[rnd(S.scales.length)]; $('scale').value = st.scale; }
+      setSl('energy', 48 + rnd(42)); setSl('orig', 18 + rnd(46)); setSl('human', 10 + rnd(26));
+      setSl('swing', Math.max(0, Math.min(60, (S.swing || 0) + rnd(9) - 3)));
+      if (S.bpm) { st.bpm = S.bpm[0] + rnd(Math.max(1, S.bpm[1] - S.bpm[0] + 1)); $('bpm').value = st.bpm; setBeat(); }
+      st.seed = 1 + rnd(99999); $('seed').value = st.seed; generate();
+    };
+    UI.newIdea = newIdea;
     $('gen').addEventListener('click', newIdea);
     $('play').addEventListener('click', UI.toggle);
+    const setMotion = on => { document.documentElement.dataset.motion = on ? 'on' : 'off'; $('motion').classList.toggle('on', on); $('motion').setAttribute('aria-pressed', on); store.set('motion', on ? '1' : '0'); };
+    $('motion').addEventListener('click', () => setMotion($('motion').getAttribute('aria-pressed') !== 'true'));
+    setMotion(store.get('motion') !== '0' && !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches));
     $('quality').value = st.quality;
     $('quality').addEventListener('change', () => { st.quality = $('quality').value; store.set('quality', st.quality); rebuildMix(); });
     const setFs = v => { st.fs = Math.max(.85, Math.min(1.5, Math.round(v * 100) / 100)); document.documentElement.style.setProperty('--fs', st.fs); store.set('fs', st.fs); requestAnimationFrame(drawAll); };

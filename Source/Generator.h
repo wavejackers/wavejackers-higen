@@ -26,6 +26,7 @@ struct GenParams
     juce::String scale;            // boş = stil varsayılanı
     double orig = 30, energy = 60, human = 20, swing = 0, thick = 70;
     bool sevenths = false;
+    int alt[kNumTracks] = { 0, 0, 0, 0 };   // "başka öner": yalnızca o izin kendi tohumunu kaydırır (0 = değişiklik yok)
 };
 
 struct Result

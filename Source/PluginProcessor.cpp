@@ -3,7 +3,7 @@
 
 namespace
 {
-const char* const kGenParams[] = { "style", "variation", "seed", "key", "scale", "bars", "orig", "energy", "human", "swing", "thick", "sevenths" };
+const char* const kGenParams[] = { "altC", "altB", "altD", "altM", "style", "variation", "seed", "key", "scale", "bars", "orig", "energy", "human", "swing", "thick", "sevenths" };
 const char* const kPartIds[4] = { "chords", "bass", "drums", "melody" };
 const int kMidiCh[4] = { 1, 2, 10, 3 };
 juce::ParameterID pid (const juce::String& s) { return { s, 1 }; }
@@ -24,6 +24,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout HitGenProcessor::createLayou
     L.add (std::make_unique<AudioParameterChoice> (pid ("style"), "Style", styleNames (d), 0));
     L.add (std::make_unique<AudioParameterChoice> (pid ("variation"), "Variation", StringArray { "1", "2", "3", "4" }, 0));
     L.add (std::make_unique<AudioParameterInt> (pid ("seed"), "Seed", 1, 99999, 7));
+    for (auto* an : { "altC", "altB", "altD", "altM" }) L.add (std::make_unique<AudioParameterInt> (pid (an), String ("Alternative ") + an, 0, 999, 0));
     L.add (std::make_unique<AudioParameterChoice> (pid ("key"), "Key", d.noteNames, 9));
     StringArray sc { "auto" }; sc.addArray (d.scaleOrder);
     L.add (std::make_unique<AudioParameterChoice> (pid ("scale"), "Scale", sc, 0));
@@ -226,6 +227,7 @@ hg::GenParams HitGenProcessor::currentParams() const
     const int bi = (int) p ("bars")->load(); g.bars = bi == 0 ? 4 : bi == 2 ? 16 : 8;
     g.orig = p ("orig")->load(); g.energy = p ("energy")->load(); g.human = p ("human")->load(); g.swing = p ("swing")->load();
     g.thick = p ("thick")->load(); g.sevenths = p ("sevenths")->load() > .5f;
+    g.alt[0] = (int) p ("altC")->load(); g.alt[1] = (int) p ("altB")->load(); g.alt[2] = (int) p ("altD")->load(); g.alt[3] = (int) p ("altM")->load();
     const double hb = hostBpm.load(); g.bpm = hb > 0 ? (int) std::lround (hb) : (int) p ("bpm")->load();
     return g;
 }
@@ -239,9 +241,62 @@ void HitGenProcessor::regenerateNow()
     if (onResultChanged) onResultChanged();
 }
 
+juce::String HitGenProcessor::importSynthFile (const juce::File& f, int part, hg::ImportedSound* info)
+{
+    auto r = hg::importSoundFile (f);
+    if (info != nullptr) *info = r;
+    if (! r.ok) return "impFail";
+    const int pt = juce::jlimit (0, 2, part >= 0 ? part : r.part);
+    if (r.exact)
+    {
+        float vals[hg::kNumSp]; for (int i = 0; i < hg::kNumSp; ++i) vals[i] = r.x[(size_t) i];
+        writeSd (pt, vals);
+        sdDirty[(size_t) pt].store (true);       // yama yeni değerlerle kurulsun
+        return "impOk";
+    }
+    static const int trackOf[3] = { hg::kChords, hg::kBass, hg::kMelody };
+    if (data.soundIndex (r.fallbackId) >= 0) { setSound (trackOf[pt], r.fallbackId, true); return "impApprox"; }
+    return "impFail";
+}
+
 void HitGenProcessor::newIdea()
 {
-    if (auto* pr = apvts.getParameter ("seed")) pr->setValueNotifyingHost (pr->convertTo0to1 ((float) juce::Random::getSystemRandom().nextInt ({ 1, 99999 })));
+    // Fikir üret: tohum + varyasyon + (stile uygun) ton, makam, enerji, özgünlük, swing ve tempo birlikte değişir.
+    auto& rnd = juce::Random::getSystemRandom();
+    auto setP = [this] (const char* id, float plain) { if (auto* pr = apvts.getParameter (id)) pr->setValueNotifyingHost (pr->convertTo0to1 (plain)); };
+    const int si = juce::jlimit (0, data.numStyles() - 1, (int) p ("style")->load());
+    const auto& S = data.style (si);
+    for (auto* an : { "altC", "altB", "altD", "altM" }) setP (an, 0);
+    setP ("variation", (float) rnd.nextInt (4));
+    // ton: %45 stilin kendi tonu; aksi halde Camelot'ta komşu (±5/±7 yarım ses ya da paralel ton)
+    const int home = (int) S["key"], cur = (int) p ("key")->load();
+    static const int hop[] = { 0, 7, 5, 3, -3, 2, -2 };
+    const int base = rnd.nextFloat() < .45f ? home : cur;
+    setP ("key", (float) (((base + hop[rnd.nextInt (7)]) % 12 + 12) % 12));
+    if (auto* sc = S["scales"].getArray()) if (sc->size() > 0)
+    {
+        const int idx = data.scaleOrder.indexOf ((*sc)[rnd.nextInt (sc->size())].toString());
+        setP ("scale", idx >= 0 ? (float) (idx + 1) : 0.0f);
+    }
+    setP ("energy", 48.0f + (float) rnd.nextInt (42));
+    setP ("orig", 18.0f + (float) rnd.nextInt (46));
+    setP ("human", 10.0f + (float) rnd.nextInt (26));
+    setP ("swing", juce::jlimit (0.0f, 60.0f, (float) (double) S["swing"] + (float) rnd.nextInt (9) - 3.0f));
+    if (auto* bp = S["bpm"].getArray()) if (bp->size() == 2)
+        setP ("bpm", (float) ((int) (*bp)[0] + rnd.nextInt (juce::jmax (1, (int) (*bp)[1] - (int) (*bp)[0] + 1))));
+    setP ("seed", (float) rnd.nextInt ({ 1, 99999 }));
+}
+
+void HitGenProcessor::suggestAlternative (int track)
+{
+    static const char* ids[] = { "altC", "altB", "altD", "altM" };
+    if (track < 0 || track > 3) return;
+    if (auto* pr = apvts.getParameter (ids[track]))
+    {
+        const int cur = (int) p (ids[track])->load();
+        int nxt; do nxt = juce::Random::getSystemRandom().nextInt ({ 1, 999 }); while (nxt == cur);
+        pr->setValueNotifyingHost (pr->convertTo0to1 ((float) nxt));
+    }
 }
 
 void HitGenProcessor::pushPattern (const hg::Result& r)

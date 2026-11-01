@@ -40,6 +40,25 @@ int main (int argc, char** argv)
                         ++n;
                     }
     }
+    // "başka öner" değişkenleri
+    const int alts[5][4] = { { 3, 0, 0, 0 }, { 0, 5, 0, 0 }, { 0, 0, 11, 0 }, { 0, 0, 0, 17 }, { 3, 5, 11, 17 } };
+    for (int si = 0; si < D.numStyles(); ++si)
+    {
+        const auto& S = D.style (si);
+        for (int vi = 0; vi < 4; ++vi)
+            for (int ai = 0; ai < 5; ++ai)
+            {
+                hg::GenParams p;
+                p.style = S["id"].toString(); p.vi = vi; p.seed = 7; p.bars = 8; p.key = (int) S["key"];
+                p.orig = 30; p.energy = 60; p.human = 20; p.sevenths = false; p.thick = 70;
+                p.bpm = (int) S["bpmDef"]; p.swing = (double) S["swing"];
+                for (int k = 0; k < 4; ++k) p.alt[k] = alts[ai][k];
+                auto r = hg::generate (D, p);
+                auto a = hg::assemble (D, r);
+                std::cout << p.style << " alt" << ai << ' ' << vi << ' ' << fnv (hg::midiFile (D, r, all, false)) << ' ' << fnv (hg::midiFile (D, a, all, false)) << '\n';
+                ++n;
+            }
+    }
     std::cerr << n << " cases\n";
     return 0;
 }

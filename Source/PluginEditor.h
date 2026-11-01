@@ -48,7 +48,9 @@ private:
     juce::Slider seed; juce::Label seedLabel;
     juce::ComboBox langBox, qualityBox, sizeBox, keyBox, scaleBox, barsBox, keysToBox;
     juce::Label langLabel, qualityLabel, sizeLabel, keyLabel, scaleLabel, barsLabel, keysToLabel;
-    juce::ToggleButton contrastBtn, seventhsBtn, patternBtn, midiOutBtn;
+    juce::ToggleButton contrastBtn, motionBtn, seventhsBtn, patternBtn, midiOutBtn;
+    std::array<juce::TextButton, 4> altBtns;
+    float phase = 0.0f, meter = 0.0f, meterHold = 0.0f; int frame = 0;
     std::array<juce::TextButton, 8> groupBtns; std::array<juce::TextButton, 3> tabBtns; int tab = 0;
     juce::ListBox styleList; StyleModel styleModel { *this }; juce::Array<int> filtered; int group = 0;
     std::array<juce::TextButton, 4> varBtns;

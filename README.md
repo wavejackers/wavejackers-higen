@@ -1,4 +1,4 @@
-# Wavejackers HitGen 2.2
+# Wavejackers HitGen 2.3
 
 MIDI üretici ve synth eklentisi. VST3 (FL Studio, Ableton Live, Cubase, Reaper, Bitwig, Studio One), AU (Logic Pro, GarageBand) ve tek başına uygulama (Standalone) olarak çalışır.
 
@@ -8,6 +8,13 @@ MIDI üretici ve synth eklentisi. VST3 (FL Studio, Ableton Live, Cubase, Reaper,
 
 - **23 sanatçı ilhamlı stil** (DJ Mag Top 100 2026 analizine göre): Wavejackers, David Guetta, Martin Garrix, Anyma, Alok, Dimitri Vegas & Like Mike, Charlotte de Witte, Armin van Buuren, Timmy Trumpet, Fred again.., Carl Cox, Indira Paganotto, Mau P, Sara Landry, FISHER, Tiësto, Dom Dolla, Ummet Ozcan, Solomun, Miss Monique, Mahmut Orhan, HUGEL, Black Coffee. Her stilin 4 varyasyonu var.
   - 2.2'de eklenen stiller: Solomun (melodik house), Miss Monique (progressive melodik house), Mahmut Orhan (Hicaz makamlı oryantal deep house), HUGEL (latin/afro house: montuno piyano, tumbao bas, clave), Black Coffee (7'li akorlu soulful afro house). Her birine özel 3 imza ses var (toplam 16 yeni ses) ve yeni "Afro ve organik" grubu.
+- **2.3'te yeni:**
+  - **Animasyonlu, renkli arayüz** (eklenti ve web): akan renk bulutları, parlayan başlık, çalarken nabız atan Çal düğmesi, canlı çıkış seviyesi göstergesi. Kalite "Eco" ise ya da "Animasyon" kapalıysa hareket durur; web'de sistemin "hareketi azalt" ayarına uyar.
+  - **Başka öner.** Her izin (akor, bas, davul, melodi) yanındaki ↻ düğmesi yalnızca o izi farklı bir fikirle değiştirir, diğer üçü aynı kalır.
+  - **Yeni fikir** artık tohumla birlikte ton, makam, tempo, enerji, özgünlük, insan hissi, swing ve varyasyonu stile uygun sınırlarda birlikte değiştirir.
+  - **Studio ses bankası:** 14 yeni dolgun ses (Studio Super Chord vb.) ve ince kalan eski varsayılanların yerine geçen yoğun katmanlı sesler. Sanatçı stillerine özel ayarlar (Solomun, Miss Monique, Mahmut Orhan, HUGEL, Black Coffee).
+  - **Güvenli ses seviyesi:** çıkış her zaman -1 dBFS'in altında kalır (en yüksek ayarda ölçüldü: -1.002 dBFS). Web'de de aynı tavan var.
+  - **FXP / FXB / Serum yükleme (eklenti, Ses tasarımı sekmesi):** Serum 2 `.SerumPreset` dosyasındaki osilatör, filtre, zarf ve efekt ayarları okunup yaklaşık olarak aktarılır. Serum 1, Synth1 ve diğer VST2 `.fxp/.fxb` dosyalarının iç yapısı kapalıdır; bunlarda yalnızca ad ve kategoriden en yakın yerleşik ses seçilir. Yalnızca sahip olduğun dosyaları yükle. Ticari ses paketleri bu depoya dahil değildir.
 - **Ses tasarımı sekmesi.** Akor, bas ve melodi için ayrı ayrı:
   - 3 osilatör (testere, kare, üçgen, sinüs, wavetable; oktav, yarım ses, ince ayar, seviye), 12 wavetable ile A→B geçişi ve parlaklık, unison (7 sese kadar) ve açılım, sub ve gürültü.
   - Filtre (alçak/yüksek/bant geçiren, 12/24 dB), kesim, rezonans, zarf miktarı/atak/düşüş, tuş takibi, filtre sürücüsü.
@@ -95,6 +102,7 @@ Wavejackers HitGen is a MIDI generator and synth plugin: VST3 (FL Studio, Ableto
 
 - It has 23 artist-inspired styles with 4 variations each, including Solomun, Miss Monique, Mahmut Orhan (Hijaz scale), HUGEL and Black Coffee. Output is deterministic and matches the web version byte for byte.
 - A full sound design tab for chords, bass and melody: 3 oscillators, 12 wavetables, unison, filter, envelope, 2 LFOs, effects, a preview and an on-screen keyboard. All 153 sound parameters can be automated.
+- New in 2.3: animated, colourful UI (plugin and web, with an animations switch and reduced-motion support), a live output meter, a per-track "Another idea" button (↻) that replaces only that track, a richer "New idea", 14 full-bodied Studio sounds, a hard -1 dBFS output ceiling, and an FXP/FXB/Serum 2 importer in the plugin's sound design tab. Serum 2 presets are read approximately; closed VST2 formats (Serum 1, Synth1, ...) only pick the closest built-in sound. Load files you own; no commercial sound packs are included.
 - Artist presets: save the whole setup under your own artist name; load, delete, export and import `.hgpreset` files.
 - It plays in sync with your DAW transport. You can also preview without the DAW.
 - You can drag MIDI tiles straight into your DAW, or press Enter on a tile to save the file.

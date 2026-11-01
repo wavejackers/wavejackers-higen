@@ -216,8 +216,9 @@
     const lim = ac.createWaveShaper();                              // son güvenlik: yumuşak sınırlayıcı
     lim.curve = satCurve(0);
     master.gain.value = .42; comp.threshold.value = -16; comp.knee.value = 10; comp.ratio.value = 6; comp.attack.value = .003; comp.release.value = .16;
-    master.connect(comp); comp.connect(lim); lim.connect(dest);
-    const an = ac.createAnalyser ? ac.createAnalyser() : null; if (an) { an.fftSize = 2048; an.smoothingTimeConstant = .8; lim.connect(an); }
+    const ceil = ac.createGain(); ceil.gain.value = .891;            // tavan -1 dBFS: patlama yok
+    master.connect(comp); comp.connect(lim); lim.connect(ceil); ceil.connect(dest);
+    const an = ac.createAnalyser ? ac.createAnalyser() : null; if (an) { an.fftSize = 2048; an.smoothingTimeConstant = .8; ceil.connect(an); }
     ac.__bpm = P.bpm; ac.__q = o.quality || ac.__q || 'bal'; ac.__thick = o.thick == null ? (ac.__thick == null ? .7 : ac.__thick) : o.thick; if (!ac.__vc) ac.__vc = [];
 
     const rvIn = ac.createGain(), rv = ac.createConvolver(), rvOut = ac.createGain();
@@ -269,7 +270,7 @@
     }
     function dispose() {
       starts.forEach(l => { try { l.stop(); } catch (e) {} });
-      try { master.disconnect(); comp.disconnect(); lim.disconnect(); } catch (e) {}
+      try { master.disconnect(); comp.disconnect(); lim.disconnect(); ceil.disconnect(); } catch (e) {}
     }
     return { bus, master, schedule, dispose, an, ins, pg, preset, kit };
   };

@@ -29,6 +29,7 @@ SoundPage::SoundPage (HitGenProcessor& p, hgui::LookAndFeel& l)
     };
     addAndMakeVisible (randBtn); randBtn.onClick = [this] { proc.randomizeSound (part); };
     addAndMakeVisible (resetBtn); resetBtn.onClick = [this] { proc.resetSoundDesign (part); };
+    addAndMakeVisible (importBtn); importBtn.onClick = [this] { doImport(); };
     for (auto* lb : { &hint, &kbdHint }) { addAndMakeVisible (*lb); lb->setFont (lnf.font (12)); lb->setJustificationType (Justification::centredLeft); }
 
     for (int i = 0; i < kNumSp; ++i)
@@ -112,6 +113,7 @@ void SoundPage::setLanguage (const String& l, bool r)
     const String trackName = T (kPartKeys[part]);
     baseBox.setTitle (T ("baseSound") + ": " + trackName); baseBox.setTooltip (T ("baseSound"));
     randBtn.setButtonText (T ("rand")); randBtn.setTitle (T ("rand") + ": " + trackName);
+    importBtn.setButtonText (T ("pImport")); importBtn.setTooltip (T ("pImportHint")); importBtn.setTitle (T ("pImport") + ": " + trackName);
     resetBtn.setButtonText (T ("reset")); resetBtn.setTitle (T ("reset") + ": " + trackName);
     hint.setText (T ("sdHint2"), dontSendNotification); kbdHint.setText (T ("kbdHint"), dontSendNotification);
     for (auto* lb : { &hint, &kbdHint }) { lb->setJustificationType (rtl ? Justification::centredRight : Justification::centredLeft); lb->setColour (Label::textColourId, lnf.pal().mute); }
@@ -151,6 +153,7 @@ void SoundPage::tick()
     std::array<float, kNumSp> v {};
     for (int i = 0; i < kNumSp; ++i) v[(size_t) i] = proc.apvts.getRawParameterValue (spId (part, i))->load();
     if (v != scope.v) { scope.v = v; scope.repaint(); }
+    if (msgUntil != 0 && Time::currentTimeMillis() > msgUntil) { msgUntil = 0; hint.setText (T ("sdHint2"), dontSendNotification); }
     if (isShowing() && proc.auditionPart.load() != part) proc.auditionPart.store (part);
 }
 
@@ -158,7 +161,7 @@ void SoundPage::resized()
 {
     layoutList.clear(); titles.clear(); panels.clear();
     for (int i = 0; i < 3; ++i) place (partBtns[(size_t) i], { 16 + i * 104, 10, 100, 30 });
-    place (baseBox, { 340, 10, 300, 30 }); place (randBtn, { 652, 10, 150, 30 }); place (resetBtn, { 810, 10, 150, 30 });
+    place (baseBox, { 340, 10, 300, 30 }); place (randBtn, { 652, 10, 150, 30 }); place (resetBtn, { 810, 10, 100, 30 }); place (importBtn, { 916, 10, 232, 30 });
     place (hint, { 16, 44, 1132, 18 });
     auto K = [this] (int i, int x, int y, int w = 78, int h = 80) { if (knobs.count (i)) place (*knobs[i], { x, y, w, h }); };
     auto C = [this] (int i, int x, int y, int w, int h = 26) { if (combos.count (i)) place (*combos[i], { x, y, w, h }); };
@@ -310,4 +313,18 @@ void SoundPage::Scope::paint (Graphics& g)
         g.setColour (col.withAlpha (.18f)); Path fill (path); fill.lineTo (X (total), Y (0)); fill.closeSubPath(); g.fillPath (fill);
         g.setColour (col); g.strokePath (path, PathStrokeType (1.8f));
     }
+}
+
+void SoundPage::doImport()
+{
+    chooser = std::make_unique<FileChooser> (T ("pImport"), File::getSpecialLocation (File::userDocumentsDirectory), "*.fxp;*.fxb;*.SerumPreset;*.serumpreset");
+    chooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles, [this] (const FileChooser& fc)
+    {
+        const auto f = fc.getResult(); if (! f.existsAsFile()) return;
+        hg::ImportedSound info; const auto key = proc.importSynthFile (f, part, &info);
+        const int pt = info.ok ? jlimit (0, 2, part) : part;
+        auto msg = T (key).replace ("{n}", info.name.isNotEmpty() ? info.name : f.getFileNameWithoutExtension()).replace ("{f}", info.format).replace ("{p}", T (kPartKeys[pt])).replace ("{e}", info.error);
+        if (pt != part) { setPart (pt); partBtns[(size_t) pt].setToggleState (true, dontSendNotification); }
+        fillBase(); hint.setText (msg, dontSendNotification); msgUntil = Time::currentTimeMillis() + 9000; repaint();
+    });
 }

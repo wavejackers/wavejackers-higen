@@ -599,15 +599,16 @@ void Engine::render (juce::AudioBuffer<float>& out, int start, int num)
             juce::dsp::ProcessContextReplacing<float> ctx (blk); comp.process (ctx);
         }
         float pk = 0; bool bad = false;
+        const float preG = juce::jmax (1.0f, master), postG = juce::jmin (1.0f, master);
         for (int c = 0; c < (oR ? 2 : 1); ++c)
         {
             float* x = c == 0 ? oL : oR;
             for (int i = 0; i < n; ++i)
             {
                 // web DynamicsCompressor'daki otomatik makeup kazancına (~+6 dB) denk; sonra web'deki gibi yumuşak eğri
-                float y = sat (juce::jlimit (-1.0f, 1.0f, x[i] * 2.0f), 0) * .891f * master;   // tavan -1 dBFS
+                float y = sat (juce::jlimit (-1.0f, 1.0f, x[i] * 2.0f * preG), 0) * .891f * postG;   // >%100 master limiter'e sürer, tavan her zaman -1 dBFS
                 if (! std::isfinite (y)) { bad = true; y = 0; }
-                x[i] = juce::jlimit (-1.0f, 1.0f, y); pk = juce::jmax (pk, std::abs (x[i]));
+                x[i] = juce::jlimit (-.891f, .891f, y); pk = juce::jmax (pk, std::abs (x[i]));
             }
         }
         if (bad) reset();   // sayısal hata: tüm durumları sıfırla, sessizlikle devam et

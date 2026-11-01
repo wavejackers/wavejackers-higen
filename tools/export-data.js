@@ -2,7 +2,7 @@
 // Kullanım: node tools/export-data.js <web-kaynak-klasörü> Resources/hitgen-data.json
 const fs = require('fs'), path = require('path');
 const dir = process.argv[2], out = process.argv[3];
-const files = ['core.js', 'p3b.js', 'p4w.js', 's2.js', 's3.js', 'h-styles.js', 'h-styles2.js', 'h-gen.js', 'h-synth.js', 'h-synth2.js', 'i18n-ui.js', 'i18n-styles.js', 'p3t.js'];
+const files = ['core.js', 'p3b.js', 'p4w.js', 's2.js', 's3.js', 'h-styles.js', 'h-styles2.js', 'h-gen.js', 'h-synth.js', 'h-synth2.js', 'h-synth3.js', 'i18n-ui.js', 'i18n-styles.js', 'p3t.js'];
 const src = files.map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n');
 const data = new Function(src + `
   const wt = HG.WT.map(t => { const a = []; for (let n = 1; n <= 48; n++) a.push(+t.f(n).toFixed(6)); return a; });

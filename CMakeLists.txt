@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(WavejackersHitGen VERSION 2.2.0 LANGUAGES C CXX)
+project(WavejackersHitGen VERSION 2.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -55,12 +55,32 @@ juce_add_binary_data(HitGenData SOURCES
   Resources/fonts/NotoSansDevanagari-Bold.ttf)
 set_target_properties(HitGenData PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# zstd (yalnızca açma): Serum 2 presetleri zstd ile sıkıştırılır. -DHITGEN_ZSTD_DIR=<yol> ya da GitHub'dan v1.5.6
+set(HITGEN_ZSTD_DIR "" CACHE PATH "Local zstd checkout")
+if(NOT HITGEN_ZSTD_DIR)
+  include(FetchContent)
+  if(POLICY CMP0169)
+    cmake_policy(SET CMP0169 OLD)
+  endif()
+  FetchContent_Declare(zstd GIT_REPOSITORY https://github.com/facebook/zstd.git GIT_TAG v1.5.6 GIT_SHALLOW TRUE)
+  FetchContent_GetProperties(zstd)
+  if(NOT zstd_POPULATED)
+    FetchContent_Populate(zstd)
+  endif()
+  set(HITGEN_ZSTD_DIR ${zstd_SOURCE_DIR})
+endif()
+file(GLOB HITGEN_ZSTD_SRC ${HITGEN_ZSTD_DIR}/lib/common/*.c ${HITGEN_ZSTD_DIR}/lib/decompress/*.c)
+add_library(hg_zstd STATIC ${HITGEN_ZSTD_SRC})
+target_include_directories(hg_zstd PUBLIC ${HITGEN_ZSTD_DIR}/lib)
+target_compile_definitions(hg_zstd PRIVATE ZSTD_DISABLE_ASM=1 ZSTD_LEGACY_SUPPORT=0 DEBUGLEVEL=0)
+set_target_properties(hg_zstd PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 set(HITGEN_CORE_SOURCES Source/Data.cpp Source/Generator.cpp)
 set(HITGEN_DSP_SOURCES Source/Synth.cpp)
 
 target_sources(WavejackersHitGen PRIVATE
   ${HITGEN_CORE_SOURCES} ${HITGEN_DSP_SOURCES}
-  Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/Ui.cpp Source/SoundParams.cpp Source/Presets.cpp Source/SoundPage.cpp Source/PresetPage.cpp)
+  Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/Ui.cpp Source/SoundParams.cpp Source/Presets.cpp Source/SoundPage.cpp Source/PresetPage.cpp Source/Import.cpp)
 
 set(HITGEN_DEFS
   JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0
@@ -72,7 +92,7 @@ if(APPLE OR WIN32)
 endif()
 target_compile_definitions(WavejackersHitGen PUBLIC ${HITGEN_DEFS})
 target_link_libraries(WavejackersHitGen
-  PRIVATE HitGenData juce::juce_audio_utils juce::juce_dsp
+  PRIVATE HitGenData hg_zstd juce::juce_audio_utils juce::juce_dsp
   PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
 
 if(HITGEN_BUILD_TESTS)
@@ -85,7 +105,7 @@ if(HITGEN_BUILD_TESTS)
   # Kararlılık testi: işlemciyi doğrudan çalıştırır (rastgele parametre, durum kaydet/yükle, NaN, CPU ölçümü)
   juce_add_console_app(HitGenStressTest PRODUCT_NAME "HitGenStressTest")
   target_sources(HitGenStressTest PRIVATE tests/StressTest.cpp ${HITGEN_CORE_SOURCES} ${HITGEN_DSP_SOURCES}
-    Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/Ui.cpp Source/SoundParams.cpp Source/Presets.cpp Source/SoundPage.cpp Source/PresetPage.cpp)
-  target_compile_definitions(HitGenStressTest PRIVATE ${HITGEN_DEFS} JucePlugin_Build_Standalone=0 HITGEN_TEST_BUILD=1)
-  target_link_libraries(HitGenStressTest PRIVATE HitGenData juce::juce_audio_utils juce::juce_dsp PUBLIC juce::juce_recommended_config_flags)
+    Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/Ui.cpp Source/SoundParams.cpp Source/Presets.cpp Source/SoundPage.cpp Source/PresetPage.cpp Source/Import.cpp)
+  target_compile_definitions(HitGenStressTest PRIVATE ${HITGEN_DEFS} JucePlugin_Build_Standalone=0 HITGEN_TEST_BUILD=1 HITGEN_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+  target_link_libraries(HitGenStressTest PRIVATE HitGenData hg_zstd juce::juce_audio_utils juce::juce_dsp PUBLIC juce::juce_recommended_config_flags)
 endif()

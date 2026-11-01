@@ -39,6 +39,7 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
     for (int s : { 75, 100, 125, 150, 200 }) sizeBox.addItem (String (s) + "%", s);
     addC (sizeBox); sizeBox.onChange = [this] { proc.uiScale = sizeBox.getSelectedId() / 100.0f; setSize (roundToInt (kW * proc.uiScale), roundToInt (kH * proc.uiScale)); };
     addC (contrastBtn); contrastBtn.onClick = [this] { proc.highContrast = contrastBtn.getToggleState(); applyPalette(); };
+    addC (motionBtn); motionBtn.setToggleState (proc.animations, dontSendNotification); motionBtn.onClick = [this] { proc.animations = motionBtn.getToggleState(); content.repaint(); };
 
     for (int i = 0; i < 3; ++i)
     {
@@ -79,6 +80,7 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
         addC (trackLabels[(size_t) t]); trackLabels[(size_t) t].setFont (lnf.font (14, true)); trackLabels[(size_t) t].setColour (Label::textColourId, lnf.pal().track[t]);
         auto& m = muteBtns[(size_t) t]; addC (m); m.setClickingTogglesState (true);
         muteBa.push_back (std::make_unique<BA> (A, String ("mute_") + kPart[t], m));
+        auto& ab = altBtns[(size_t) t]; addC (ab); ab.setButtonText (juce::String (juce::CharPointer_UTF8 ("\xe2\x86\xbb"))); ab.onClick = [this, t] { proc.suggestAlternative (t); };
         auto& sb = soundBoxes[(size_t) t]; addC (sb);
         sb.onChange = [this, t] { const int i = soundBoxes[(size_t) t].getSelectedId() - 1; if (i >= 0 && i < soundIds[(size_t) t].size() && soundIds[(size_t) t][i] != proc.soundId (t)) { proc.setSound (t, soundIds[(size_t) t][i], true); shownSounds[(size_t) t] = soundIds[(size_t) t][i]; } };
         auto& tl = tiles[(size_t) t]; addC (tl); tl.palette = palFn; tl.font = fontFn; tl.colour = lnf.pal().track[t];
@@ -104,7 +106,7 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
     for (auto& b : groupBtns) genComps.push_back (&b);
     for (auto& b : varBtns) genComps.push_back (&b);
     for (auto& k : genKnobs) genComps.push_back (&k);
-    for (int t = 0; t < 4; ++t) { genComps.push_back (&trackLabels[(size_t) t]); genComps.push_back (&muteBtns[(size_t) t]); genComps.push_back (&soundBoxes[(size_t) t]); genComps.push_back (&tiles[(size_t) t]); }
+    for (int t = 0; t < 4; ++t) { genComps.push_back (&trackLabels[(size_t) t]); genComps.push_back (&muteBtns[(size_t) t]); genComps.push_back (&altBtns[(size_t) t]); genComps.push_back (&soundBoxes[(size_t) t]); genComps.push_back (&tiles[(size_t) t]); }
     for (auto& b : partBtns) genComps.push_back (&b);
     for (auto& k : partKnobs) genComps.push_back (&k);
     lang = proc.lang; rtl = data.isRtl (lang);
@@ -198,7 +200,7 @@ void HitGenEditor::relabel()
     };
     refill (qualityBox, { T ("pEco"), T ("pBal"), T ("pHigh") });
     sizeLabel.setText (T ("pUiSize"), dontSendNotification); sizeBox.setTitle (T ("pUiSize"));
-    contrastBtn.setButtonText (T ("pContrast"));
+    contrastBtn.setButtonText (T ("pContrast")); motionBtn.setButtonText (T ("pMotion"));
     for (int i = 0; i < 8; ++i) groupBtns[(size_t) i].setButtonText (T (kGroupKeys[i]));
     for (int i = 0; i < 3; ++i) { tabBtns[(size_t) i].setButtonText (T (kTabKeys[i])); tabBtns[(size_t) i].setTooltip ((juce::SystemStats::getOperatingSystemType() & juce::SystemStats::MacOSX) != 0 ? "Cmd+" + String (i + 1) : "Ctrl+" + String (i + 1)); }
     styleList.setTitle (T ("pStyleList"));
@@ -214,10 +216,11 @@ void HitGenEditor::relabel()
     refill (keysToBox, { T ("chords"), T ("bass"), T ("melody") });
     seventhsBtn.setButtonText (T ("sevenths")); patternBtn.setButtonText (T ("pPattern")); midiOutBtn.setButtonText (T ("pMidiOut"));
     patternBtn.setTooltip (T ("pFollow"));
-    for (auto* tb : { &contrastBtn, &seventhsBtn, &patternBtn, &midiOutBtn }) tb->getProperties().set ("rtl", rtl);
+    for (auto* tb : { &contrastBtn, &motionBtn, &seventhsBtn, &patternBtn, &midiOutBtn }) tb->getProperties().set ("rtl", rtl);
     for (int t = 0; t < 4; ++t)
     {
         trackLabels[(size_t) t].setText (T (kPart[t]), dontSendNotification); trackLabels[(size_t) t].setJustificationType (just);
+        altBtns[(size_t) t].setTooltip (T ("pAlt") + ": " + T (kPart[t]) + ". " + T ("pAltHint")); altBtns[(size_t) t].setTitle (T ("pAlt") + ": " + T (kPart[t])); altBtns[(size_t) t].setHelpText (T ("pAltHint"));
         muteBtns[(size_t) t].setButtonText (T ("mute")); muteBtns[(size_t) t].setTitle (T ("mute") + ": " + T (kPart[t]));
         soundBoxes[(size_t) t].setTitle (fill (T ("soundOf"), "t", T (kPart[t])));
         tiles[(size_t) t].label = T (kPart[t]) + " .mid"; tiles[(size_t) t].setTitle (T ("dragMid") + ": " + T (kPart[t]));
@@ -375,6 +378,18 @@ void HitGenEditor::refreshResult()
 
 void HitGenEditor::timerCallback()
 {
+    // animasyon: seviye göstergesi her zaman, arka plan hareketi kalite ayarına göre
+    {
+        const float pk = proc.engine.peakOut.exchange (0.0f);
+        meter = pk > meter ? pk : meter * 0.86f;
+        meterHold = pk > meterHold ? pk : jmax (0.0f, meterHold - 0.012f);
+        const int q = (int) proc.apvts.getRawParameterValue ("quality")->load();
+        const int every = q == 0 ? 0 : q == 1 ? 3 : 2;
+        ++frame;
+        if (proc.animations && every > 0) { phase += 0.035f * every; if (phase > 6283.0f) phase = 0; }
+        if ((proc.animations && every > 0 && frame % every == 0) || frame % 3 == 0) content.repaint (0, 0, kW, 100);
+        if (proc.animations && every > 0 && frame % (every * 2) == 0 && tab == 0) content.repaint();
+    }
     const bool hostPlay = proc.hostPlaying.load(), prev = proc.previewPlaying.load();
     roll.setPlayhead (proc.playPpq.load(), hostPlay || prev);
     chords.setCurrentBar (hostPlay || prev ? (int) (proc.playPpq.load() / 4.0) : -1);
@@ -416,7 +431,20 @@ void HitGenEditor::Content::paint (Graphics& g)
 {
     auto& ed = *owner; const auto& P = ed.lnf.pal();
     g.fillAll (P.bg);
-    g.setColour (P.panel);
+    if (ed.proc.animations && ! ed.proc.highContrast)
+    {
+        // akan renk bulutları: vurgu rengi ve iz renkleri etrafında dolanır
+        const float ph = ed.phase * .12f;
+        const Colour cs[3] = { P.accent, P.track[1], P.track[3] };
+        for (int i = 0; i < 3; ++i)
+        {
+            const float cx = kW * (.5f + .42f * std::sin (ph * (1.0f + .37f * i) + i * 2.1f));
+            const float cy = kH * (.5f + .40f * std::cos (ph * (.8f + .29f * i) + i * 1.3f));
+            ColourGradient cg (cs[i].withAlpha (.20f), cx, cy, cs[i].withAlpha (0.0f), cx + 430.0f, cy, true);
+            g.setGradientFill (cg); g.fillRect (0, 0, kW, kH);
+        }
+    }
+    g.setColour (P.panel.withAlpha (ed.proc.animations && ! ed.proc.highContrast ? .90f : 1.0f));
     if (ed.tab == 0)
         for (auto r : { Rectangle<float> (8, 98, 340, 654), Rectangle<float> (352, 98, 820, 386), Rectangle<float> (352, 488, 820, 264) })
             g.fillRoundedRectangle (ed.rtl ? r.withX (kW - r.getRight()) : r, 14);
@@ -427,6 +455,15 @@ void HitGenEditor::Content::paint (Graphics& g)
     const float x0 = ed.rtl ? kW - 20 - wa - GlyphArrangement::getStringWidth (f, b) : 20;
     g.setColour (P.ink); g.drawText (a, Rectangle<float> (x0, 10, wa + 10, 36), Justification::centredLeft);
     g.setColour (P.accent); g.drawText (b, Rectangle<float> (x0 + wa, 10, 200, 36), Justification::centredLeft);
+    // çıkış seviyesi: tavan -1 dBFS (0.891); tepe tutma çizgisi ile
+    {
+        Rectangle<float> m (262, 25, 250, 6); if (ed.rtl) m = m.withX (kW - 262 - m.getWidth());
+        g.setColour (P.line); g.fillRoundedRectangle (m, 2.5f);
+        const float lv = jlimit (0.0f, 1.0f, ed.meter / .891f), hv = jlimit (0.0f, 1.0f, ed.meterHold / .891f);
+        ColourGradient mg (P.track[1], m.getX(), 0, P.accent, m.getRight(), 0, false); mg.addColour (.82, P.track[3]);
+        g.setGradientFill (mg); g.fillRoundedRectangle (m.withWidth (jmax (2.0f, m.getWidth() * lv)), 2.5f);
+        g.setColour (P.ink); g.fillRect (m.getX() + m.getWidth() * hv - 1, m.getY() - 1, 2.0f, m.getHeight() + 2);
+    }
 }
 
 void HitGenEditor::layoutContent()
@@ -438,7 +475,7 @@ void HitGenEditor::layoutContent()
     place (seedLabel, { 822, 14, 60, 36 }); place (seed, { 880, 14, 130, 36 }); place (newBtn, { 1016, 14, 148, 36 });
     place (langLabel, { 540, 60, 70, 28 }); place (langBox, { 610, 60, 122, 28 });
     place (qualityLabel, { 738, 60, 92, 28 }); place (qualityBox, { 830, 60, 116, 28 });
-    place (sizeLabel, { 952, 60, 0, 28 }); place (sizeBox, { 952, 60, 84, 28 }); place (contrastBtn, { 1040, 60, 128, 28 });
+    place (sizeLabel, { 952, 60, 0, 28 }); place (sizeBox, { 952, 60, 84, 28 }); place (contrastBtn, { 1040, 60, 128, 28 }); place (motionBtn, { 262, 38, 170, 22 });
     for (int i = 0; i < 8; ++i) place (groupBtns[(size_t) i], { 16 + (i % 3) * 110, 106 + (i / 3) * 32, 104, 28 });
     place (styleList, { 16, 204, 324, 218 });
     place (varLabel, { 16, 428, 324, 18 });
@@ -451,7 +488,7 @@ void HitGenEditor::layoutContent()
     for (int t = 0; t < 4; ++t)
     {
         const int y0 = 158 + t * 80;
-        place (trackLabels[(size_t) t], { 362, y0 + 2, 120, 22 }); place (muteBtns[(size_t) t], { 486, y0 + 2, 102, 24 });
+        place (trackLabels[(size_t) t], { 362, y0 + 2, 84, 22 }); place (altBtns[(size_t) t], { 452, y0 + 1, 32, 26 }); place (muteBtns[(size_t) t], { 486, y0 + 2, 102, 24 });
         place (soundBoxes[(size_t) t], { 362, y0 + 28, 226, 24 }); place (tiles[(size_t) t], { 362, y0 + 54, 226, 22 });
     }
     place (roll, { 596, 158, 566, 320 });

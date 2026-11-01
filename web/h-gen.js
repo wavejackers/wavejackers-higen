@@ -51,12 +51,16 @@ HG.generate = function (P) {
   const eV = .8 + .2 * energy;
 
   // ---- akor izi
-  const rc = MB.rng(P.seed * 1297 + 3 + vi);
+  const rc = MB.rng(P.seed * 1297 + 3 + vi + (P.alt ? P.alt[0] | 0 : 0) * 50021);
   const cmode = V.cm || S.chord.mode;
   const cpKeys = V.cp ? [V.cp] : S.chord.pats, cpats = cpKeys.map(k => HG.CP[k]);
   const arpSeq = HG.ARP[S.chord.arp || 'trance'];
   for (let b = 0; b < bars; b++) {
-    const base = b * 16, ch = chords[b].midi;
+    const base = b * 16; let ch = chords[b].midi;
+    if (P.alt && (P.alt[0] | 0) !== 0) {   // "başka öner": her ölçüde farklı ters çevirme
+      const ra = MB.rng(P.seed * 17 + (P.alt[0] | 0) * 9973 + b * 131), inv = Math.floor(ra() * 3);
+      ch = ch.slice(); for (let k = 0; k < inv && ch.length; k++) { ch.push(ch[0] + 12); ch.shift(); }
+    }
     if (cmode === 'arp') {
       const ext = ch.concat(ch.map(n => n + 12));
       for (let s = 0; s < 16; s++) {
@@ -75,7 +79,7 @@ HG.generate = function (P) {
   }
 
   // ---- bas izi
-  const rb = MB.rng(P.seed * 3571 + 5 + vi);
+  const rb = MB.rng(P.seed * 3571 + 5 + vi + (P.alt ? P.alt[1] | 0 : 0) * 50021);
   const bpat = HG.BP[V.bp || S.bass.pats[0]];
   for (let b = 0; b < bars; b++) {
     const base = b * 16, c = chords[b]; let root = (S.bass.oct || 36) + c.pc; if (c.pc > 6) root -= 12;
@@ -89,7 +93,7 @@ HG.generate = function (P) {
   }
 
   // ---- davul izi
-  const rd = MB.rng(P.seed * 6151 + 9 + vi);
+  const rd = MB.rng(P.seed * 6151 + 9 + vi + (P.alt ? P.alt[2] | 0 : 0) * 50021);
   const D = Object.assign({}, S.drums, V.dr || {}), G = MB.GM;
   const lanes = [['kick', G.kick, 118], ['clap', G.clap, 100], ['snare', G.snare, 106], ['chat', G.chat, 80], ['ohat', G.ohat, 90], ['rim', G.rim, 70], ['perc', G.perc, 80]];
   for (let b = 0; b < bars; b++) {
@@ -113,7 +117,7 @@ HG.generate = function (P) {
   }
 
   // ---- melodi izi
-  const rm = MB.rng(P.seed * 104729 + 7 + vi * 5);
+  const rm = MB.rng(P.seed * 104729 + 7 + vi * 5 + (P.alt ? P.alt[3] | 0 : 0) * 50021);
   const mmode = V.mm || S.mel.mode, dens = clamp(S.mel.dens * (V.md == null ? 1 : V.md), .08, 1.4);
   const mbase = (S.mel.oct || 72) - 12 + key;
   const cTones = c => [c.d % 7, (c.d + 2) % 7, (c.d + 4) % 7];

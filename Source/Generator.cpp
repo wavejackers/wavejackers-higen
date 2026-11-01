@@ -139,7 +139,7 @@ Result generate (const Data& data, const GenParams& P)
     const double eV = .8 + .2 * energy;
 
     // ---- akor izi
-    Rng rc ((double) P.seed * 1297 + 3 + vi);
+    Rng rc ((double) P.seed * 1297 + 3 + vi + P.alt[kChords] * 50021);
     const juce::String cmode = orStr (V["cm"], S["chord"]["mode"].toString());
     std::vector<juce::String> cpKeys;
     if (has (V, "cp")) cpKeys.push_back (V["cp"].toString());
@@ -149,7 +149,13 @@ Result generate (const Data& data, const GenParams& P)
     auto arpSeq = intArray (data.root()["arp"][juce::Identifier (orStr (S["chord"]["arp"], "trance"))]);
     for (int b = 0; b < bars; ++b)
     {
-        const int base = b * 16; const auto& ch = R.chords[(size_t) b].midi;
+        const int base = b * 16; auto ch = R.chords[(size_t) b].midi;
+        if (P.alt[kChords] != 0)   // "başka öner": her ölçüde farklı ters çevirme (alt = 0 iken hiçbir şey değişmez)
+        {
+            Rng ra ((double) P.seed * 17 + (double) P.alt[kChords] * 9973 + (double) b * 131);
+            const int inv = (int) std::floor (ra() * 3);
+            for (int k = 0; k < inv && ! ch.empty(); ++k) { ch.push_back (ch.front() + 12); ch.erase (ch.begin()); }
+        }
         if (cmode == "arp")
         {
             std::vector<int> ext = ch; for (auto n : ch) ext.push_back (n + 12);
@@ -178,7 +184,7 @@ Result generate (const Data& data, const GenParams& P)
     }
 
     // ---- bas izi
-    Rng rb ((double) P.seed * 3571 + 5 + vi);
+    Rng rb ((double) P.seed * 3571 + 5 + vi + P.alt[kBass] * 50021);
     auto bpat = rows (data.root()["bp"][juce::Identifier (orStr (V["bp"], S["bass"]["pats"][0].toString()))]);
     const int boct = (int) orDef (S["bass"]["oct"], 36);
     for (int b = 0; b < bars; ++b)
@@ -197,7 +203,7 @@ Result generate (const Data& data, const GenParams& P)
     }
 
     // ---- davul izi
-    Rng rd ((double) P.seed * 6151 + 9 + vi);
+    Rng rd ((double) P.seed * 6151 + 9 + vi + P.alt[kDrums] * 50021);
     std::map<juce::String, juce::String> D;
     auto mergeDrums = [&] (const juce::var& o) { if (auto* obj = o.getDynamicObject()) for (auto& p : obj->getProperties()) D[p.name.toString()] = p.value.toString(); };
     mergeDrums (S["drums"]); mergeDrums (V["dr"]);
@@ -238,7 +244,7 @@ Result generate (const Data& data, const GenParams& P)
     }
 
     // ---- melodi izi
-    Rng rm ((double) P.seed * 104729 + 7 + vi * 5);
+    Rng rm ((double) P.seed * 104729 + 7 + vi * 5 + P.alt[kMelody] * 50021);
     const juce::var mel = S["mel"];
     const juce::String mmode = orStr (V["mm"], mel["mode"].toString());
     const double dens = clampT (num (mel["dens"]) * (has (V, "md") ? num (V["md"]) : 1.0), .08, 1.4);
