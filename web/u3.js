@@ -50,13 +50,19 @@ const UI = {};
   const isLight = () => document.documentElement.dataset.theme === 'light' || (!document.documentElement.dataset.theme && window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches);
   const lum = h => { const c = [1, 3, 5].map(i => parseInt(h.substr(i, 2), 16) / 255).map(v => v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4)); return .2126 * c[0] + .7152 * c[1] + .0722 * c[2]; };
   const shade = (hex, f) => '#' + [1, 3, 5].map(i => ('0' + Math.round(parseInt(hex.substr(i, 2), 16) * f).toString(16)).slice(-2)).join('');
+  // yumuşatma: doygunluğu ve parlaklığı düşür (göz yormayan, mat tonlar)
+  function soft(h) {
+    const n = parseInt(h.slice(1), 16); let r = n >> 16 & 255, g = n >> 8 & 255, b = n & 255; const m = (r + g + b) / 3;
+    const k = .62; r = m + (r - m) * k; g = m + (g - m) * k; b = m + (b - m) * k;
+    const t = x => Math.max(0, Math.min(255, Math.round(x * .9))).toString(16).padStart(2, '0'); return '#' + t(r) + t(g) + t(b);
+  }
   function applyAccent() {
     const S = HG.STYLE[st.style], r = document.documentElement.style;
-    let hex = S.accent, light = isLight();
+    let hex = soft(S.accent), light = isLight();
     if (light) { let f = .62; while (lum(shade(S.accent, f)) > .16 && f > .3) f -= .04; hex = shade(S.accent, f); }  // açık zeminde en az 4.5:1 kontrast
     r.setProperty('--accent', hex);
     r.setProperty('--accent-ink', lum(hex) > .32 ? '#05090a' : '#ffffff');
-    document.querySelectorAll('.sty').forEach(b => { const s = HG.STYLE[b.dataset.id]; b.style.setProperty('--sa', light ? shade(s.accent, .55) : s.accent); });
+    document.querySelectorAll('.sty').forEach(b => { const s = HG.STYLE[b.dataset.id]; b.style.setProperty('--sa', light ? shade(s.accent, .55) : soft(s.accent)); });
   }
   UI.applyAccent = applyAccent;
 
@@ -256,6 +262,35 @@ const UI = {};
 
   // ---------- İz kartları ve piyano roll
   const rnd999 = () => Math.floor(Math.random() * 998);
+
+  // ---------- Fikir kartları: aynı stilde 6 farklı fikir (ton, varyasyon, tohum, her izde farklı alternatif) önizle, birini seç
+  function makeIdeas() {
+    const S = HG.STYLE[st.style], hop = [0, 7, 5, 3, -3, 2, -2], host = $('idg'); host.innerHTML = '';
+    const base = Math.floor(Math.random() * 90000);
+    for (let n = 0; n < 6; n++) {
+      const o = { key: n === 0 ? st.key : (((S.key != null ? S.key : st.key) + hop[(n * 3 + base) % 7]) % 12 + 12) % 12, vi: (st.vi + n) % 4, seed: base + n * 7919 + 1, scale: S.scales[n % S.scales.length],
+        energy: 50 + (n * 13 + base) % 40, orig: 20 + (n * 11 + base) % 40, bpm: S.bpm[0] + (n * 5 + base) % Math.max(1, S.bpm[1] - S.bpm[0] + 1), alt: [0, 0, 0, 0] };
+      let r; try { r = HG.generate({ style: st.style, vi: o.vi, seed: o.seed, bars: st.bars, key: o.key, scale: o.scale, orig: o.orig, energy: o.energy, human: st.human, sevenths: st.sevenths, bpm: o.bpm, swing: st.swing, thick: st.thick, alt: o.alt }); } catch (e) { continue; }
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'idc';
+      const tx = HG.stxt(st.style), ki = MB.keyInfo(o.key, o.scale);
+      b.innerHTML = '<b></b><canvas></canvas><small></small>';
+      b.firstChild.textContent = MB.NOTES[o.key] + ' ' + T('scale_' + o.scale) + ' · ' + o.bpm;
+      b.lastChild.textContent = r.chords.slice(0, 4).map(c => c.name).join(' – ') + ' · ' + tx.vars[o.vi].n;
+      b.setAttribute('aria-label', b.firstChild.textContent + '. ' + b.lastChild.textContent);
+      const cv = b.querySelector('canvas'); cv.width = 320; cv.height = 68; const x = cv.getContext('2d'), len = r.bars * 16;
+      [['bass', '--c-bass', 24, 60], ['melody', '--c-melody', 48, 96], ['chords', '--c-chords', 36, 84]].forEach(([k, col, lo, hi]) => {
+        x.fillStyle = getComputedStyle(document.documentElement).getPropertyValue(col).trim() || '#999'; x.globalAlpha = .9;
+        r.tracks[k].forEach(e => { const px = e.s / len * 320, w = Math.max(2, e.l / len * 320 - 1), py = 66 - (Math.max(lo, Math.min(hi, e.n)) - lo) / (hi - lo) * 62; x.fillRect(px, py, w, 3); });
+      });
+      b.addEventListener('click', () => {
+        st.key = o.key; st.vi = o.vi; st.seed = o.seed; st.scale = o.scale; st.alt = [0, 0, 0, 0]; st.bpm = o.bpm; st.energy = o.energy; st.orig = o.orig;
+        $('key').value = st.key; $('scale').value = st.scale; $('seed').value = st.seed; $('bpm').value = st.bpm;
+        ['energy', 'orig'].forEach(id => { $(id).value = st[id]; $(id + 'v').textContent = st[id] + '%'; });
+        setBeat(); buildVars(); generate(); host.querySelectorAll('.idc').forEach(c => c.classList.toggle('cur', c === b));
+      });
+      host.appendChild(b);
+    }
+  }
   function buildCards() {
     const host = $('tracks'); host.innerHTML = '';
     KEYS.forEach(k => {
@@ -409,6 +444,7 @@ const UI = {};
     UI.newIdea = newIdea;
     $('gen').addEventListener('click', newIdea);
     $('play').addEventListener('click', UI.toggle);
+    $('idgo').addEventListener('click', makeIdeas);
     const setMotion = on => { document.documentElement.dataset.motion = on ? 'on' : 'off'; $('motion').classList.toggle('on', on); $('motion').setAttribute('aria-pressed', on); store.set('motion', on ? '1' : '0'); };
     $('motion').addEventListener('click', () => setMotion($('motion').getAttribute('aria-pressed') !== 'true'));
     setMotion(store.get('motion') !== '0' && !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches));

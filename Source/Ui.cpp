@@ -17,9 +17,9 @@ Palette Palette::make (bool hc, Colour accent)
     else
     {
         p.bg = Colour (0xff090b0e); p.panel = Colour (0xff11151a); p.panel2 = Colour (0xff171c23); p.ink = Colour (0xffeaf0f5); p.mute = Colour (0xff9aa5b1);
-        p.line = Colour (0xff2a3340); p.accent = accent; p.accentInk = accent.getPerceivedBrightness() > .55f ? Colour (0xff05090a) : Colours::white;
+        p.line = Colour (0xff2a3340); p.accent = accent.withMultipliedSaturation (.62f).withMultipliedBrightness (.9f); p.accentInk = p.accent.getPerceivedBrightness() > .55f ? Colour (0xff05090a) : Colours::white;
         p.grid = Colour (0xff1a2129); p.grid2 = Colour (0xff2e3946); p.focus = Colour (0xff9db4ff);
-        p.track[0] = Colour (0xff8f9bff); p.track[1] = Colour (0xff3fd9b8); p.track[2] = Colour (0xffff72a4); p.track[3] = Colour (0xfff5c04b);
+        p.track[0] = Colour (0xff8790cc); p.track[1] = Colour (0xff5db8a4); p.track[2] = Colour (0xffd17a93); p.track[3] = Colour (0xffcdae62);
     }
     return p;
 }

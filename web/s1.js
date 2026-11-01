@@ -18,6 +18,12 @@
     return (ac.__nb = b);
   }
   const curves = {};
+  let kneeC = null;
+  function kneeCurve() {
+    if (kneeC) return kneeC; const n = 2049; kneeC = new Float32Array(n);
+    for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1, a = Math.abs(x); kneeC[i] = a <= .5 ? x : Math.sign(x) * (.5 + .5 * Math.tanh((a - .5) / .5)); }
+    return kneeC;
+  }
   function satCurve(k) {
     const key = Math.round(k * 100);
     if (curves[key]) return curves[key];
@@ -214,10 +220,10 @@
     const P = res.P, spt = 60 / P.bpm / MB.PPQ, starts = [], KEYS = ['chords', 'bass', 'drums', 'melody'];
     const master = ac.createGain(), comp = ac.createDynamicsCompressor();
     const lim = ac.createWaveShaper();                              // son güvenlik: yumuşak sınırlayıcı
-    lim.curve = satCurve(0);
+    lim.curve = kneeCurve();                                        // 0.5'e kadar doğrusal: normal seviyede bozulma yok, üstü yumuşakça sıkışır
     master.gain.value = .42; comp.threshold.value = -16; comp.knee.value = 10; comp.ratio.value = 6; comp.attack.value = .003; comp.release.value = .16;
-    const ceil = ac.createGain(); ceil.gain.value = .891;            // tavan -1 dBFS: patlama yok
-    master.connect(comp); comp.connect(lim); lim.connect(ceil); ceil.connect(dest);
+    const mk = ac.createGain(); mk.gain.value = .75; const ceil = ac.createGain(); ceil.gain.value = .891;            // tavan -1 dBFS: patlama yok
+    master.connect(comp); comp.connect(mk); mk.connect(lim); lim.connect(ceil); ceil.connect(dest);
     const an = ac.createAnalyser ? ac.createAnalyser() : null; if (an) { an.fftSize = 2048; an.smoothingTimeConstant = .8; ceil.connect(an); }
     ac.__bpm = P.bpm; ac.__q = o.quality || ac.__q || 'bal'; ac.__thick = o.thick == null ? (ac.__thick == null ? .7 : ac.__thick) : o.thick; if (!ac.__vc) ac.__vc = [];
 
@@ -235,7 +241,7 @@
       if (k === 'drums') {
         let node = inG;
         if (kit.lp) { const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = kit.lp; inG.connect(lp); node = lp; }
-        node.connect(mg); send(kit.rv || .08, rvIn); ins[k] = inG; return;
+        node.connect(mg); ins[k] = inG; return;   // davulda reverb yok: kuru ve net
       }
       const p = preset[k] = (o.patches && o.patches[k]) || MB.byId[snd[k]] || MB.byId[MB.DEFAULTS.house[k === 'chords' ? 'pad' : k]];
       inG.gain.value = (k === 'chords' && p.r.indexOf('m') >= 0) ? .6 : 1;
@@ -270,7 +276,7 @@
     }
     function dispose() {
       starts.forEach(l => { try { l.stop(); } catch (e) {} });
-      try { master.disconnect(); comp.disconnect(); lim.disconnect(); ceil.disconnect(); } catch (e) {}
+      try { master.disconnect(); comp.disconnect(); mk.disconnect(); lim.disconnect(); ceil.disconnect(); } catch (e) {}
     }
     return { bus, master, schedule, dispose, an, ins, pg, preset, kit };
   };

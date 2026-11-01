@@ -4,8 +4,8 @@
 @property --accent{syntax:'<color>';inherits:true;initial-value:#2fd6c6}
 :root{
   --bg:#090b0e;--panel:#11151a;--panel2:#171c23;--ink:#eaf0f5;--mute:#8a96a4;--line:#242c37;--line2:#323c49;
-  --accent:#2fd6c6;--accent-ink:#04100f;--focus:#9db4ff;
-  --c-chords:#8f9bff;--c-bass:#3fd9b8;--c-drums:#ff72a4;--c-melody:#f5c04b;
+  --accent:#4fb3a8;--accent-ink:#04100f;--focus:#9db4ff;
+  --c-chords:#8790cc;--c-bass:#5db8a4;--c-drums:#d17a93;--c-melody:#cdae62;
   --roll:#0d1115;--grid:#1a2129;--grid2:#2a3440;
   --f-d:'Unbounded','Noto Sans Arabic','Noto Sans Devanagari','Arial Black',system-ui,sans-serif;--f-b:'Instrument Sans','Noto Sans Arabic','Noto Sans Devanagari',system-ui,-apple-system,'Segoe UI',sans-serif;--f-m:'Martian Mono','Noto Sans Arabic','Noto Sans Devanagari',ui-monospace,Menlo,Consolas,monospace;--fs:1;
   --beat:.476s;color-scheme:dark;transition:--accent .7s ease;
@@ -195,24 +195,24 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 /* 2.3: renkli, hareketli arayüz */
 body{background:var(--bg);position:relative;overflow-x:hidden}
 body::before{content:"";position:fixed;inset:-20%;z-index:-1;pointer-events:none;background:
- radial-gradient(38% 42% at 18% 22%,color-mix(in srgb,var(--accent) 30%,transparent),transparent 70%),
- radial-gradient(34% 40% at 82% 18%,color-mix(in srgb,var(--c-drums) 24%,transparent),transparent 70%),
- radial-gradient(40% 44% at 70% 86%,color-mix(in srgb,var(--c-chords) 26%,transparent),transparent 70%),
- radial-gradient(30% 36% at 22% 80%,color-mix(in srgb,var(--c-melody) 20%,transparent),transparent 70%);
- animation:aur 26s ease-in-out infinite alternate;filter:saturate(1.15)}
+ radial-gradient(38% 42% at 18% 22%,color-mix(in srgb,var(--accent) 13%,transparent),transparent 70%),
+ radial-gradient(34% 40% at 82% 18%,color-mix(in srgb,var(--c-drums) 10%,transparent),transparent 70%),
+ radial-gradient(40% 44% at 70% 86%,color-mix(in srgb,var(--c-chords) 11%,transparent),transparent 70%),
+ radial-gradient(30% 36% at 22% 80%,color-mix(in srgb,var(--c-melody) 8%,transparent),transparent 70%);
+ animation:aur 26s ease-in-out infinite alternate;filter:saturate(.9)}
 @keyframes aur{0%{transform:translate3d(-3%,-2%,0) rotate(0) scale(1)}50%{transform:translate3d(3%,2%,0) rotate(4deg) scale(1.08)}100%{transform:translate3d(-1%,3%,0) rotate(-3deg) scale(1.03)}}
 :root[data-motion="off"] body::before{animation:none}
 .path,.trk,.card,.mod{backdrop-filter:blur(10px) saturate(1.2);background-color:color-mix(in srgb,var(--panel) 82%,transparent)}
 .brand h1 i{background:linear-gradient(100deg,var(--accent),var(--c-chords),var(--c-drums),var(--accent));background-size:240% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shine 7s linear infinite}
 @keyframes shine{to{background-position:240% 0}}
 :root[data-motion="off"] .brand h1 i{animation:none;color:var(--accent);background:none}
-.btn.pri{background:linear-gradient(100deg,var(--accent),color-mix(in srgb,var(--accent) 55%,var(--c-chords)));box-shadow:0 0 18px color-mix(in srgb,var(--accent) 35%,transparent)}
+.btn.pri{background:linear-gradient(100deg,var(--accent),color-mix(in srgb,var(--accent) 55%,var(--c-chords)));box-shadow:0 0 12px color-mix(in srgb,var(--accent) 18%,transparent)}
 .btn.pri.playing,.btn.pri[aria-pressed=true]{animation:pulse 1.4s ease-in-out infinite}
-@keyframes pulse{50%{box-shadow:0 0 30px color-mix(in srgb,var(--accent) 70%,transparent)}}
+@keyframes pulse{50%{box-shadow:0 0 30px color-mix(in srgb,var(--accent) 38%,transparent)}}
 :root[data-motion="off"] .btn.pri{animation:none}
 .trk{border-left:3px solid var(--tc);transition:box-shadow .3s}
 .trk:hover{box-shadow:0 0 26px color-mix(in srgb,var(--tc) 25%,transparent)}
-.btn.alt{border-color:color-mix(in srgb,var(--tc,var(--accent)) 60%,var(--line2));color:var(--tc,var(--accent))}
+.btn.alt{white-space:nowrap;border-color:color-mix(in srgb,var(--tc,var(--accent)) 60%,var(--line2));color:var(--tc,var(--accent))}
 .btn.alt.spin{animation:spin .6s ease}
 @keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
 .meter{position:relative;width:150px;height:8px;border-radius:5px;background:var(--line);overflow:hidden;align-self:center}
@@ -220,6 +220,18 @@ body::before{content:"";position:fixed;inset:-20%;z-index:-1;pointer-events:none
 .meter b{position:absolute;top:0;bottom:0;left:0;width:2px;background:var(--ink)}
 .node:hover,.sty:hover{box-shadow:0 0 22px color-mix(in srgb,var(--tc,var(--accent)) 28%,transparent)}
 @media (prefers-reduced-motion: reduce){body::before,.brand h1 i,.btn.pri{animation:none!important}}
+
+/* fikir kartları */
+.ideas{border:1px solid var(--line);border-radius:16px;padding:12px 14px;background:color-mix(in srgb,var(--panel) 85%,transparent)}
+.idh{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.idg{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:10px;margin-top:10px}
+.idg:empty{display:none}
+.idc{border:1px solid var(--line2);border-radius:12px;padding:8px 10px;background:var(--panel2);text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:5px;min-width:0;transition:border-color .2s,transform .2s}
+.idc:hover{border-color:var(--accent);transform:translateY(-2px)}
+.idc b{font:700 .74rem var(--f-d);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.idc small{font:400 .64rem var(--f-m);color:var(--mute);line-height:1.35}
+.idc canvas{width:100%;height:34px;border-radius:6px;background:var(--roll)}
+.idc.cur{border-color:var(--accent)}
 </style>
 <body>
 <a class="skip" href="#main" data-i="skip">Skip to content</a>
@@ -286,6 +298,10 @@ body::before{content:"";position:fixed;inset:-20%;z-index:-1;pointer-events:none
           <p class="fine" data-i="shortcuts"></p>
         </section>
         <div class="col">
+          <section class="ideas" aria-labelledby="idlab">
+            <div class="idh"><b id="idlab" data-i="pIdeas">Idea cards</b><button class="btn sm" id="idgo" type="button" data-i="pIdeasGo">Show 6 ideas</button></div>
+            <div class="idg" id="idg"></div>
+          </section>
           <div class="prog" id="prog" role="list"></div>
           <div id="tracks" class="col"></div>
         </div>
@@ -669,6 +685,12 @@ MB.TNAME = { chords: 'Chords', bass: 'Bass', melody: 'Melody', drums: 'Drums' };
     return (ac.__nb = b);
   }
   const curves = {};
+  let kneeC = null;
+  function kneeCurve() {
+    if (kneeC) return kneeC; const n = 2049; kneeC = new Float32Array(n);
+    for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1, a = Math.abs(x); kneeC[i] = a <= .5 ? x : Math.sign(x) * (.5 + .5 * Math.tanh((a - .5) / .5)); }
+    return kneeC;
+  }
   function satCurve(k) {
     const key = Math.round(k * 100);
     if (curves[key]) return curves[key];
@@ -865,10 +887,10 @@ MB.TNAME = { chords: 'Chords', bass: 'Bass', melody: 'Melody', drums: 'Drums' };
     const P = res.P, spt = 60 / P.bpm / MB.PPQ, starts = [], KEYS = ['chords', 'bass', 'drums', 'melody'];
     const master = ac.createGain(), comp = ac.createDynamicsCompressor();
     const lim = ac.createWaveShaper();                              // son güvenlik: yumuşak sınırlayıcı
-    lim.curve = satCurve(0);
+    lim.curve = kneeCurve();                                        // 0.5'e kadar doğrusal: normal seviyede bozulma yok, üstü yumuşakça sıkışır
     master.gain.value = .42; comp.threshold.value = -16; comp.knee.value = 10; comp.ratio.value = 6; comp.attack.value = .003; comp.release.value = .16;
-    const ceil = ac.createGain(); ceil.gain.value = .891;            // tavan -1 dBFS: patlama yok
-    master.connect(comp); comp.connect(lim); lim.connect(ceil); ceil.connect(dest);
+    const mk = ac.createGain(); mk.gain.value = .75; const ceil = ac.createGain(); ceil.gain.value = .891;            // tavan -1 dBFS: patlama yok
+    master.connect(comp); comp.connect(mk); mk.connect(lim); lim.connect(ceil); ceil.connect(dest);
     const an = ac.createAnalyser ? ac.createAnalyser() : null; if (an) { an.fftSize = 2048; an.smoothingTimeConstant = .8; ceil.connect(an); }
     ac.__bpm = P.bpm; ac.__q = o.quality || ac.__q || 'bal'; ac.__thick = o.thick == null ? (ac.__thick == null ? .7 : ac.__thick) : o.thick; if (!ac.__vc) ac.__vc = [];
 
@@ -886,7 +908,7 @@ MB.TNAME = { chords: 'Chords', bass: 'Bass', melody: 'Melody', drums: 'Drums' };
       if (k === 'drums') {
         let node = inG;
         if (kit.lp) { const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = kit.lp; inG.connect(lp); node = lp; }
-        node.connect(mg); send(kit.rv || .08, rvIn); ins[k] = inG; return;
+        node.connect(mg); ins[k] = inG; return;   // davulda reverb yok: kuru ve net
       }
       const p = preset[k] = (o.patches && o.patches[k]) || MB.byId[snd[k]] || MB.byId[MB.DEFAULTS.house[k === 'chords' ? 'pad' : k]];
       inG.gain.value = (k === 'chords' && p.r.indexOf('m') >= 0) ? .6 : 1;
@@ -921,7 +943,7 @@ MB.TNAME = { chords: 'Chords', bass: 'Bass', melody: 'Melody', drums: 'Drums' };
     }
     function dispose() {
       starts.forEach(l => { try { l.stop(); } catch (e) {} });
-      try { master.disconnect(); comp.disconnect(); lim.disconnect(); ceil.disconnect(); } catch (e) {}
+      try { master.disconnect(); comp.disconnect(); mk.disconnect(); lim.disconnect(); ceil.disconnect(); } catch (e) {}
     }
     return { bus, master, schedule, dispose, an, ins, pg, preset, kit };
   };
@@ -1787,6 +1809,68 @@ HG.normalizePatch = function (p) {
   HG.SIG = /^(wj|gt|ar|dd|mp|dv|cw|cc|mg|an|al|tt|fa|fi|ip|sl|so|mm|mo|hu|bc|ws)-/;
   Object.assign(HG.EN, { 'ws-sub-heavy': 'Studio Sub Heavy', 'ws-fat-roll': 'Studio Fat Roll', 'ws-reese-wide': 'Studio Reese', 'ws-deep-warm-bass': 'Studio Warm Deep Bass', 'ws-super-chord': 'Studio Super Chord', 'ws-lush-pad': 'Studio Lush Pad', 'ws-warm-stack': 'Studio Warm Stack', 'ws-rave-organ': 'Studio Rave Organ', 'ws-dark-wall': 'Studio Dark Wall', 'ws-anthem-lead': 'Studio Anthem Lead', 'ws-silk-lead': 'Studio Silk Lead', 'ws-wide-pluck': 'Studio Wide Pluck', 'ws-grand-warm': 'Studio Warm Piano', 'ws-brass-hit': 'Studio Brass Hit' });
 })();
+// ---- Wavejackers Artist Voices (2.3.1): her sanatçı için ayrı akor, bas ve lead. Özgün sentez; hiçbir ticari preset ya da örnek kullanılmaz.
+(function () {
+  const add = MB.add, S = HG.STYLE, EN = {};
+  const v = (id, tr, en, cat, role, g, p) => { add(id, tr, cat, role, g, p); EN[id] = en; };
+  // --- Akorlar ve padler
+  v('gu-pop-stab', 'Pop Anthem Stab', 'Pop Anthem Stab', 'Stab', 'c', 'house main', { u: [7, 22], o: [['w', 0, 0, .55], ['q', 0, 0, .25]], f: ['lowpass', 5200, 1, 1.4, 0, .22], a: [.004, .3, .35, .22], ch: .4, rv: .18, dl: .12, vol: .2 });
+  v('ti-fest-chord', 'Festival Chord', 'Festival Chord', 'Stab', 'c', 'main trance', { u: [7, 28], o: [['w', 0, 0, .6], ['w', 0, 1, .2]], f: ['lowpass', 4200, 1.2, 2, 0, .3], a: [.006, .4, .6, .35], ch: .5, rv: .3, dl: .18, vol: .2 });
+  v('ar-uplift-pad', 'Uplifting Süper Pad', 'Uplifting Super Pad', 'Pad', 'c', 'trance', { u: [7, 34], o: [['w', 0, 0, .55], ['w', 0, -1, .35]], f: ['lowpass', 3000, 1, 2.4, 0, .9], a: [.25, .6, .8, 1.1], ch: .55, rv: .5, vol: .19 });
+  v('dd-funk-stab', 'Funk House Stab', 'Funk House Stab', 'Stab', 'c', 'house', { o: [['q', 0, 0, .5], ['w', 0, 0, .35]], f: ['lowpass', 2200, 2.5, 3.2, 0, .1], a: [.002, .14, 0, .08], ch: .15, dl: .22, rv: .12, vol: .22 });
+  v('mp-minimal-stab', 'Minimal Kısa Stab', 'Minimal Short Stab', 'Stab', 'c', 'house techno', { o: [['q', 0, 0, .6], ['t', 0, -1, .3]], f: ['lowpass', 1500, 3, 2.6, 0, .09], a: [.001, .1, 0, .05], dl: .3, rv: .1, vol: .22 });
+  v('dv-rave-chord', 'Big Room Rave Chord', 'Big Room Rave Chord', 'Stab', 'c', 'main hard', { u: [5, 30], o: [['w', 0, 0, .5], ['q', 0, 0, .4]], f: ['lowpass', 3800, 2, 2.8, 0, .16], a: [.002, .22, .1, .12], fd: .35, ch: .3, rv: .15, vol: .19 });
+  v('um-electro-chord', 'Elektro Chord', 'Electro Chord', 'Stab', 'c', 'main techno', { u: [4, 16], o: [['q', 0, 0, .5], ['w', 0, 0, .4]], f: ['lowpass', 2600, 3, 3, 0, .12], a: [.002, .18, 0, .1], fd: .3, dl: .2, rv: .14, vol: .2 });
+  v('cw-dark-chord', 'Karanlık Chord', 'Dark Chord', 'Stab', 'c', 'techno', { u: [3, 10], o: [['w', 0, 0, .5], ['w', 0, -1, .5]], f: ['lowpass', 900, 3.5, 2.6, 0, .35], a: [.004, .4, .2, .3], dr: .2, rv: .35, dl: .28, vol: .21 });
+  v('al-brazil-chord', 'Brazilian Pluck Chord', 'Brazilian Pluck Chord', 'Keys', 'c', 'house afro', { fm: [1, 1.5, .35, .12], f: ['lowpass', 5600, .6, 0, 0, .3], a: [.002, .5, .15, .3], ch: .3, rv: .22, dl: .15, vol: .21 });
+  v('tt-psy-stab', 'Psy Offbeat Stab', 'Psy Offbeat Stab', 'Stab', 'c', 'trance psy', { u: [3, 14], o: [['w', 0, 0, .6], ['q', 0, 0, .3]], f: ['lowpass', 1800, 5, 3.4, 0, .1], a: [.001, .12, 0, .06], dl: .35, rv: .14, vol: .21 });
+  v('fa-uk-keys', 'UK Duygusal Piyano', 'UK Emotional Keys', 'Keys', 'c', 'house deep', { fm: [1, .8, .5, .1], o: [['t', 0, 0, .4]], f: ['lowpass', 3800, .5, 0, 0, .3], a: [.003, .9, .2, .5], ch: .35, rv: .45, vol: .2 });
+  v('fi-house-organ', 'Tech House Org', 'Tech House Organ', 'Keys', 'c', 'house', { o: [['s', 0, 0, .8], ['s', 0, 1, .5], ['s', 0, 1.58, .3], ['q', 0, 0, .15]], f: ['lowpass', 4200, .8, .6, 0, .2], a: [.004, .12, .4, .1], dl: .2, rv: .1, vol: .2 });
+  v('ip-psy-chord', 'Psy Karanlık Chord', 'Dark Psy Chord', 'Stab', 'c', 'techno psy', { u: [4, 18], o: [['w', 0, 0, .55], ['w', 0, 1, .3]], f: ['lowpass', 1300, 4, 3, 0, .2], a: [.003, .3, .1, .2], lfo: 0, dl: .4, rv: .3, vol: .2 });
+  v('sl-hard-stab', 'Hard Techno Stab', 'Hard Techno Stab', 'Stab', 'c', 'hard', { u: [3, 12], o: [['q', 0, 0, .6], ['w', 0, 0, .4]], f: ['lowpass', 2000, 4, 3.6, 0, .08], a: [.001, .1, 0, .05], fd: .6, dr: .35, rv: .08, vol: .2 });
+  v('mq-prog-pad', 'Progressive Pad', 'Progressive Pad', 'Pad', 'c', 'house deep', { u: [5, 20], o: [['w', 0, 0, .45], ['t', 0, -1, .4]], f: ['lowpass', 2200, 1, 1.8, 0, 1.4], a: [.4, .8, .8, 1.4], l: [[.1, .25, 'cut', 'sine']], ch: .5, rv: .55, vol: .19 });
+  // --- Basslar
+  v('wj-roll-bass', 'Wavejackers Roll', 'Wavejackers Roll', 'Bas', 'b', 'techno main', { o: [['w', 0, 0, .65], ['s', 0, -1, .9]], sub: .3, f: ['lowpass', 330, 2.5, 3, 0, .12, 1], a: [.002, .14, .6, .07], dr: .2, vol: .2 });
+  v('gu-pump-bass', 'Pump Sub', 'Pump Sub', 'Bas', 'b', 'house main', { o: [['s', 0, -1, 1], ['q', 0, 0, .2]], sub: .4, f: ['lowpass', 240, 1, 1.6, 0, .1, 1], a: [.003, .18, .75, .1], dr: .15, vol: .2 });
+  v('ti-trance-bass', 'Trance Rolling Bas', 'Trance Rolling Bass', 'Bas', 'b', 'trance main', { o: [['w', 0, 0, .7], ['s', 0, -1, .8]], f: ['lowpass', 460, 3.5, 2.8, 0, .09, 1], a: [.001, .09, .5, .05], dr: .2, vol: .2 });
+  v('ar-rolling-16', 'Armin Rolling 16', 'Rolling 16th Bass', 'Bas', 'b', 'trance', { o: [['w', 0, 0, .75], ['q', -5, 0, .25], ['s', 0, -1, .7]], f: ['lowpass', 520, 3, 2.4, 0, .08, 1], a: [.001, .07, .45, .04], dr: .15, vol: .2 });
+  v('dd-funk-bass', 'Funk Bas', 'Funk Bass', 'Bas', 'b', 'house', { o: [['q', 0, 0, .8], ['s', 0, -1, .5]], f: ['lowpass', 700, 3, 3.6, 0, .09, 1], a: [.001, .16, .15, .06], dr: .3, vol: .21 });
+  v('mp-rubber-bass', 'Rubber Bas', 'Rubber Bass', 'Bas', 'b', 'house techno', { o: [['t', 0, 0, .8], ['s', 0, -1, .6]], f: ['lowpass', 420, 4, 3.2, 0, .1, 1], a: [.001, .12, .2, .05], dr: .25, vol: .21 });
+  v('dv-bigroom-bass', 'Big Room Bas', 'Big Room Bass', 'Bas', 'b', 'main hard', { o: [['w', 0, 0, .7], ['q', 0, -1, .5]], sub: .3, f: ['lowpass', 600, 2, 3, 0, .15, 1], a: [.002, .2, .5, .08], fd: .5, dr: .35, vol: .19 });
+  v('um-electro-bass', 'Elektro Bas', 'Electro Bass', 'Bas', 'b', 'main techno', { o: [['w', 0, 0, .8], ['s', 0, -1, .5]], f: ['lowpass', 520, 4, 3.8, 0, .07, 1], a: [.001, .1, .35, .05], fd: .4, dr: .3, vol: .2 });
+  v('cw-rolling-dark', 'Karanlık Rolling', 'Dark Rolling Bass', 'Bas', 'b', 'techno', { o: [['w', 0, 0, .7], ['s', 0, -1, .85]], f: ['lowpass', 280, 3.5, 2.4, 0, .08, 1], a: [.001, .08, .55, .05], dr: .3, vol: .2 });
+  v('mg-prog-bass', 'Progressive Big Bas', 'Progressive Big Bass', 'Bas', 'b', 'main', { o: [['w', 0, 0, .6], ['w', -6, 0, .4], ['s', 0, -1, .8]], f: ['lowpass', 500, 1.8, 2.6, 0, .2, 1], a: [.003, .2, .7, .12], dr: .15, vol: .2 });
+  v('an-cine-bass', 'Sinematik Sub', 'Cinematic Sub', 'Bas', 'b', 'mtechno', { o: [['s', 0, -1, 1], ['w', 0, 0, .3]], sub: .45, f: ['lowpass', 220, 1.2, 1.8, 0, .4, 1], a: [.01, .3, .8, .4], l: [[.07, .2, 'cut', 'sine']], dr: .1, vol: .2 });
+  v('al-slap-bass', 'Slap Bas', 'Slap Bass', 'Bas', 'b', 'house afro', { o: [['q', 0, 0, .7], ['t', 0, -1, .6]], f: ['lowpass', 900, 2, 4, 0, .06, 1], a: [.001, .12, .08, .05], dr: .25, vol: .21 });
+  v('tt-psy-bass', 'Psy Bas', 'Psy Bass', 'Bas', 'b', 'trance psy', { o: [['w', 0, 0, .8], ['s', 0, -1, .6]], f: ['lowpass', 380, 5, 3.4, 0, .06, 1], a: [.001, .06, .4, .03], dr: .2, vol: .2 });
+  v('fa-garage-sub', 'UK Garage Sub', 'UK Garage Sub', 'Bas', 'b', 'house deep', { o: [['s', 0, -1, 1], ['t', 0, 0, .3]], sub: .35, f: ['lowpass', 300, 1, 2, 0, .14, 1], a: [.002, .24, .5, .1], dr: .12, vol: .2 });
+  v('fi-tech-bass', 'Tech House Bas', 'Tech House Bass', 'Bas', 'b', 'house', { o: [['q', 0, 0, .65], ['s', 0, -1, .8]], f: ['lowpass', 380, 3, 3, 0, .09, 1], a: [.001, .11, .3, .05], dr: .22, vol: .2 });
+  v('ip-psy-roll', 'Psy Roll', 'Psy Roll', 'Bas', 'b', 'techno psy', { o: [['w', 0, 0, .75], ['s', 0, -1, .65]], f: ['lowpass', 340, 4.5, 3.4, 0, .07, 1], a: [.001, .07, .5, .04], dr: .3, vol: .2 });
+  v('sl-hard-bass', 'Hard Dist Bas', 'Hard Distorted Bass', 'Bas', 'b', 'hard', { o: [['w', 0, 0, .8], ['q', 0, -1, .5]], f: ['lowpass', 450, 3, 3, 0, .1, 1], a: [.001, .1, .6, .05], fd: .9, dr: .5, vol: .17 });
+  v('so-deep-sub', 'Deep Sub', 'Deep Sub', 'Bas', 'b', 'deep house', { o: [['s', 0, -1, 1], ['t', 0, 0, .25]], sub: .3, f: ['lowpass', 280, 1, 1.4, 0, .25, 1], a: [.006, .3, .7, .2], dr: .08, vol: .2 });
+  v('mq-prog-bass', 'Progressive Bas', 'Progressive Bass', 'Bas', 'b', 'house deep', { o: [['w', 0, 0, .55], ['s', 0, -1, .85]], f: ['lowpass', 360, 2, 2.2, 0, .18, 1], a: [.004, .22, .65, .14], dr: .12, vol: .2 });
+  v('mo-oriental-bass', 'Oryantal Bas', 'Oriental Bass', 'Bas', 'b', 'deep house', { o: [['t', 0, 0, .7], ['s', 0, -1, .8]], f: ['lowpass', 520, 1.5, 2.4, 0, .2, 1], a: [.003, .26, .45, .15], dr: .2, vol: .2 });
+  v('hu-tumbao', 'Tumbao Bas', 'Tumbao Bass', 'Bas', 'b', 'afro house', { o: [['s', 0, -1, .9], ['t', 0, 0, .5]], f: ['lowpass', 640, 1.5, 2.8, 0, .12, 1], a: [.002, .2, .2, .1], dr: .15, vol: .21 });
+  v('bc-soul-bass', 'Soulful Bas', 'Soulful Bass', 'Bas', 'b', 'afro deep', { o: [['s', 0, -1, 1], ['t', 0, 0, .35]], sub: .25, f: ['lowpass', 480, 1, 1.6, 0, .3, 1], a: [.005, .35, .5, .25], dr: .08, vol: .2 });
+  // --- Leadler
+  v('dd-vox-hook', 'Funk Vokal Hook', 'Funk Vocal Hook', 'Vox', 'm', 'house', { o: [['q', 0, 0, .5], ['w', 0, 0, .4]], vow: 'a', f: ['lowpass', 3200, 2, 1.8, 0, .12], a: [.004, .14, .3, .1], dl: .3, rv: .2, vol: .2 });
+  v('mp-vox-hook', 'Mau P Vokal Chop', 'Minimal Vocal Chop', 'Vox', 'm', 'house techno', { o: [['q', 0, 0, .6], ['t', 0, 0, .3]], vow: 'o', f: ['lowpass', 2000, 3, 2, 0, .08], a: [.002, .09, 0, .05], dl: .38, rv: .12, vol: .22 });
+  v('al-vox-lead', 'Brazilian Vokal Lead', 'Brazilian Vocal Lead', 'Vox', 'm', 'house afro', { o: [['w', 0, 0, .5], ['t', 0, 0, .4]], vow: 'e', f: ['lowpass', 3600, 1.5, 1.2, 0, .2], a: [.01, .2, .6, .2], vib: [5.4, 10, .15], ch: .3, rv: .25, vol: .2 });
+  v('fa-vox-pad-lead', 'Duygusal Vokal Lead', 'Emotional Vocal Lead', 'Vox', 'm', 'house deep', { o: [['s', 0, 0, .6], ['w', 0, 0, .3]], vow: 'u', f: ['lowpass', 2800, 1, 1, 0, .4], a: [.04, .3, .7, .5], vib: [5, 14, .2], ch: .35, rv: .5, dl: .25, vol: .2 });
+  v('fi-vox-chop', 'Fisher Chop', 'Chop Hook', 'Vox', 'm', 'house', { o: [['q', 0, 0, .55], ['w', 0, 0, .3]], vow: 'i', f: ['lowpass', 2600, 2.5, 2, 0, .07], a: [.002, .08, 0, .04], dl: .33, rv: .1, vol: .22 });
+  v('cc-groove-pluck', 'Groove Pluck', 'Groove Pluck', 'Pluck', 'm', 'techno house', { o: [['w', 0, 0, .6], ['q', 0, 0, .3]], f: ['lowpass', 1500, 3, 3.2, 0, .1], a: [.001, .17, 0, .08], dl: .35, rv: .18, vol: .21 });
+  v('an-cine-arp', 'Sinematik Arp', 'Cinematic Arp', 'Pluck', 'm', 'mtechno', { u: [3, 14], o: [['t', 0, 0, .5], ['s', 0, 1, .35]], f: ['lowpass', 4200, .8, 2, 0, .35], a: [.002, .5, 0, .6], ch: .4, rv: .55, dl: .4, vol: .2 });
+  // --- Atamalar (bas / akor / lead; davul kiti ve diğer ayarlar aynı kalır)
+  const A = { wavejackers: ['', 'wj-roll-bass', ''], guetta: ['gu-pop-stab', 'gu-pump-bass', ''], tiesto: ['ti-fest-chord', 'ti-trance-bass', ''], armin: ['ar-uplift-pad', 'ar-rolling-16', ''],
+    domdolla: ['dd-funk-stab', 'dd-funk-bass', 'dd-vox-hook'], maup: ['mp-minimal-stab', 'mp-rubber-bass', 'mp-vox-hook'], dvlm: ['dv-rave-chord', 'dv-bigroom-bass', ''], ummet: ['um-electro-chord', 'um-electro-bass', ''],
+    charlotte: ['cw-dark-chord', 'cw-rolling-dark', ''], cox: ['', '', 'cc-groove-pluck'], garrix: ['', 'mg-prog-bass', ''], anyma: ['', 'an-cine-bass', 'an-cine-arp'],
+    alok: ['al-brazil-chord', 'al-slap-bass', 'al-vox-lead'], timmy: ['tt-psy-stab', 'tt-psy-bass', ''], fred: ['fa-uk-keys', 'fa-garage-sub', 'fa-vox-pad-lead'], fisher: ['fi-house-organ', 'fi-tech-bass', 'fi-vox-chop'],
+    indira: ['ip-psy-chord', 'ip-psy-roll', ''], landry: ['sl-hard-stab', 'sl-hard-bass', ''], solomun: ['', 'so-deep-sub', ''], monique: ['mq-prog-pad', 'mq-prog-bass', ''],
+    orhan: ['', 'mo-oriental-bass', ''], hugel: ['', 'hu-tumbao', ''], blackcoffee: ['', 'bc-soul-bass', ''] };
+  Object.keys(A).forEach(k => { const s = S[k]; if (!s) return; if (A[k][0]) s.sound.chords = A[k][0]; if (A[k][1]) s.sound.bass = A[k][1]; if (A[k][2]) s.sound.melody = A[k][2]; });
+  MB.SOUNDS.forEach(s => { MB.byId[s.id] = s; });
+  Object.assign(HG.EN, EN);
+})();
 // ---- Arayüz dilleri: İngilizce, Almanca, İspanyolca, Türkçe, Arapça (sağdan sola), Hintçe
 HG.LANGS = [['en', 'English'], ['de', 'Deutsch'], ['es', 'Español'], ['tr', 'Türkçe'], ['ar', 'العربية'], ['hi', 'हिन्दी']];
 HG.RTL = { ar: true };
@@ -2006,6 +2090,12 @@ Object.assign(HG.I18N.es, { pAlt: 'Otra idea', pAltHint: 'Sustituye solo esta pi
 Object.assign(HG.I18N.tr, { pAlt: 'Başka öner', pAltHint: 'Sadece bu izi farklı bir fikirle değiştir', pImport: 'FXP / Serum preset yükle', pImportHint: 'Sahip olduğun .fxp, .fxb ve Serum 2 .SerumPreset dosyalarını okur', impOk: '"{n}" ({f}) {p} izine yüklendi', impApprox: '"{n}" ({f}) yüklendi: iç yapı kapalı, {p} için en yakın yerleşik ses seçildi', impFail: 'Dosya okunamadı: {e}', pMotion: 'Animasyon', pLevel: 'Çıkış seviyesi (tavan -1 dBFS)', pImpPart: 'Yüklenecek iz' });
 Object.assign(HG.I18N.ar, { pAlt: 'فكرة أخرى', pAltHint: 'استبدل هذا المسار فقط بفكرة مختلفة', pImport: 'تحميل FXP / إعداد Serum', pImportHint: 'يقرأ ملفات ‎.fxp و ‎.fxb و ‎.SerumPreset التي تملكها', impOk: 'تم تحميل "{n}" ({f}) إلى {p}', impApprox: 'تم تحميل "{n}" ({f}): البنية الداخلية مغلقة فتم اختيار أقرب صوت مدمج لـ {p}', impFail: 'تعذرت قراءة الملف: {e}', pMotion: 'الحركة', pLevel: 'مستوى الخرج (السقف -1 ديسيبل)', pImpPart: 'تحميل إلى' });
 Object.assign(HG.I18N.hi, { pAlt: 'दूसरा आइडिया', pAltHint: 'सिर्फ़ इस ट्रैक को दूसरे आइडिया से बदलें', pImport: 'FXP / Serum प्रीसेट लोड करें', pImportHint: 'आपके अपने .fxp, .fxb और Serum 2 .SerumPreset फ़ाइलें पढ़ता है', impOk: '"{n}" ({f}) {p} में लोड हुआ', impApprox: '"{n}" ({f}) लोड हुआ: अंदरूनी ढाँचा बंद है, इसलिए {p} के लिए सबसे करीबी अंतर्निहित ध्वनि चुनी गई', impFail: 'फ़ाइल पढ़ी नहीं जा सकी: {e}', pMotion: 'एनिमेशन', pLevel: 'आउटपुट स्तर (सीमा -1 dBFS)', pImpPart: 'इसमें लोड करें' });
+Object.assign(HG.I18N.en, { pIdeas: 'Idea cards', pIdeasGo: 'Show 6 ideas' });
+Object.assign(HG.I18N.de, { pIdeas: 'Ideen-Karten', pIdeasGo: '6 Ideen zeigen' });
+Object.assign(HG.I18N.es, { pIdeas: 'Tarjetas de ideas', pIdeasGo: 'Mostrar 6 ideas' });
+Object.assign(HG.I18N.tr, { pIdeas: 'Fikir kartları', pIdeasGo: '6 fikir göster' });
+Object.assign(HG.I18N.ar, { pIdeas: 'بطاقات الأفكار', pIdeasGo: 'اعرض 6 أفكار' });
+Object.assign(HG.I18N.hi, { pIdeas: 'आइडिया कार्ड', pIdeasGo: '6 आइडिया दिखाएँ' });
 // ---- Stil metinleri: [etiket, açıklama, [varyasyon adı, not] x4]
 HG.ST = {};
 HG.ST.en = {
@@ -2212,13 +2302,19 @@ const UI = {};
   const isLight = () => document.documentElement.dataset.theme === 'light' || (!document.documentElement.dataset.theme && window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches);
   const lum = h => { const c = [1, 3, 5].map(i => parseInt(h.substr(i, 2), 16) / 255).map(v => v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4)); return .2126 * c[0] + .7152 * c[1] + .0722 * c[2]; };
   const shade = (hex, f) => '#' + [1, 3, 5].map(i => ('0' + Math.round(parseInt(hex.substr(i, 2), 16) * f).toString(16)).slice(-2)).join('');
+  // yumuşatma: doygunluğu ve parlaklığı düşür (göz yormayan, mat tonlar)
+  function soft(h) {
+    const n = parseInt(h.slice(1), 16); let r = n >> 16 & 255, g = n >> 8 & 255, b = n & 255; const m = (r + g + b) / 3;
+    const k = .62; r = m + (r - m) * k; g = m + (g - m) * k; b = m + (b - m) * k;
+    const t = x => Math.max(0, Math.min(255, Math.round(x * .9))).toString(16).padStart(2, '0'); return '#' + t(r) + t(g) + t(b);
+  }
   function applyAccent() {
     const S = HG.STYLE[st.style], r = document.documentElement.style;
-    let hex = S.accent, light = isLight();
+    let hex = soft(S.accent), light = isLight();
     if (light) { let f = .62; while (lum(shade(S.accent, f)) > .16 && f > .3) f -= .04; hex = shade(S.accent, f); }  // açık zeminde en az 4.5:1 kontrast
     r.setProperty('--accent', hex);
     r.setProperty('--accent-ink', lum(hex) > .32 ? '#05090a' : '#ffffff');
-    document.querySelectorAll('.sty').forEach(b => { const s = HG.STYLE[b.dataset.id]; b.style.setProperty('--sa', light ? shade(s.accent, .55) : s.accent); });
+    document.querySelectorAll('.sty').forEach(b => { const s = HG.STYLE[b.dataset.id]; b.style.setProperty('--sa', light ? shade(s.accent, .55) : soft(s.accent)); });
   }
   UI.applyAccent = applyAccent;
 
@@ -2418,6 +2514,35 @@ const UI = {};
 
   // ---------- İz kartları ve piyano roll
   const rnd999 = () => Math.floor(Math.random() * 998);
+
+  // ---------- Fikir kartları: aynı stilde 6 farklı fikir (ton, varyasyon, tohum, her izde farklı alternatif) önizle, birini seç
+  function makeIdeas() {
+    const S = HG.STYLE[st.style], hop = [0, 7, 5, 3, -3, 2, -2], host = $('idg'); host.innerHTML = '';
+    const base = Math.floor(Math.random() * 90000);
+    for (let n = 0; n < 6; n++) {
+      const o = { key: n === 0 ? st.key : (((S.key != null ? S.key : st.key) + hop[(n * 3 + base) % 7]) % 12 + 12) % 12, vi: (st.vi + n) % 4, seed: base + n * 7919 + 1, scale: S.scales[n % S.scales.length],
+        energy: 50 + (n * 13 + base) % 40, orig: 20 + (n * 11 + base) % 40, bpm: S.bpm[0] + (n * 5 + base) % Math.max(1, S.bpm[1] - S.bpm[0] + 1), alt: [0, 0, 0, 0] };
+      let r; try { r = HG.generate({ style: st.style, vi: o.vi, seed: o.seed, bars: st.bars, key: o.key, scale: o.scale, orig: o.orig, energy: o.energy, human: st.human, sevenths: st.sevenths, bpm: o.bpm, swing: st.swing, thick: st.thick, alt: o.alt }); } catch (e) { continue; }
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'idc';
+      const tx = HG.stxt(st.style), ki = MB.keyInfo(o.key, o.scale);
+      b.innerHTML = '<b></b><canvas></canvas><small></small>';
+      b.firstChild.textContent = MB.NOTES[o.key] + ' ' + T('scale_' + o.scale) + ' · ' + o.bpm;
+      b.lastChild.textContent = r.chords.slice(0, 4).map(c => c.name).join(' – ') + ' · ' + tx.vars[o.vi].n;
+      b.setAttribute('aria-label', b.firstChild.textContent + '. ' + b.lastChild.textContent);
+      const cv = b.querySelector('canvas'); cv.width = 320; cv.height = 68; const x = cv.getContext('2d'), len = r.bars * 16;
+      [['bass', '--c-bass', 24, 60], ['melody', '--c-melody', 48, 96], ['chords', '--c-chords', 36, 84]].forEach(([k, col, lo, hi]) => {
+        x.fillStyle = getComputedStyle(document.documentElement).getPropertyValue(col).trim() || '#999'; x.globalAlpha = .9;
+        r.tracks[k].forEach(e => { const px = e.s / len * 320, w = Math.max(2, e.l / len * 320 - 1), py = 66 - (Math.max(lo, Math.min(hi, e.n)) - lo) / (hi - lo) * 62; x.fillRect(px, py, w, 3); });
+      });
+      b.addEventListener('click', () => {
+        st.key = o.key; st.vi = o.vi; st.seed = o.seed; st.scale = o.scale; st.alt = [0, 0, 0, 0]; st.bpm = o.bpm; st.energy = o.energy; st.orig = o.orig;
+        $('key').value = st.key; $('scale').value = st.scale; $('seed').value = st.seed; $('bpm').value = st.bpm;
+        ['energy', 'orig'].forEach(id => { $(id).value = st[id]; $(id + 'v').textContent = st[id] + '%'; });
+        setBeat(); buildVars(); generate(); host.querySelectorAll('.idc').forEach(c => c.classList.toggle('cur', c === b));
+      });
+      host.appendChild(b);
+    }
+  }
   function buildCards() {
     const host = $('tracks'); host.innerHTML = '';
     KEYS.forEach(k => {
@@ -2571,6 +2696,7 @@ const UI = {};
     UI.newIdea = newIdea;
     $('gen').addEventListener('click', newIdea);
     $('play').addEventListener('click', UI.toggle);
+    $('idgo').addEventListener('click', makeIdeas);
     const setMotion = on => { document.documentElement.dataset.motion = on ? 'on' : 'off'; $('motion').classList.toggle('on', on); $('motion').setAttribute('aria-pressed', on); store.set('motion', on ? '1' : '0'); };
     $('motion').addEventListener('click', () => setMotion($('motion').getAttribute('aria-pressed') !== 'true'));
     setMotion(store.get('motion') !== '0' && !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches));

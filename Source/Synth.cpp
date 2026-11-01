@@ -9,6 +9,7 @@ namespace
 constexpr double kTwoPi = 6.283185307179586;
 inline float frand (uint32_t& s) noexcept { s ^= s << 13; s ^= s >> 17; s ^= s << 5; return (float) (s & 0xffffff) / 8388608.0f - 1.0f; }
 inline float fastTanh (float x) noexcept { x = juce::jlimit (-4.5f, 4.5f, x); const float x2 = x * x; return x * (27.0f + x2) / (27.0f + 9.0f * x2); }
+inline float softKnee (float x) noexcept { const float a = std::abs (x); return a <= .5f ? x : std::copysign (.5f + .5f * fastTanh ((a - .5f) * 2.0f), x); }   // web kneeCurve
 inline float sat (float x, float k) noexcept { const float a = 1.0f + k * 4.0f; return fastTanh (x * a) / fastTanh (a); }   // web satCurve(k)
 inline void svfCoef (float* c, double fc, double q, double sr) noexcept
 {
@@ -569,7 +570,7 @@ void Engine::render (juce::AudioBuffer<float>& out, int start, int num)
                 float a = L[i], b = R[i];
                 if (lp) { float st[2] = { drumLpS[0], drumLpS[1] }; a = b = svf (a, lpC, st).lp; drumLpS[0] = st[0]; drumLpS[1] = st[1]; }
                 a *= bus; b *= bus;
-                oL[i] += a; if (oR) oR[i] += b; rvL[i] += a * kit.rv; rvR[i] += b * kit.rv;
+                oL[i] += a; if (oR) oR[i] += b; /* davulda reverb yok */
             }
         }
         // delay (noktalı sekizlik, geri besleme LP)
@@ -606,7 +607,7 @@ void Engine::render (juce::AudioBuffer<float>& out, int start, int num)
             for (int i = 0; i < n; ++i)
             {
                 // web DynamicsCompressor'daki otomatik makeup kazancına (~+6 dB) denk; sonra web'deki gibi yumuşak eğri
-                float y = sat (juce::jlimit (-1.0f, 1.0f, x[i] * 2.0f * preG), 0) * .891f * postG;   // >%100 master limiter'e sürer, tavan her zaman -1 dBFS
+                float y = softKnee (juce::jlimit (-1.0f, 1.0f, x[i] * 1.5f * preG)) * .891f * postG;   // >%100 master limiter'e sürer, tavan her zaman -1 dBFS
                 if (! std::isfinite (y)) { bad = true; y = 0; }
                 x[i] = juce::jlimit (-.891f, .891f, y); pk = juce::jmax (pk, std::abs (x[i]));
             }

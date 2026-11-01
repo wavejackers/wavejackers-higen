@@ -267,7 +267,7 @@ void HitGenEditor::StyleModel::paintListBoxItem (int row, Graphics& g, int w, in
         const auto& it = ed.proc.presets.items(); if (row >= it.size()) return;
         const auto& P = ed.lnf.pal(); const auto& pr = it[row];
         const int si = ed.data.styleIndex (pr.style);
-        const auto acc = si >= 0 && ! ed.proc.highContrast ? Colour::fromString ("ff" + ed.data.style (si)["accent"].toString().substring (1)) : P.accent;
+        const auto acc = si >= 0 && ! ed.proc.highContrast ? Colour::fromString ("ff" + ed.data.style (si)["accent"].toString().substring (1)).withMultipliedSaturation (.62f).withMultipliedBrightness (.9f) : P.accent;
         auto r = Rectangle<int> (0, 0, w, h).reduced (2, 2).toFloat();
         g.setColour (selected ? acc.withAlpha (.16f) : P.panel2); g.fillRoundedRectangle (r, 8);
         g.setColour (acc); g.fillRect (ed.rtl ? r.getRight() - 4 : r.getX(), r.getY() + 4, 4.0f, r.getHeight() - 8);
@@ -279,7 +279,7 @@ void HitGenEditor::StyleModel::paintListBoxItem (int row, Graphics& g, int w, in
         return;
     }
     const auto& P = ed.lnf.pal(); const auto& S = ed.data.style (ed.filtered[row]);
-    const auto acc = ed.proc.highContrast ? P.accent : Colour::fromString ("ff" + S["accent"].toString().substring (1));
+    const auto acc = ed.proc.highContrast ? P.accent : Colour::fromString ("ff" + S["accent"].toString().substring (1)).withMultipliedSaturation (.62f).withMultipliedBrightness (.9f);
     auto r = Rectangle<int> (0, 0, w, h).reduced (2, 2).toFloat();
     g.setColour (selected ? acc.withAlpha (.16f) : P.panel2); g.fillRoundedRectangle (r, 8);
     g.setColour (acc); g.fillRect (ed.rtl ? r.getRight() - 4 : r.getX(), r.getY() + 4, 4.0f, r.getHeight() - 8);
@@ -440,7 +440,7 @@ void HitGenEditor::Content::paint (Graphics& g)
         {
             const float cx = kW * (.5f + .42f * std::sin (ph * (1.0f + .37f * i) + i * 2.1f));
             const float cy = kH * (.5f + .40f * std::cos (ph * (.8f + .29f * i) + i * 1.3f));
-            ColourGradient cg (cs[i].withAlpha (.20f), cx, cy, cs[i].withAlpha (0.0f), cx + 430.0f, cy, true);
+            ColourGradient cg (cs[i].withAlpha (.09f), cx, cy, cs[i].withAlpha (0.0f), cx + 430.0f, cy, true);
             g.setGradientFill (cg); g.fillRect (0, 0, kW, kH);
         }
     }
