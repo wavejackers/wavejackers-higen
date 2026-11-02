@@ -22,7 +22,7 @@ static juce::AudioBuffer<float> makeSong (double sr, int ch, double& secOut)
     // 1) bas: dörtlük notalar, testere benzeri (harmonikler 1/h), tek kanal-merkez
     { const int notes[4] = { 33, 33, 36, 31 };   // A1 A1 C2 G1
       for (int q = 0; q < 16; ++q) { const double t0 = q * beat; const int nn = notes[(q / 2) % 4]; const double f = midiHz (nn); const int len = (int) (beat * 0.9 * sr), s0 = (int) (t0 * sr);
-        for (int i = 0; i < len; ++i) { const double t = (double) i / sr; float v = 0; for (int h = 1; h <= 10; ++h) v += (float) (std::sin (2 * M_PI * f * h * t) / h) * (h * f < 1500 ? 1.0f : 0.0f);
+        for (int i = 0; i < len; ++i) { const double t = (double) i / sr; float v = 0; for (int h = 1; h <= 10; ++h) v += (float) (std::sin (2 * juce::MathConstants<double>::pi * f * h * t) / h) * (h * f < 1500 ? 1.0f : 0.0f);
           const float env = (float) std::min (1.0, t / 0.004) * (float) std::exp (-t * 2.0); for (int c = 0; c < ch; ++c) put (c, s0 + i, 0.35f * v * env); } } }
     // 2) vurmalı: 16'lık hi-hat gürültü patlamaları, 2 ve 4'te snare
     { const double base = BAR * 4;
@@ -33,12 +33,12 @@ static juce::AudioBuffer<float> makeSong (double sr, int ch, double& secOut)
     // 3) pad: Am (A3 C4 E4), yavaş atak, L/R farklı detune (geniş)
     { const double base = BAR * 8; const int s0 = (int) (base * sr), len = (int) (BAR * 4 * sr); const int ns[3] = { 57, 60, 64 };
       for (int i = 0; i < len; ++i) { const double t = (double) i / sr; const float env = (float) std::min (1.0, t / 0.8) * (float) std::min (1.0, (BAR * 4 - t) / 0.5);
-        for (int c = 0; c < ch; ++c) { float v = 0; const double det = c == 0 ? 0.994 : 1.006; for (int k = 0; k < 3; ++k) { const double f = midiHz (ns[k]) * det; for (int h = 1; h <= 4; ++h) v += (float) (std::sin (2 * M_PI * f * h * t + c * 0.7) / (h * h)); }
+        for (int c = 0; c < ch; ++c) { float v = 0; const double det = c == 0 ? 0.994 : 1.006; for (int k = 0; k < 3; ++k) { const double f = midiHz (ns[k]) * det; for (int h = 1; h <= 4; ++h) v += (float) (std::sin (2 * juce::MathConstants<double>::pi * f * h * t + c * 0.7) / (h * h)); }
           put (c, s0 + i, 0.12f * v * env); } } }
     // 4) lead: sekizlik pluck, A minör gam, kare dalga (tek harmonikler)
     { const double base = BAR * 12; const int sc[8] = { 69, 72, 76, 74, 72, 76, 79, 76 };
       for (int e = 0; e < 32; ++e) { const double t0 = base + e * beat / 2; const double f = midiHz (sc[e % 8]); const int s0 = (int) (t0 * sr), len = (int) (beat * 0.45 * sr);
-        for (int i = 0; i < len; ++i) { const double t = (double) i / sr; float v = 0; for (int h = 1; h <= 9; h += 2) v += (float) (std::sin (2 * M_PI * f * h * t) / h);
+        for (int i = 0; i < len; ++i) { const double t = (double) i / sr; float v = 0; for (int h = 1; h <= 9; h += 2) v += (float) (std::sin (2 * juce::MathConstants<double>::pi * f * h * t) / h);
           const float env = (float) std::min (1.0, t / 0.003) * (float) std::exp (-t * 7.0); for (int c = 0; c < ch; ++c) put (c, s0 + i, 0.22f * v * env); } } }
     return b;
 }

@@ -314,9 +314,9 @@ int main (int argc, char** argv)
         {
             const double t = i / sr; float v = 0;
             const double qt = std::fmod (t, beat) / beat;                                              // bas: A1 vuruşta
-            v += 0.5f * (float) (std::sin (2 * M_PI * 55.0 * t) * std::exp (-qt * 3.0));
+            v += 0.5f * (float) (std::sin (2 * juce::MathConstants<double>::pi * 55.0 * t) * std::exp (-qt * 3.0));
             if (t >= bar * 4) { const double e = std::fmod (t - bar * 4, beat / 2); const double f = 440.0 * (std::fmod (std::floor ((t - bar * 4) / (beat / 2)), 2.0) < 1 ? 1.0 : 1.2599);
-                                float sq = 0; for (int h = 1; h <= 9; h += 2) sq += (float) (std::sin (2 * M_PI * f * h * t) / h); v += 0.2f * sq * (float) std::exp (-e * 9.0); }
+                                float sq = 0; for (int h = 1; h <= 9; h += 2) sq += (float) (std::sin (2 * juce::MathConstants<double>::pi * f * h * t) / h); v += 0.2f * sq * (float) std::exp (-e * 9.0); }
             sb.setSample (0, i, v); sb.setSample (1, i, v);
         }
         auto wav = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("hitgen-ui-ref.wav"); wav.deleteFile();
@@ -381,7 +381,7 @@ int main (int argc, char** argv)
     // 7) Örnekleyici: MIDI -> doğru perde, polifoni, ADSR, durum geri yükleme, kayıp dosya
     {
         const double sr = 48000.0; const int n = (int) (sr * 4); juce::AudioBuffer<float> sb (2, n);
-        for (int i = 0; i < n; ++i) { const float v = 0.5f * (float) std::sin (2 * M_PI * 220.0 * i / sr); sb.setSample (0, i, v); sb.setSample (1, i, v); }   // A3 = MIDI 57
+        for (int i = 0; i < n; ++i) { const float v = 0.5f * (float) std::sin (2 * juce::MathConstants<double>::pi * 220.0 * i / sr); sb.setSample (0, i, v); sb.setSample (1, i, v); }   // A3 = MIDI 57
         auto wav = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("hitgen-samp.wav"); wav.deleteFile();
         { juce::WavAudioFormat f; std::unique_ptr<juce::FileOutputStream> os (wav.createOutputStream()); std::unique_ptr<juce::AudioFormatWriter> w (f.createWriterFor (os.get(), sr, 2, 24, {}, 0)); if (w) { os.release(); w->writeFromAudioSampleBuffer (sb, 0, n); } }
         auto pump = [&] (const std::function<bool()>& done, int ms) { const auto t0 = juce::Time::getMillisecondCounter(); while (! done() && juce::Time::getMillisecondCounter() - t0 < (juce::uint32) ms) juce::MessageManager::getInstance()->runDispatchLoopUntil (20); return done(); };
