@@ -21,7 +21,7 @@ ReferencePage::ReferencePage (HitGenProcessor& p, hgui::LookAndFeel& l) : proc (
     setFocusContainerType (FocusContainerType::focusContainer);
     wave.o = this; cands.o = this; candList.assign (kNumRefCats, {});
     for (auto* c : std::initializer_list<Component*> { &openBtn, &smartBtn, &playBtn, &applyBtn, &zoomIn, &zoomOut, &zoomFit, &genBtn, &prevBtn, &nextBtn, &saveDnaBtn, &loadDnaBtn, &seedNewBtn,
-                                                       &loopBtn, &previewBtn, &simK, &varK, &gainS, &gainL, &seed, &seedLabel, &status, &info, &dnaInfo, &banner, &histLabel, &wave, &cands, &bar })
+                                                       &loopBtn, &previewBtn, &viewSynth, &viewSamp, &sTrimBtn, &sLoopSelBtn, &sSaveBtn, &sLoadBtn, &sEnable, &sLoop, &rootBox, &trS, &voiceS, &rootL, &trL, &voiceL, &sInfo, &simK, &varK, &gainS, &gainL, &seed, &seedLabel, &status, &info, &dnaInfo, &banner, &histLabel, &wave, &cands, &bar })
         addAndMakeVisible (*c);
     for (int i = 0; i < 3; ++i) { auto& b = partBtns[(size_t) i]; addAndMakeVisible (b); b.setRadioGroupId (301); b.setClickingTogglesState (true); b.onClick = [this, i] { if (partBtns[(size_t) i].getToggleState()) { part = i; proc.auditionPart.store (part); } }; }
     partBtns[1].setToggleState (true, dontSendNotification);
@@ -51,6 +51,28 @@ ReferencePage::ReferencePage (HitGenProcessor& p, hgui::LookAndFeel& l) : proc (
     dnaInfo.setJustificationType (Justification::topLeft); status.setJustificationType (Justification::centredLeft);
     bar.addListener (this); bar.setAutoHide (false);
     proc.ref.onChange = [this] { refreshAfterChange(); };
+    // ---- örnekleyici denetimleri
+    auto& SP = proc.ref.sampler;
+    for (auto& k : sKnobs) addAndMakeVisible (k);
+    viewSynth.setRadioGroupId (302); viewSamp.setRadioGroupId (302); viewSynth.setClickingTogglesState (true); viewSamp.setClickingTogglesState (true); viewSynth.setToggleState (true, dontSendNotification);
+    viewSynth.onClick = [this] { if (viewSynth.getToggleState()) setView (0); }; viewSamp.onClick = [this] { if (viewSamp.getToggleState()) setView (1); };
+    for (int n = 0; n < 128; ++n) rootBox.addItem (MidiMessage::getMidiNoteName (n, true, true, 3) + "  (" + String (n) + ")", n + 1);
+    rootBox.setSelectedId (SP.root.load() + 1, dontSendNotification); rootBox.onChange = [this] { proc.ref.sampler.root = rootBox.getSelectedId() - 1; };
+    trS.setSliderStyle (Slider::IncDecButtons); trS.setTextBoxStyle (Slider::TextBoxLeft, false, 50, 28); trS.setRange (-24, 24, 1); trS.setValue (SP.transpose.load(), dontSendNotification); trS.onValueChange = [this] { proc.ref.sampler.transpose = (int) trS.getValue(); };
+    voiceS.setSliderStyle (Slider::IncDecButtons); voiceS.setTextBoxStyle (Slider::TextBoxLeft, false, 40, 28); voiceS.setRange (1, 16, 1); voiceS.setValue (SP.maxVoices.load(), dontSendNotification); voiceS.onValueChange = [this] { proc.ref.sampler.maxVoices = (int) voiceS.getValue(); };
+    sEnable.onClick = [this] { proc.ref.sampler.enabled = sEnable.getToggleState(); if (! sEnable.getToggleState()) proc.keyboardState.allNotesOff (1); sInfo.setText (T (sEnable.getToggleState() ? "rfSampOn" : "rfSampInfo"), dontSendNotification); };
+    sLoop.onClick = [this] { proc.ref.sampler.loop = sLoop.getToggleState(); };
+    sTrimBtn.onClick = [this] { trimFromSelection(); }; sLoopSelBtn.onClick = [this] { if (selB > selA + 0.02) { proc.ref.sampler.loopStart = selA; proc.ref.sampler.loopEnd = selB; sLoop.setToggleState (true, dontSendNotification); proc.ref.sampler.loop = true; status.setText (T ("rfLoopSet"), dontSendNotification); } };
+    sSaveBtn.onClick = [this] { saveSampler(); }; sLoadBtn.onClick = [this] { loadSampler(); };
+    struct KS { double lo, hi, mid; };
+    const KS ks[6] = { { 0.001, 2.0, 0.05 }, { 0.001, 3.0, 0.3 }, { 0.0, 1.0, 0.5 }, { 0.003, 6.0, 0.4 }, { 0.0, 1.5, 0.8 }, { 0.0, 1.0, 0.5 } };
+    for (int i = 0; i < 6; ++i)
+    {
+        auto& s = sKnobs[(size_t) i].slider; s.setRange (ks[i].lo, ks[i].hi, 0.001); if (i == 0 || i == 1 || i == 3) s.setSkewFactorFromMidPoint (ks[i].mid);
+        s.setValue (i == 0 ? SP.a.load() : i == 1 ? SP.d.load() : i == 2 ? SP.s.load() : i == 3 ? SP.r.load() : i == 4 ? SP.gain.load() : SP.velSens.load(), dontSendNotification);
+        s.onValueChange = [this, i] { auto& P = proc.ref.sampler; const float v = (float) sKnobs[(size_t) i].slider.getValue(); (i == 0 ? P.a : i == 1 ? P.d : i == 2 ? P.s : i == 3 ? P.r : i == 4 ? P.gain : P.velSens) = v; };
+    }
+    setView (0);
     smartBtn.setEnabled (false); playBtn.setEnabled (false); genBtn.setEnabled (false); applyBtn.setEnabled (false); prevBtn.setEnabled (false); nextBtn.setEnabled (false);
     setLanguage (lang, rtl);
 }
@@ -72,6 +94,12 @@ void ReferencePage::relabel()
     genBtn.setButtonText (T ("rfGen")); genBtn.setTooltip (T ("rfGenHint")); prevBtn.setButtonText ("<"); nextBtn.setButtonText (">"); prevBtn.setTooltip (T ("rfPrev")); nextBtn.setTooltip (T ("rfNext"));
     saveDnaBtn.setButtonText (T ("rfSaveDna")); loadDnaBtn.setButtonText (T ("rfLoadDna")); seedNewBtn.setButtonText ("*"); seedNewBtn.setTooltip (T ("rfNewSeed"));
     seedLabel.setText (T ("seed"), dontSendNotification);
+    viewSynth.setButtonText (T ("rfViewSynth")); viewSamp.setButtonText (T ("rfViewSamp")); sEnable.setButtonText (T ("rfSampEnable")); sLoop.setButtonText (T ("rfLoop"));
+    rootL.setText (T ("rfRoot"), dontSendNotification); trL.setText (T ("rfTranspose"), dontSendNotification); voiceL.setText (T ("rfVoices"), dontSendNotification);
+    sTrimBtn.setButtonText (T ("rfTrim")); sLoopSelBtn.setButtonText (T ("rfLoopSel")); sSaveBtn.setButtonText (T ("rfSampSave")); sLoadBtn.setButtonText (T ("rfSampLoad"));
+    sTrimBtn.setTooltip (T ("rfTrimHint")); rootBox.setTooltip (T ("rfRootHint"));
+    { const char* nm[6] = { "rfA", "rfD", "rfS", "rfR", "rfGain", "rfVel" }; for (int i = 0; i < 6; ++i) sKnobs[(size_t) i].setText (T (nm[i]), T (nm[i] + String ("H"))); }
+    sInfo.setText (T (proc.ref.sampler.enabled.load() ? "rfSampOn" : "rfSampInfo"), dontSendNotification); sInfo.setFont (lnf.font (12.0f)); sInfo.setJustificationType (Justification::topLeft);
     for (int i = 0; i < 3; ++i) partBtns[(size_t) i].setButtonText (T (kPartKeys[i]));
     simK.setText (T ("rfSim"), T ("rfSimHint")); varK.setText (T ("rfVar"), T ("rfVarHint"));
     for (auto* lb : { &status, &info, &dnaInfo, &banner, &histLabel, &gainL, &seedLabel }) lb->setJustificationType (rtl ? Justification::centredRight : Justification::centredLeft);
@@ -112,9 +140,10 @@ void ReferencePage::refreshAfterChange()
     else if (st == RefEngine::Ready && a && a->ok && candList[0].size() + candList[1].size() + candList[2].size() + candList[3].size() == 0) status.setText (T ("rfNoRegions"), dontSendNotification);
     else if (st == RefEngine::Ready) status.setText (T ("rfDone"), dontSendNotification);
     else if (st == RefEngine::Loaded) status.setText (T ("rfLoaded"), dontSendNotification);
+    else if (proc.ref.missingPath.isNotEmpty()) status.setText (T ("fileMissing") + " " + proc.ref.missingPath, dontSendNotification);
     else status.setText (T ("rfDropHint"), dontSendNotification);
     banner.setText (T ("rfBanner"), dontSendNotification);
-    lastState = st; wave.repaint(); cands.repaint(); repaint();
+    syncSampler(); lastState = st; wave.repaint(); cands.repaint(); repaint();
 }
 
 void ReferencePage::setView (double start, double len)
@@ -265,6 +294,11 @@ void ReferencePage::resized()
     P (seedLabel, { 830, 496, 80, 20 }); P (seed, { 830, 518, 170, 30 }); P (seedNewBtn, { 1006, 518, 34, 30 }); P (previewBtn, { 830, 556, 230, 30 });
     P (saveDnaBtn, { 1056, 496, 92, 30 }); P (loadDnaBtn, { 1056, 532, 92, 30 });
     P (dnaInfo, { 16, 596, 1132, 52 });
+    P (viewSynth, { 340, 492, 120, 26 }); P (viewSamp, { 464, 492, 120, 26 });
+    P (sEnable, { 16, 528, 200, 30 }); P (rootL, { 230, 528, 60, 30 }); P (rootBox, { 290, 528, 130, 30 }); P (trL, { 436, 528, 90, 30 }); P (trS, { 526, 528, 120, 30 });
+    P (voiceL, { 660, 528, 80, 30 }); P (voiceS, { 740, 528, 110, 30 }); P (sLoop, { 866, 528, 100, 30 }); P (sTrimBtn, { 976, 528, 172, 30 });
+    for (int i = 0; i < 6; ++i) P (sKnobs[(size_t) i], { 16 + i * 104, 562, 100, 86 });
+    P (sLoopSelBtn, { 650, 562, 170, 28 }); P (sSaveBtn, { 650, 594, 170, 28 }); P (sLoadBtn, { 650, 624, 170, 28 }); P (sInfo, { 832, 566, 316, 82 });
 }
 
 void ReferencePage::paint (Graphics& g)
@@ -272,7 +306,7 @@ void ReferencePage::paint (Graphics& g)
     const auto& P = lnf.pal(); g.setColour (P.panel); g.fillRoundedRectangle (getLocalBounds().toFloat(), 14);
     g.setColour (P.panel2); g.fillRoundedRectangle (8.0f, 488.0f, (float) kW - 16, 160.0f, 10);
     g.setColour (P.mute); g.setFont (lnf.font (12.0f));
-    g.drawText (T ("rfTarget"), Rectangle<int> (rtl ? kW - 330 : 16, 480, 314, 18), rtl ? Justification::centredRight : Justification::centredLeft);
+    if (view == 0) g.drawText (T ("rfTarget"), Rectangle<int> (rtl ? kW - 330 : 16, 480, 314, 18), rtl ? Justification::centredRight : Justification::centredLeft);
     if (proc.ref.clip() == nullptr && proc.ref.state.load() != RefEngine::Loading)
     {
         g.setColour (P.accent.withAlpha (0.55f)); g.drawRoundedRectangle (wave.getBounds().toFloat().reduced (1), 10, 1.5f);
@@ -358,4 +392,56 @@ void ReferencePage::Cands::paint (Graphics& g)
 void ReferencePage::Cands::mouseDown (const MouseEvent& e)
 {
     for (int k = 0; k < 4; ++k) for (int r = 0; r < (int) o->candList[(size_t) k].size(); ++r) if (rowRect (k, r).contains (e.getPosition())) { o->selectCandidate (k, r); return; }
+}
+
+void ReferencePage::setView (int v)
+{
+    view = v; const bool s = v == 1;
+    for (auto* x : std::initializer_list<Component*> { &partBtns[0], &partBtns[1], &partBtns[2], &genBtn, &prevBtn, &nextBtn, &histLabel, &simK, &varK, &seed, &seedLabel, &seedNewBtn, &previewBtn, &saveDnaBtn, &loadDnaBtn, &dnaInfo }) x->setVisible (! s);
+    for (auto* x : std::initializer_list<Component*> { &sEnable, &sLoop, &rootBox, &trS, &voiceS, &rootL, &trL, &voiceL, &sTrimBtn, &sLoopSelBtn, &sSaveBtn, &sLoadBtn, &sInfo }) x->setVisible (s);
+    for (auto& k : sKnobs) k.setVisible (s);
+    viewSynth.setToggleState (! s, dontSendNotification); viewSamp.setToggleState (s, dontSendNotification); repaint();
+}
+
+void ReferencePage::syncSampler()
+{
+    auto& P = proc.ref.sampler; sEnable.setToggleState (P.enabled.load(), dontSendNotification); sLoop.setToggleState (P.loop.load(), dontSendNotification);
+    rootBox.setSelectedId (P.root.load() + 1, dontSendNotification); trS.setValue (P.transpose.load(), dontSendNotification); voiceS.setValue (P.maxVoices.load(), dontSendNotification);
+    const float v[6] = { P.a.load(), P.d.load(), P.s.load(), P.r.load(), P.gain.load(), P.velSens.load() }; for (int i = 0; i < 6; ++i) sKnobs[(size_t) i].slider.setValue (v[i], dontSendNotification);
+}
+
+void ReferencePage::trimFromSelection()
+{
+    auto c = proc.ref.clip(); if (c == nullptr) { status.setText (T ("rfNeedClip"), dontSendNotification); return; }
+    if (selB <= selA + 0.02) { status.setText (T ("rfNeedSel"), dontSendNotification); return; }
+    auto& P = proc.ref.sampler; P.trimStart = selA; P.trimEnd = selB; P.loopStart = selA; P.loopEnd = selB;
+    if (haveDna && dna.pitched && dna.f0Hz > 20.0f) { const int m = jlimit (0, 127, roundToInt (69.0 + 12.0 * std::log2 (dna.f0Hz / 440.0))); P.root = m; rootBox.setSelectedId (m + 1, dontSendNotification); }
+    status.setText (T ("rfTrimmed").replace ("{t}", fmtTime (selB - selA)).replace ("{n}", MidiMessage::getMidiNoteName (P.root.load(), true, true, 3)), dontSendNotification);
+}
+
+static File sampFolder() { auto d = File::getSpecialLocation (File::userApplicationDataDirectory).getChildFile ("Wavejackers").getChildFile ("HitGen").getChildFile ("Samplers"); d.createDirectory(); return d; }
+
+void ReferencePage::saveSampler()
+{
+    chooser = std::make_unique<FileChooser> (T ("rfSampSave"), sampFolder().getChildFile ("sampler.hgsamp"), "*.hgsamp");
+    chooser->launchAsync (FileBrowserComponent::saveMode | FileBrowserComponent::warnAboutOverwriting, [this] (const FileChooser& fc)
+    {
+        auto f = fc.getResult(); if (f == File()) return; f = f.withFileExtension ("hgsamp");
+        status.setText (f.replaceWithText (JSON::toString (proc.ref.samplerToVar())) ? T ("rfSaved").replace ("{f}", f.getFullPathName()) : T ("rfSaveFail"), dontSendNotification);
+    });
+}
+
+void ReferencePage::loadSampler()
+{
+    chooser = std::make_unique<FileChooser> (T ("rfSampLoad"), sampFolder(), "*.hgsamp");
+    chooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles, [this] (const FileChooser& fc)
+    {
+        const auto f = fc.getResult(); if (! f.existsAsFile() || f.getSize() > 200000) return;
+        const auto v = JSON::parse (f.loadFileAsString()); if (v.getProperty ("format", {}).toString() != "wavejackers-sampler") { status.setText (T ("rfDnaBad"), dontSendNotification); return; }
+        proc.ref.samplerFromVar (v); syncSampler(); const File src (v.getProperty ("sourcePath", {}).toString());
+        auto cur = proc.ref.clip();
+        if (src.existsAsFile() && (cur == nullptr || cur->path != src.getFullPathName())) openFile (src);
+        else if (! src.existsAsFile() && v.getProperty ("sourcePath", {}).toString().isNotEmpty() && cur == nullptr) status.setText (T ("fileMissing") + " " + v.getProperty ("sourcePath", {}).toString(), dontSendNotification);
+        else status.setText (T ("rfSampLoaded"), dontSendNotification);
+    });
 }

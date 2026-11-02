@@ -21,6 +21,7 @@ public:
     // testler / otomasyon
     void selectCandidate (int cat, int row);
     void generateNow() { generate(); }
+    void showSampler (bool on) { setView (on ? 1 : 0); }
     juce::String statusText() const { return status.getText(); }
 
 private:
@@ -48,6 +49,12 @@ private:
     std::array<juce::TextButton, 3> partBtns;
     hgui::Knob simK, varK; juce::Slider gainS; juce::Label gainL;
     juce::Slider seed; juce::Label seedLabel, status, info, dnaInfo, banner, histLabel;
+    // örnekleyici görünümü (Studio): kök nota, ADSR, polifoni, transpoze, kırpma, döngü, preset
+    int view = 0;                                                      // 0 sentez (DNA), 1 örnekleyici
+    juce::TextButton viewSynth, viewSamp, sTrimBtn, sLoopSelBtn, sSaveBtn, sLoadBtn;
+    juce::ToggleButton sEnable, sLoop; juce::ComboBox rootBox; juce::Slider trS, voiceS; juce::Label rootL, trL, voiceL, sInfo;
+    std::array<hgui::Knob, 6> sKnobs;                                  // A D S R Gain Vel
+    void setView (int v); void syncSampler(); void trimFromSelection(); void saveSampler(); void loadSampler();
     Wave wave; Cands cands; juce::ScrollBar bar { false };
     std::unique_ptr<juce::FileChooser> chooser;
 

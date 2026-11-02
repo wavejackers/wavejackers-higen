@@ -396,13 +396,14 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     const int keysSel = (int) pKeysTo->load(), aud = auditionPart.load();
     const int keysTrack = aud >= 0 ? trackOfPart (aud) : keysSel == 0 ? hg::kChords : keysSel == 1 ? hg::kBass : hg::kMelody;
 
+    const bool sampOn = ref.sampler.enabled.load();
     numBlockEv = 0;
     for (const auto meta : midi)
     {
         const auto msg = meta.getMessage(); if (numBlockEv >= (int) blockEv.size()) break;
         if (msg.isNoteOn()) blockEv[(size_t) numBlockEv++] = { meta.samplePosition, 1, keysTrack, msg.getNoteNumber(), msg.getVelocity(), -1 };
         else if (msg.isNoteOff()) blockEv[(size_t) numBlockEv++] = { meta.samplePosition, 2, keysTrack, msg.getNoteNumber(), 0, 0 };
-        else if (msg.isAllNotesOff() || msg.isAllSoundOff()) engine.allNotesOff();
+        else if (msg.isAllNotesOff() || msg.isAllSoundOff()) { engine.allNotesOff(); ref.samplerAllOff(); }
     }
     kbBuf.clear();
     keyboardState.processNextMidiBuffer (kbBuf, 0, n, true);   // ekran klavyesinden gelen notalar
@@ -459,10 +460,13 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 offs[(size_t) numOffs++] = { sampleClock + e.off + lenS, ch, e.note };
             }
         }
-        else if (e.kind == 1) engine.noteOn (e.track, e.note, e.vel, -1, 0);
-        else engine.noteOff (e.track, e.note, 0);
+        else if (e.kind == 1) { if (sampOn) ref.samplerNoteOn (e.note, e.vel, e.off); else engine.noteOn (e.track, e.note, e.vel, -1, 0); }
+        else { if (sampOn) ref.samplerNoteOff (e.note); else engine.noteOff (e.track, e.note, 0); }
     }
     if (pos < n) engine.render (buffer, pos, n - pos);
+    if (sampOn || wasSamp) ref.renderSampler (buffer, getSampleRate());
+    if (wasSamp && ! sampOn) ref.samplerAllOff();
+    wasSamp = sampOn;
     ref.render (buffer, getSampleRate());      // referans sesin orijinali (yalnızca kullanıcı çal dediğinde)
     for (int i = 0; i < numOffs;)
     {
@@ -516,6 +520,7 @@ juce::ValueTree HitGenProcessor::stateTree()
     extra.setProperty ("lang", lang, nullptr); extra.setProperty ("uiScale", uiScale, nullptr); extra.setProperty ("contrast", highContrast, nullptr);
     extra.setProperty ("sdv", 1, nullptr);   // ses tasarımı parametreleri geçerli (2.2+)
     extra.setProperty ("userArtist", userArtist, nullptr); extra.setProperty ("userPreset", userPreset, nullptr);
+    if (ref.hasPath() || ref.sampler.enabled.load() || ref.sampler.enabled.load()) extra.setProperty ("ref", juce::JSON::toString (ref.stateToVar(), true), nullptr);
     state.removeChild (state.getChildWithName ("extra"), nullptr);
     state.appendChild (extra, nullptr);
     return state;
@@ -561,6 +566,7 @@ void HitGenProcessor::restoreFromTree (const juce::ValueTree& source, bool inclu
             auto l = extra.getProperty ("lang").toString(); if (data.langCodes.contains (l)) lang = l;
             uiScale = juce::jlimit (.75f, 2.0f, (float) (double) extra.getProperty ("uiScale", 1.0));
             highContrast = (bool) extra.getProperty ("contrast", false);
+            const auto rs = extra.getProperty ("ref").toString(); if (rs.isNotEmpty() && rs.length() < 100000) ref.restoreFromVar (juce::JSON::parse (rs));
         }
     }
     if (! sdValid) for (int part = 0; part < 3; ++part) applySoundToParams (part);   // 2.1 ve öncesi projeler: seçili sesin değerleri

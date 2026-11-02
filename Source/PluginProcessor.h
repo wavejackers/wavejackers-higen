@@ -62,6 +62,7 @@ public:
     void readSoundParams (int part, float* vals) const;
     void applyRefToProject (const hg::RefAnalysis& a);       // tespit edilen tempo, ton ve makamı üretici ayarlarına uygula
     juce::MidiKeyboardState keyboardState;     // ekran klavyesi
+    bool wasSamp = false;                      // yalnızca ses iş parçacığı
     std::atomic<int> auditionPart { -1 };      // ses tasarımı açıkken klavye bu izi çalar (-1: ayara göre)
     // ---- sanatçı presetleri
     hg::PresetStore presets;
