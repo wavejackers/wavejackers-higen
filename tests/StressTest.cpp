@@ -6,6 +6,7 @@
 #include "../Source/PluginProcessor.h"
 #include "../Source/PluginEditor.h"
 #include "../Source/SoundParams.h"
+#include "../Source/DnaLibrary.h"
 #include <iostream>
 
 struct FakeHead : juce::AudioPlayHead
@@ -360,6 +361,17 @@ int main (int argc, char** argv)
         ed->setLanguage ("en"); ed->reference().showSampler (true);
         { auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f); auto f = outDir.getChildFile ("plugin-en-sampler.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os); }
         ed->reference().showSampler (false);
+        ed->reference().showLibrary();
+        { auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f); auto f = outDir.getChildFile ("plugin-en-library.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os); }
+        ed->reference().showSampler (false);
+        // HIZLI mod: yüklü klip + analiz var; yeniden başlat -> aday seçilir ve ses üretilir; A/B
+        { float b4[hg::kNumSp], af[hg::kNumSp]; const int part = ed->reference().currentPart(); p.readSoundParams (part, b4);
+          ed->reference().quickNow(); pump ([&] { p.readSoundParams (part, af); return std::memcmp (b4, af, sizeof b4) != 0; }, 30000); p.readSoundParams (part, af);
+          if (std::memcmp (b4, af, sizeof b4) == 0) fail ("quick mode produced no sound: " + ed->reference().statusText());
+          float c1[hg::kNumSp], c2[hg::kNumSp], c3[hg::kNumSp]; ed->reference().pinNow(); ed->reference().generateNow(); pump ([&] { return false; }, 1500); p.readSoundParams (part, c1);
+          ed->reference().swapNow(); p.readSoundParams (part, c2); ed->reference().swapNow(); p.readSoundParams (part, c3);
+          if (std::memcmp (c1, c2, sizeof c1) == 0 || std::memcmp (c1, c3, sizeof c1) != 0) fail ("A/B swap");
+          std::cout << "quick + A/B ok\n"; }
         // geçersiz dosya: hata iletisi, çökme yok
         auto bad = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("hitgen-bad.wav"); bad.replaceWithText ("not audio at all");
         ed->reference().openFile (bad); pump ([&] { return p.ref.state.load() == hg::RefEngine::Failed; }, 10000);
@@ -410,6 +422,30 @@ int main (int argc, char** argv)
           if (q.ref.sampler.root.load() != 61 || q.ref.sampler.transpose.load() != 3) fail ("sampler preset roundtrip"); q.ref.samplerFromVar (juce::JSON::parse ("{\"root\":999,\"a\":\"x\",\"voices\":-4}"));
           if (q.ref.sampler.root.load() != 127 || q.ref.sampler.maxVoices.load() != 1) fail ("sampler preset clamp"); }
         std::cout << "sampler tests done\n";
+    }
+    // 8) DNA kütüphanesi: kaydet, ara, favori, son kullanılan, yeniden adlandır, dışa/içe aktar, sil, bozuk dosya
+    {
+        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("hitgen-lib-test"); dir.deleteRecursively(); dir.createDirectory();
+        hg::DnaLibrary lib (dir); hg::TrackDna d; d.role = "lead"; d.sourceFile = "demo.wav"; d.f0Hz = 440; d.pitched = true; d.envDb.assign (16, -20.0f); d.harmonics.assign (8, 0.5f);
+        juce::File f1, f2; bool ok = lib.save (d, "Wavejackers", "Emotional Lead", &f1) && lib.save (d, "Wavejackers", "Deep Bass", &f2) && lib.save (d, "Black Coffee", "My Pad");
+        if (! ok || lib.entries().size() != 3) fail ("library save");
+        if (lib.query ("deep", hg::DnaLibrary::All).size() != 1 || lib.query ("WAVEJACKERS", hg::DnaLibrary::All).size() != 2 || lib.query ("zzz", hg::DnaLibrary::All).size() != 0) fail ("library search");
+        auto e = lib.query ("deep", hg::DnaLibrary::All)[0]; lib.setFavorite (e, true);
+        if (lib.query ("", hg::DnaLibrary::Favorites).size() != 1) fail ("library favorite");
+        hg::TrackDna got; e = lib.query ("deep", hg::DnaLibrary::All)[0]; if (! lib.load (e, got) || got.name != "Deep Bass" || got.artist != "Wavejackers") fail ("library load");
+        if (lib.query ("", hg::DnaLibrary::Recent).size() != 1) fail ("library recent");
+        e = lib.query ("deep", hg::DnaLibrary::All)[0]; if (! lib.rename (e, "Sub Bass") || lib.query ("sub", hg::DnaLibrary::All).size() != 1) fail ("library rename");
+        if (lib.query ("", hg::DnaLibrary::Favorites).size() != 1 || lib.query ("", hg::DnaLibrary::Recent).size() != 0) fail ("library rename keeps favorite / drops stale recent");
+        e = lib.query ("sub", hg::DnaLibrary::All)[0]; const auto ex = dir.getChildFile ("..").getChildFile ("hitgen-lib-export.hgdna"); ex.deleteFile();
+        if (! lib.exportTo (e, ex)) fail ("library export");
+        hg::DnaLibrary lib2 (dir.getChildFile ("..").getChildFile ("hitgen-lib-test2")); if (! lib2.importFile (ex) || lib2.entries().size() != 1) fail ("library import");
+        auto junk = dir.getChildFile ("..").getChildFile ("junk.hgdna"); junk.replaceWithText ("{ not a dna"); if (lib2.importFile (junk)) fail ("library accepted junk");
+        if (! lib.remove (e) || lib.entries().size() != 2) fail ("library delete");
+        hg::DnaLibrary lib3 (dir);   // yeniden aç: kalıcılık
+        if (lib3.entries().size() != 2) fail ("library persistence");
+        hg::DnaEntry outside; outside.file = junk; if (lib.remove (outside)) fail ("library deleted a file outside the folder");
+        dir.getChildFile ("..").getChildFile ("hitgen-lib-test2").deleteRecursively(); ex.deleteFile(); junk.deleteFile();
+        std::cout << "library tests done\n";
     }
     std::cout << (failures == 0 ? "ALL PASSED" : "FAILURES: " + std::to_string (failures)) << "\n";
     return failures == 0 ? 0 : 1;

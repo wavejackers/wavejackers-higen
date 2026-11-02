@@ -21,7 +21,7 @@ ReferencePage::ReferencePage (HitGenProcessor& p, hgui::LookAndFeel& l) : proc (
     setFocusContainerType (FocusContainerType::focusContainer);
     wave.o = this; cands.o = this; candList.assign (kNumRefCats, {});
     for (auto* c : std::initializer_list<Component*> { &openBtn, &smartBtn, &playBtn, &applyBtn, &zoomIn, &zoomOut, &zoomFit, &genBtn, &prevBtn, &nextBtn, &saveDnaBtn, &loadDnaBtn, &seedNewBtn,
-                                                       &loopBtn, &previewBtn, &viewSynth, &viewSamp, &sTrimBtn, &sLoopSelBtn, &sSaveBtn, &sLoadBtn, &sEnable, &sLoop, &rootBox, &trS, &voiceS, &rootL, &trL, &voiceL, &sInfo, &simK, &varK, &gainS, &gainL, &seed, &seedLabel, &status, &info, &dnaInfo, &banner, &histLabel, &wave, &cands, &bar })
+                                                       &loopBtn, &previewBtn, &quickBtn, &pinBtn, &abBtn, &viewSynth, &viewSamp, &viewLib, &libList, &libSave, &libRename, &libDelete, &libImport, &libExport, &libFav, &libUseBtn, &searchEd, &artistEd, &nameEd, &filterBox, &sTrimBtn, &sLoopSelBtn, &sSaveBtn, &sLoadBtn, &sEnable, &sLoop, &rootBox, &trS, &voiceS, &rootL, &trL, &voiceL, &sInfo, &simK, &varK, &gainS, &gainL, &seed, &seedLabel, &status, &info, &dnaInfo, &banner, &histLabel, &wave, &cands, &bar })
         addAndMakeVisible (*c);
     for (int i = 0; i < 3; ++i) { auto& b = partBtns[(size_t) i]; addAndMakeVisible (b); b.setRadioGroupId (301); b.setClickingTogglesState (true); b.onClick = [this, i] { if (partBtns[(size_t) i].getToggleState()) { part = i; proc.auditionPart.store (part); } }; }
     partBtns[1].setToggleState (true, dontSendNotification);
@@ -72,6 +72,41 @@ ReferencePage::ReferencePage (HitGenProcessor& p, hgui::LookAndFeel& l) : proc (
         s.setValue (i == 0 ? SP.a.load() : i == 1 ? SP.d.load() : i == 2 ? SP.s.load() : i == 3 ? SP.r.load() : i == 4 ? SP.gain.load() : SP.velSens.load(), dontSendNotification);
         s.onValueChange = [this, i] { auto& P = proc.ref.sampler; const float v = (float) sKnobs[(size_t) i].slider.getValue(); (i == 0 ? P.a : i == 1 ? P.d : i == 2 ? P.s : i == 3 ? P.r : i == 4 ? P.gain : P.velSens) = v; };
     }
+    // ---- kütüphane
+    libModel.o = this; libList.setModel (&libModel); libList.setRowHeight (22); libList.setColour (ListBox::backgroundColourId, lnf.pal().panel); libList.setColour (ListBox::outlineColourId, lnf.pal().line);
+    viewLib.setRadioGroupId (302); viewLib.setClickingTogglesState (true); viewLib.onClick = [this] { if (viewLib.getToggleState()) setView (2); };
+    filterBox.addItem ("-", 1); filterBox.addItem ("-", 2); filterBox.addItem ("-", 3); filterBox.setSelectedId (1, dontSendNotification); filterBox.onChange = [this] { libRefresh(); };
+    searchEd.onTextChange = [this] { libRefresh(); }; searchEd.setFont (lnf.font (13.0f)); artistEd.setFont (lnf.font (13.0f)); nameEd.setFont (lnf.font (13.0f)); artistEd.setTextToShowWhenEmpty ("...", lnf.pal().mute); nameEd.setTextToShowWhenEmpty ("...", lnf.pal().mute); searchEd.setTextToShowWhenEmpty ("...", lnf.pal().mute);
+    libSave.onClick = [this]
+    {
+        if (! haveDna) { status.setText (T ("rfNoDna"), dontSendNotification); return; }
+        const auto nm = nameEd.getText().trim().isNotEmpty() ? nameEd.getText() : (dna.name.isNotEmpty() ? dna.name : dna.sourceFile + " " + dna.role);
+        status.setText (lib.save (dna, artistEd.getText(), nm) ? T ("libSaved").replace ("{n}", nm) : T ("rfSaveFail"), dontSendNotification); libRefresh();
+    };
+    libRename.onClick = [this] { if (auto* e = libSel()) { const auto nm = nameEd.getText(); const auto e2 = *e; status.setText (nm.trim().isNotEmpty() && lib.rename (e2, nm) ? T ("libRenamed") : T ("libNeedName"), dontSendNotification); libRefresh(); } else status.setText (T ("libPick"), dontSendNotification); };
+    libDelete.onClick = [this]
+    {
+        auto* e = libSel(); if (e == nullptr) { status.setText (T ("libPick"), dontSendNotification); return; }
+        const auto e2 = *e; const auto opts = MessageBoxOptions::makeOptionsOkCancel (MessageBoxIconType::WarningIcon, T ("libDelete"), T ("libDeleteAsk").replace ("{n}", e2.name), T ("libDelete"), T ("libCancel"), this);
+        AlertWindow::showAsync (opts, [this, e2] (int r) { if (r == 1) { status.setText (lib.remove (e2) ? T ("libDeleted") : T ("rfSaveFail"), dontSendNotification); libRefresh(); } });
+    };
+    libImport.onClick = [this]
+    {
+        chooser = std::make_unique<FileChooser> (T ("libImport"), File::getSpecialLocation (File::userDocumentsDirectory), "*.hgdna");
+        chooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles | FileBrowserComponent::canSelectMultipleItems, [this] (const FileChooser& fc)
+        { int ok = 0, bad = 0; for (auto& f : fc.getResults()) (lib.importFile (f) ? ok : bad)++; status.setText (T ("libImported").replace ("{ok}", String (ok)).replace ("{bad}", String (bad)), dontSendNotification); libRefresh(); });
+    };
+    libExport.onClick = [this]
+    {
+        auto* e = libSel(); if (e == nullptr) { status.setText (T ("libPick"), dontSendNotification); return; }
+        const auto e2 = *e; chooser = std::make_unique<FileChooser> (T ("libExport"), File::getSpecialLocation (File::userDocumentsDirectory).getChildFile (e2.file.getFileName()), "*.hgdna");
+        chooser->launchAsync (FileBrowserComponent::saveMode | FileBrowserComponent::warnAboutOverwriting, [this, e2] (const FileChooser& fc) { if (fc.getResult() != File()) status.setText (lib.exportTo (e2, fc.getResult()) ? T ("rfSaved").replace ("{f}", fc.getResult().getFullPathName()) : T ("rfSaveFail"), dontSendNotification); });
+    };
+    libFav.onClick = [this] { if (auto* e = libSel()) { const auto e2 = *e; lib.setFavorite (e2, ! e2.favorite); libRefresh(); } else status.setText (T ("libPick"), dontSendNotification); };
+    libUseBtn.onClick = [this] { libUse (libList.getSelectedRow()); };
+    quickBtn.onClick = [this] { quickStart(); }; pinBtn.onClick = [this] { pinA(); }; abBtn.onClick = [this] { swapAB(); }; abBtn.setEnabled (false);
+    setWantsKeyboardFocus (true);
+    libRefresh();
     setView (0);
     smartBtn.setEnabled (false); playBtn.setEnabled (false); genBtn.setEnabled (false); applyBtn.setEnabled (false); prevBtn.setEnabled (false); nextBtn.setEnabled (false);
     setLanguage (lang, rtl);
@@ -97,6 +132,10 @@ void ReferencePage::relabel()
     viewSynth.setButtonText (T ("rfViewSynth")); viewSamp.setButtonText (T ("rfViewSamp")); sEnable.setButtonText (T ("rfSampEnable")); sLoop.setButtonText (T ("rfLoop"));
     rootL.setText (T ("rfRoot"), dontSendNotification); trL.setText (T ("rfTranspose"), dontSendNotification); voiceL.setText (T ("rfVoices"), dontSendNotification);
     sTrimBtn.setButtonText (T ("rfTrim")); sLoopSelBtn.setButtonText (T ("rfLoopSel")); sSaveBtn.setButtonText (T ("rfSampSave")); sLoadBtn.setButtonText (T ("rfSampLoad"));
+    quickBtn.setButtonText (T ("rfQuick")); quickBtn.setTooltip (T ("rfQuickHint")); pinBtn.setButtonText (T ("rfPinA")); pinBtn.setTooltip (T ("rfABHint")); abBtn.setButtonText (abOnA ? "B" : "A/B"); abBtn.setTooltip (T ("rfABHint"));
+    viewLib.setButtonText (T ("rfViewLib")); libSave.setButtonText (T ("libSave")); libRename.setButtonText (T ("libRename")); libDelete.setButtonText (T ("libDelete")); libImport.setButtonText (T ("libImport")); libExport.setButtonText (T ("libExport")); libFav.setButtonText (T ("libFav")); libUseBtn.setButtonText (T ("libUse"));
+    searchEd.setTextToShowWhenEmpty (T ("libSearch"), lnf.pal().mute); artistEd.setTextToShowWhenEmpty (T ("libArtist"), lnf.pal().mute); nameEd.setTextToShowWhenEmpty (T ("libName"), lnf.pal().mute);
+    { const int id = filterBox.getSelectedId(); filterBox.clear (dontSendNotification); filterBox.addItem (T ("libAll"), 1); filterBox.addItem (T ("libFavs"), 2); filterBox.addItem (T ("libRecent"), 3); filterBox.setSelectedId (id > 0 ? id : 1, dontSendNotification); }
     sTrimBtn.setTooltip (T ("rfTrimHint")); rootBox.setTooltip (T ("rfRootHint"));
     { const char* nm[6] = { "rfA", "rfD", "rfS", "rfR", "rfGain", "rfVel" }; for (int i = 0; i < 6; ++i) sKnobs[(size_t) i].setText (T (nm[i]), T (nm[i] + String ("H"))); }
     sInfo.setText (T (proc.ref.sampler.enabled.load() ? "rfSampOn" : "rfSampInfo"), dontSendNotification); sInfo.setFont (lnf.font (12.0f)); sInfo.setJustificationType (Justification::topLeft);
@@ -114,7 +153,7 @@ void ReferencePage::openFile (const File& f)
 
 void ReferencePage::refreshAfterChange()
 {
-    const int st = proc.ref.state.load(); auto c = proc.ref.clip(); auto a = proc.ref.analysis();
+    const int st = proc.ref.state.load(); if (quickPending) quickStep(); auto c = proc.ref.clip(); auto a = proc.ref.analysis();
     smartBtn.setEnabled (c != nullptr && st != RefEngine::Loading && st != RefEngine::Analysing);
     playBtn.setEnabled (c != nullptr); genBtn.setEnabled (c != nullptr || haveDna); applyBtn.setEnabled (a != nullptr && a->ok && a->bpm > 0);
     const int cid = c ? (int) (c->numSamples() ^ (int) c->seconds()) : 0;
@@ -224,7 +263,7 @@ void ReferencePage::doGenerate (const TrackDna& d)
 {
     const juce::uint32 sd = (juce::uint32) seed.getValue(); float vals[kNumSp];
     dnaToSoundParams (d, part == 1 ? 'b' : part == 0 ? 'c' : 'm', (float) simK.slider.getValue(), (float) varK.slider.getValue(), sd, vals);
-    proc.applySoundParams (part, vals); pushHistory (vals, sd);
+    proc.applySoundParams (part, vals); pushHistory (vals, sd); abOnA = false; abBtn.setEnabled (haveA); abBtn.setButtonText ("A/B");
     seed.setValue (sd + 1, dontSendNotification); seed.setValue (sd + 1);       // sonraki tıklama farklı bir varyasyon verir; kullanılan tohum geçmişte saklı
     auto F = [] (float v, int dp) { return dp == 0 ? String (roundToInt (v)) : String (v, dp); };
     dnaInfo.setText (T ("rfDnaInfo").replace ("{f0}", d.pitched ? F (d.f0Hz, 1) + " Hz" : T ("rfUnpitched")).replace ("{cent}", F (d.centroidHz, 0)).replace ("{atk}", F (d.attackMs, 0)).replace ("{sus}", F (d.sustainLevel, 2))
@@ -283,18 +322,22 @@ void ReferencePage::resized()
 {
     auto P = [this] (Component& c, Rectangle<int> r) { c.setBounds (rtl ? r.withX (kW - r.getRight()) : r); };
     P (openBtn, { 16, 10, 150, 34 }); P (smartBtn, { 174, 10, 210, 34 }); P (playBtn, { 392, 10, 200, 34 }); P (loopBtn, { 600, 10, 90, 34 });
-    P (gainL, { 700, 10, 60, 34 }); P (gainS, { 760, 10, 130, 34 }); P (applyBtn, { 900, 10, 248, 34 });
+    P (gainL, { 698, 10, 52, 34 }); P (gainS, { 750, 10, 110, 34 }); P (applyBtn, { 866, 10, 134, 34 }); P (quickBtn, { 1008, 10, 140, 34 });
     P (info, { 16, 48, 1132, 36 }); P (status, { 16, 84, 1132, 18 });
     P (wave, { 16, 106, 1132, 170 }); P (bar, { 16, 278, 1132, 12 });
     P (zoomOut, { 16, 294, 40, 24 }); P (zoomIn, { 60, 294, 40, 24 }); P (zoomFit, { 104, 294, 80, 24 }); P (banner, { 196, 294, 952, 24 });
     P (cands, { 16, 324, 1132, 164 });
     for (int i = 0; i < 3; ++i) P (partBtns[(size_t) i], { 16 + i * 108, 500, 104, 28 });
-    P (genBtn, { 16, 538, 250, 54 }); P (prevBtn, { 274, 548, 40, 34 }); P (nextBtn, { 318, 548, 40, 34 }); P (histLabel, { 366, 548, 220, 34 });
+    P (genBtn, { 16, 538, 250, 54 }); P (prevBtn, { 274, 548, 40, 34 }); P (nextBtn, { 318, 548, 40, 34 }); P (pinBtn, { 366, 548, 78, 34 }); P (abBtn, { 450, 548, 60, 34 }); P (histLabel, { 274, 592, 320, 18 });
     P (simK, { 600, 496, 100, 92 }); P (varK, { 706, 496, 100, 92 });
     P (seedLabel, { 830, 496, 80, 20 }); P (seed, { 830, 518, 170, 30 }); P (seedNewBtn, { 1006, 518, 34, 30 }); P (previewBtn, { 830, 556, 230, 30 });
     P (saveDnaBtn, { 1056, 496, 92, 30 }); P (loadDnaBtn, { 1056, 532, 92, 30 });
-    P (dnaInfo, { 16, 596, 1132, 52 });
-    P (viewSynth, { 340, 492, 120, 26 }); P (viewSamp, { 464, 492, 120, 26 });
+    P (dnaInfo, { 16, 612, 1132, 38 });
+    P (viewSynth, { 340, 492, 120, 26 }); P (viewSamp, { 464, 492, 120, 26 }); P (viewLib, { 588, 492, 120, 26 });
+    P (searchEd, { 16, 526, 300, 26 }); P (filterBox, { 324, 526, 140, 26 }); P (libList, { 16, 556, 448, 92 });
+    P (artistEd, { 480, 526, 210, 26 }); P (nameEd, { 698, 526, 220, 26 }); P (libSave, { 930, 526, 218, 26 });
+    P (libUseBtn, { 480, 560, 110, 26 }); P (libFav, { 596, 560, 110, 26 }); P (libRename, { 712, 560, 110, 26 }); P (libDelete, { 828, 560, 110, 26 });
+    P (libImport, { 480, 594, 110, 26 }); P (libExport, { 596, 594, 110, 26 });
     P (sEnable, { 16, 528, 200, 30 }); P (rootL, { 230, 528, 60, 30 }); P (rootBox, { 290, 528, 130, 30 }); P (trL, { 436, 528, 90, 30 }); P (trS, { 526, 528, 120, 30 });
     P (voiceL, { 660, 528, 80, 30 }); P (voiceS, { 740, 528, 110, 30 }); P (sLoop, { 866, 528, 100, 30 }); P (sTrimBtn, { 976, 528, 172, 30 });
     for (int i = 0; i < 6; ++i) P (sKnobs[(size_t) i], { 16 + i * 104, 562, 100, 86 });
@@ -307,6 +350,7 @@ void ReferencePage::paint (Graphics& g)
     g.setColour (P.panel2); g.fillRoundedRectangle (8.0f, 488.0f, (float) kW - 16, 160.0f, 10);
     g.setColour (P.mute); g.setFont (lnf.font (12.0f));
     if (view == 0) g.drawText (T ("rfTarget"), Rectangle<int> (rtl ? kW - 330 : 16, 480, 314, 18), rtl ? Justification::centredRight : Justification::centredLeft);
+    if (view == 2 && libRows.empty()) { g.setColour (P.mute); g.setFont (lnf.font (12.5f)); g.drawText (T ("libEmpty"), libList.getBounds().reduced (10), Justification::centred); }
     if (proc.ref.clip() == nullptr && proc.ref.state.load() != RefEngine::Loading)
     {
         g.setColour (P.accent.withAlpha (0.55f)); g.drawRoundedRectangle (wave.getBounds().toFloat().reduced (1), 10, 1.5f);
@@ -347,7 +391,7 @@ void ReferencePage::Wave::paint (Graphics& g)
     const double pos = o->proc.ref.posSec.load(); if (o->proc.ref.playing.load() || pos > 0) { const float x = secToX (pos); if (x >= 0 && x <= W) { g.setColour (P.ink); g.drawLine (x, 0, x, (float) H, 1.6f); } }
 }
 
-void ReferencePage::Wave::mouseDown (const MouseEvent& e) { if (o->proc.ref.clip() == nullptr) return; dragging = false; dragA = xToSec ((float) e.x); }
+void ReferencePage::Wave::mouseDown (const MouseEvent& e) { o->grabKeyboardFocus(); if (o->proc.ref.clip() == nullptr) return; dragging = false; dragA = xToSec ((float) e.x); }
 void ReferencePage::Wave::mouseDrag (const MouseEvent& e)
 {
     if (o->proc.ref.clip() == nullptr) return;
@@ -396,11 +440,13 @@ void ReferencePage::Cands::mouseDown (const MouseEvent& e)
 
 void ReferencePage::setView (int v)
 {
-    view = v; const bool s = v == 1;
-    for (auto* x : std::initializer_list<Component*> { &partBtns[0], &partBtns[1], &partBtns[2], &genBtn, &prevBtn, &nextBtn, &histLabel, &simK, &varK, &seed, &seedLabel, &seedNewBtn, &previewBtn, &saveDnaBtn, &loadDnaBtn, &dnaInfo }) x->setVisible (! s);
+    view = v; const bool s = v == 1, synth = v == 0;
+    for (auto* x : std::initializer_list<Component*> { &partBtns[0], &partBtns[1], &partBtns[2], &genBtn, &prevBtn, &nextBtn, &pinBtn, &abBtn, &histLabel, &simK, &varK, &seed, &seedLabel, &seedNewBtn, &previewBtn, &saveDnaBtn, &loadDnaBtn, &dnaInfo }) x->setVisible (synth);
     for (auto* x : std::initializer_list<Component*> { &sEnable, &sLoop, &rootBox, &trS, &voiceS, &rootL, &trL, &voiceL, &sTrimBtn, &sLoopSelBtn, &sSaveBtn, &sLoadBtn, &sInfo }) x->setVisible (s);
     for (auto& k : sKnobs) k.setVisible (s);
-    viewSynth.setToggleState (! s, dontSendNotification); viewSamp.setToggleState (s, dontSendNotification); repaint();
+    const bool lb = v == 2;
+    for (auto* x : std::initializer_list<Component*> { &libList, &libSave, &libRename, &libDelete, &libImport, &libExport, &libFav, &libUseBtn, &searchEd, &artistEd, &nameEd, &filterBox }) x->setVisible (lb);
+    viewSynth.setToggleState (v == 0, dontSendNotification); viewSamp.setToggleState (s, dontSendNotification); viewLib.setToggleState (lb, dontSendNotification); if (lb) libRefresh(); repaint();
 }
 
 void ReferencePage::syncSampler()
@@ -444,4 +490,70 @@ void ReferencePage::loadSampler()
         else if (! src.existsAsFile() && v.getProperty ("sourcePath", {}).toString().isNotEmpty() && cur == nullptr) status.setText (T ("fileMissing") + " " + v.getProperty ("sourcePath", {}).toString(), dontSendNotification);
         else status.setText (T ("rfSampLoaded"), dontSendNotification);
     });
+}
+
+void ReferencePage::LibModel::paintListBoxItem (int row, Graphics& g, int w, int h, bool sel)
+{
+    if (row < 0 || row >= (int) o->libRows.size()) return; const auto& e = o->libRows[(size_t) row]; const auto& P = o->lnf.pal();
+    if (sel) { g.setColour (P.accent.withAlpha (0.25f)); g.fillRect (0, 0, w, h); }
+    g.setColour (e.favorite ? P.accent : P.mute); g.setFont (o->lnf.font (13.0f, true)); g.drawText (e.favorite ? "*" : "-", 4, 0, 14, h, Justification::centred);
+    g.setColour (P.ink); g.setFont (o->lnf.font (12.5f)); g.drawText ((e.artist.isNotEmpty() ? e.artist + "  /  " : String()) + e.name, 22, 0, w - 130, h, Justification::centredLeft, true);
+    g.setColour (P.mute); g.drawText (e.role, w - 100, 0, 94, h, Justification::centredRight);
+}
+void ReferencePage::libRefresh() { libRows = lib.query (searchEd.getText(), (hg::DnaLibrary::Filter) (filterBox.getSelectedId() - 1)); libList.updateContent(); libList.repaint(); }
+const hg::DnaEntry* ReferencePage::libSel() const { const int r = libList.getSelectedRow(); return r >= 0 && r < (int) libRows.size() ? &libRows[(size_t) r] : nullptr; }
+void ReferencePage::libSelChanged() { if (auto* e = libSel()) { nameEd.setText (e->name, dontSendNotification); artistEd.setText (e->artist, dontSendNotification); } }
+void ReferencePage::libUse (int row)
+{
+    if (row < 0 || row >= (int) libRows.size()) { status.setText (T ("libPick"), dontSendNotification); return; }
+    const auto e = libRows[(size_t) row]; TrackDna d;
+    if (! lib.load (e, d)) { status.setText (T ("rfDnaBad"), dontSendNotification); return; }
+    dna = d; haveDna = true; dnaA = dnaB = -2; genBtn.setEnabled (true);
+    const int pc = d.role == "bass" ? 1 : d.role == "pad" ? 0 : d.role == "lead" ? 2 : part; part = pc; partBtns[(size_t) pc].setToggleState (true, dontSendNotification); proc.auditionPart.store (part);
+    status.setText (T ("rfDnaLoaded").replace ("{n}", d.name), dontSendNotification); libRefresh();
+}
+
+void ReferencePage::quickStart()
+{
+    quickPending = true; setView (0);
+    const int st = proc.ref.state.load();
+    if (proc.ref.clip() == nullptr) { status.setText (T ("rfQuickOpen"), dontSendNotification); openBtn.triggerClick(); return; }
+    if (st == RefEngine::Loaded) proc.ref.analyse(); else quickStep();
+}
+
+void ReferencePage::quickStep()
+{
+    const int st = proc.ref.state.load();
+    if (st == RefEngine::Failed) { quickPending = false; return; }
+    if (st == RefEngine::Loaded) { quickPending = false; quickPending = true; proc.ref.analyse(); return; }
+    if (st != RefEngine::Ready) return;
+    quickPending = false;
+    auto a = proc.ref.analysis(); if (! a || ! a->ok) return;
+    int bc = -1; float bs = 0.0f;                                   // en yüksek güvenli lead/bas/pad adayı
+    for (int k : { catLead, catBass, catPad }) { auto t = a->top (k, 1); if (! t.empty() && t[0].confidence > bs) { bs = t[0].confidence; bc = k; } }
+    if (bc < 0) { status.setText (T ("rfNoRegions"), dontSendNotification); return; }
+    candList.assign (kNumRefCats, {}); for (int k = 0; k < kNumRefCats; ++k) candList[(size_t) k] = a->top (k, 4);
+    selectCandidate (bc, 0); proc.ref.playing = false; relabel(); generate();
+}
+
+void ReferencePage::pinA() { if (histPos < 0) { status.setText (T ("rfNoDna"), dontSendNotification); return; } proc.readSoundParams (part, slotA.data()); haveA = true; abOnA = false; abBtn.setEnabled (true); abBtn.setButtonText ("A/B"); status.setText (T ("rfPinned"), dontSendNotification); }
+
+void ReferencePage::swapAB()
+{
+    if (! haveA) return;
+    if (! abOnA) { proc.readSoundParams (part, slotB.data()); proc.applySoundParams (part, slotA.data()); abOnA = true; }
+    else { proc.applySoundParams (part, slotB.data()); abOnA = false; }
+    abBtn.setButtonText (abOnA ? "A" : "B"); status.setText (T (abOnA ? "rfShowA" : "rfShowB"), dontSendNotification);
+    if (previewBtn.getToggleState()) startPhrase();
+}
+
+bool ReferencePage::keyPressed (const KeyPress& k)
+{
+    if (k.getModifiers().isAnyModifierKeyDown()) return false;
+    if (k == KeyPress::spaceKey && proc.ref.clip() != nullptr) { togglePlay(); return true; }
+    if (k.getTextCharacter() == 'g' || k.getTextCharacter() == 'G') { generate(); return true; }
+    if (k.getTextCharacter() == '[') { applyHistory (histPos - 1); return true; }
+    if (k.getTextCharacter() == ']') { applyHistory (histPos + 1); return true; }
+    if (k.getTextCharacter() == 'a' || k.getTextCharacter() == 'A') { swapAB(); return true; }
+    return false;
 }

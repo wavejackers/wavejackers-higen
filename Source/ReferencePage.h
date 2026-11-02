@@ -4,6 +4,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "PluginProcessor.h"
 #include "Ui.h"
+#include "DnaLibrary.h"
 
 class ReferencePage : public juce::Component, private juce::ScrollBar::Listener
 {
@@ -22,6 +23,10 @@ public:
     void selectCandidate (int cat, int row);
     void generateNow() { generate(); }
     void showSampler (bool on) { setView (on ? 1 : 0); }
+    void showLibrary() { setView (2); }
+    void quickNow() { quickStart(); }
+    void pinNow() { pinA(); }
+    void swapNow() { swapAB(); }
     juce::String statusText() const { return status.getText(); }
 
 private:
@@ -54,6 +59,23 @@ private:
     juce::TextButton viewSynth, viewSamp, sTrimBtn, sLoopSelBtn, sSaveBtn, sLoadBtn;
     juce::ToggleButton sEnable, sLoop; juce::ComboBox rootBox; juce::Slider trS, voiceS; juce::Label rootL, trL, voiceL, sInfo;
     std::array<hgui::Knob, 6> sKnobs;                                  // A D S R Gain Vel
+    // kütüphane görünümü (view 2)
+    hg::DnaLibrary lib { hg::DnaLibrary::defaultFolder() };
+    struct LibModel : public juce::ListBoxModel
+    {
+        ReferencePage* o = nullptr;
+        int getNumRows() override { return (int) o->libRows.size(); }
+        void paintListBoxItem (int row, juce::Graphics& g, int w, int h, bool sel) override;
+        void selectedRowsChanged (int) override { o->libSelChanged(); }
+        void listBoxItemDoubleClicked (int row, const juce::MouseEvent&) override { o->libUse (row); }
+    } libModel;
+    std::vector<hg::DnaEntry> libRows; juce::ListBox libList;
+    juce::TextButton viewLib, libSave, libRename, libDelete, libImport, libExport, libFav, libUseBtn; juce::TextEditor searchEd, artistEd, nameEd; juce::ComboBox filterBox;
+    void libRefresh(); void libSelChanged(); void libUse (int row); const hg::DnaEntry* libSel() const;
+    // Quick Mode ve A/B
+    juce::TextButton quickBtn, pinBtn, abBtn; bool quickPending = false; bool haveA = false; std::array<float, hg::kNumSp> slotA {}, slotB {}; bool abOnA = false;
+    void quickStart(); void quickStep(); void pinA(); void swapAB();
+    bool keyPressed (const juce::KeyPress&) override;
     void setView (int v); void syncSampler(); void trimFromSelection(); void saveSampler(); void loadSampler();
     Wave wave; Cands cands; juce::ScrollBar bar { false };
     std::unique_ptr<juce::FileChooser> chooser;
