@@ -8,6 +8,8 @@
 #include "../Source/SoundParams.h"
 #include "../Source/DnaLibrary.h"
 #include <iostream>
+#include <functional>
+#include <memory>
 
 struct FakeHead : juce::AudioPlayHead
 {
@@ -56,6 +58,159 @@ static Stats run (HitGenProcessor& p, FakeHead& head, double sr, int block, doub
     const double el = juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - t0);
     st.cpu = el / seconds; st.rms = std::sqrt (sum / (2.0 * st.samples));
     return st;
+}
+
+// Büyük nesneler (HitGenProcessor) tek bir main() çerçevesinde birikip MSVC'de 1 MB yığını aşmasın diye her blok ayrı işlevde ve yığın dışında.
+using FailFn = std::function<void (const juce::String&)>;
+static void testReference (const juce::File& outDir, const FailFn& fail)
+{
+    // 6) Referans sekmesi: yükle -> SMART DETECT -> aday seç -> BENZERİNİ ÜRET -> orijinali çal (gerçek arka plan iş parçacıklarıyla)
+    {
+        const double sr = 44100.0; const int n = (int) (sr * 24); juce::AudioBuffer<float> sb (2, n); sb.clear();
+        const double beat = 60.0 / 126.0; const double bar = beat * 4;
+        for (int i = 0; i < n; ++i)
+        {
+            const double t = i / sr; float v = 0;
+            const double qt = std::fmod (t, beat) / beat;                                              // bas: A1 vuruşta
+            v += 0.5f * (float) (std::sin (2 * juce::MathConstants<double>::pi * 55.0 * t) * std::exp (-qt * 3.0));
+            if (t >= bar * 4) { const double e = std::fmod (t - bar * 4, beat / 2); const double f = 440.0 * (std::fmod (std::floor ((t - bar * 4) / (beat / 2)), 2.0) < 1 ? 1.0 : 1.2599);
+                                float sq = 0; for (int h = 1; h <= 9; h += 2) sq += (float) (std::sin (2 * juce::MathConstants<double>::pi * f * h * t) / h); v += 0.2f * sq * (float) std::exp (-e * 9.0); }
+            sb.setSample (0, i, v); sb.setSample (1, i, v);
+        }
+        auto wav = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("hitgen-ui-ref.wav"); wav.deleteFile();
+        { juce::WavAudioFormat f; std::unique_ptr<juce::FileOutputStream> os (wav.createOutputStream()); std::unique_ptr<juce::AudioFormatWriter> w (f.createWriterFor (os.get(), sr, 2, 24, {}, 0)); if (w) { os.release(); w->writeFromAudioSampleBuffer (sb, 0, n); } }
+        auto pump = [&] (const std::function<bool()>& done, int ms) { const auto t0 = juce::Time::getMillisecondCounter(); while (! done() && juce::Time::getMillisecondCounter() - t0 < (juce::uint32) ms) juce::MessageManager::getInstance()->runDispatchLoopUntil (20); return done(); };
+        auto p_h = std::make_unique<HitGenProcessor>(); auto& p = *p_h; p.regenerateNow(); p.setRateAndBufferSizeDetails (48000.0, 256); p.prepareToPlay (48000.0, 256);
+        std::unique_ptr<HitGenEditor> ed (dynamic_cast<HitGenEditor*> (p.createEditor()));
+        ed->filesDropped ({ wav.getFullPathName() }, 0, 0);
+        if (ed->currentTab() != 3) fail ("drop did not open the reference tab");
+        if (! pump ([&] { return p.ref.state.load() == hg::RefEngine::Loaded; }, 15000)) fail ("reference did not load");
+        p.ref.analyse();
+        if (! pump ([&] { return p.ref.state.load() == hg::RefEngine::Ready; }, 60000)) fail ("analysis did not finish");
+        auto an = p.ref.analysis();
+        if (! an || ! an->ok || an->regions.empty()) fail ("no regions");
+        else
+        {
+            std::cout << "ui ref: bpm " << an->bpm << " key " << an->key << (an->minor ? "m" : "M") << " regions " << an->regions.size() << "\n";
+            if (std::abs (an->bpm - 126.0) > 2.0) fail ("ui ref bpm " + juce::String (an->bpm));
+            int cat = -1; for (int c : { hg::catLead, hg::catBass }) if (! an->top (c, 1).empty()) { cat = c; break; }
+            ed->reference().selectCandidate (cat, 0);
+            float before[hg::kNumSp], after[hg::kNumSp]; const int part = ed->reference().currentPart(); p.readSoundParams (part, before);
+            bool gotDna = false; ed->reference().generateNow();
+            pump ([&] { p.readSoundParams (part, after); return std::memcmp (before, after, sizeof before) != 0; }, 30000);
+            p.readSoundParams (part, after); gotDna = std::memcmp (before, after, sizeof before) != 0;
+            if (! gotDna) fail ("generate similar changed nothing: " + ed->reference().statusText());
+            else std::cout << "generate similar ok: " << ed->reference().statusText() << "\n";
+        }
+        // orijinali çal: çıkışta ses var ve tavan aşılmıyor; durdurunca sessiz
+        p.ref.regionStart = 2.0; p.ref.regionEnd = 6.0; p.ref.seekTo = 2.0; p.ref.loop = true; p.ref.playing = true;
+        juce::AudioBuffer<float> buf (2, 256); juce::MidiBuffer midi; float pk = 0;
+        for (int b = 0; b < 400; ++b) { buf.clear(); midi.clear(); p.processBlock (buf, midi); pk = std::max (pk, buf.getMagnitude (0, 256)); }
+        if (pk < 0.01f || pk > 0.8914f) fail ("original playback peak " + juce::String (pk));
+        p.ref.playing = false; buf.clear(); midi.clear(); p.processBlock (buf, midi); p.processBlock (buf, midi);
+        if (buf.getMagnitude (0, 256) > 1e-4f) fail ("playback did not stop");
+        std::cout << "original playback ok, peak " << pk << "\n";
+        for (auto l : p.data.langCodes)
+        {
+            ed->setLanguage (l); ed->setTab (3);
+            auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f);
+            auto f = outDir.getChildFile ("plugin-" + l + "-ref.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os);
+        }
+        ed->setLanguage ("en"); ed->reference().showSampler (true);
+        { auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f); auto f = outDir.getChildFile ("plugin-en-sampler.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os); }
+        ed->reference().showSampler (false);
+        ed->reference().showLibrary();
+        { auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f); auto f = outDir.getChildFile ("plugin-en-library.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os); }
+        ed->reference().showSampler (false);
+        // HIZLI mod: yüklü klip + analiz var; yeniden başlat -> aday seçilir ve ses üretilir; A/B
+        { float b4[hg::kNumSp], af[hg::kNumSp]; const int part = ed->reference().currentPart(); p.readSoundParams (part, b4);
+          ed->reference().quickNow(); pump ([&] { p.readSoundParams (part, af); return std::memcmp (b4, af, sizeof b4) != 0; }, 30000); p.readSoundParams (part, af);
+          if (std::memcmp (b4, af, sizeof b4) == 0) fail ("quick mode produced no sound: " + ed->reference().statusText());
+          float c1[hg::kNumSp], c2[hg::kNumSp], c3[hg::kNumSp]; ed->reference().pinNow(); ed->reference().generateNow(); pump ([&] { return false; }, 1500); p.readSoundParams (part, c1);
+          ed->reference().swapNow(); p.readSoundParams (part, c2); ed->reference().swapNow(); p.readSoundParams (part, c3);
+          if (std::memcmp (c1, c2, sizeof c1) == 0 || std::memcmp (c1, c3, sizeof c1) != 0) fail ("A/B swap");
+          std::cout << "quick + A/B ok\n"; }
+        // geçersiz dosya: hata iletisi, çökme yok
+        auto bad = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("hitgen-bad.wav"); bad.replaceWithText ("not audio at all");
+        ed->reference().openFile (bad); pump ([&] { return p.ref.state.load() == hg::RefEngine::Failed; }, 10000);
+        if (p.ref.state.load() != hg::RefEngine::Failed) fail ("bad file not rejected");
+        ed.reset();
+    }
+}
+static void testSampler (const FailFn& fail)
+{
+    // 7) Örnekleyici: MIDI -> doğru perde, polifoni, ADSR, durum geri yükleme, kayıp dosya
+    {
+        const double sr = 48000.0; const int n = (int) (sr * 4); juce::AudioBuffer<float> sb (2, n);
+        for (int i = 0; i < n; ++i) { const float v = 0.5f * (float) std::sin (2 * juce::MathConstants<double>::pi * 220.0 * i / sr); sb.setSample (0, i, v); sb.setSample (1, i, v); }   // A3 = MIDI 57
+        auto wav = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("hitgen-samp.wav"); wav.deleteFile();
+        { juce::WavAudioFormat f; std::unique_ptr<juce::FileOutputStream> os (wav.createOutputStream()); std::unique_ptr<juce::AudioFormatWriter> w (f.createWriterFor (os.get(), sr, 2, 24, {}, 0)); if (w) { os.release(); w->writeFromAudioSampleBuffer (sb, 0, n); } }
+        auto pump = [&] (const std::function<bool()>& done, int ms) { const auto t0 = juce::Time::getMillisecondCounter(); while (! done() && juce::Time::getMillisecondCounter() - t0 < (juce::uint32) ms) juce::MessageManager::getInstance()->runDispatchLoopUntil (20); return done(); };
+        auto p_h = std::make_unique<HitGenProcessor>(); auto& p = *p_h; p.regenerateNow(); p.setRateAndBufferSizeDetails (48000.0, 256); p.prepareToPlay (48000.0, 256);
+        p.ref.load (wav); if (! pump ([&] { return p.ref.state.load() == hg::RefEngine::Loaded; }, 15000)) fail ("sampler clip load");
+        auto& S = p.ref.sampler; S.enabled = true; S.root = 57; S.a = 0.001f; S.d = 0.01f; S.s = 1.0f; S.r = 0.05f; S.gain = 1.0f; S.velSens = 0.0f; S.loop = true; S.transpose = 0;
+        // dominant frekansı sıfır geçişlerinden ölç
+        auto measure = [&] (int note) -> double
+        {
+            juce::MidiBuffer m; juce::AudioBuffer<float> b (2, 256); std::vector<float> out; m.addEvent (juce::MidiMessage::noteOn (1, note, (juce::uint8) 100), 0);
+            for (int blk = 0; blk < 120; ++blk) { b.clear(); p.processBlock (b, m); m.clear(); for (int i = 0; i < 256; ++i) out.push_back (b.getSample (0, i)); }
+            juce::MidiBuffer off; off.addEvent (juce::MidiMessage::noteOff (1, note), 0); b.clear(); p.processBlock (b, off);
+            for (int blk = 0; blk < 40; ++blk) { juce::MidiBuffer e; b.clear(); p.processBlock (b, e); }
+            int z = 0, first = -1, last = -1; for (size_t i = 8000; i + 1 < out.size(); ++i) if (out[i] <= 0 && out[i + 1] > 0) { ++z; if (first < 0) first = (int) i; last = (int) i; }
+            return z > 2 ? (z - 1) * 48000.0 / (last - first) : 0.0;
+        };
+        const double f0 = measure (57), f1 = measure (69), f2 = measure (45);
+        std::cout << "sampler pitch: root " << f0 << " Hz, +12 " << f1 << " Hz, -12 " << f2 << " Hz\n";
+        if (std::abs (f0 - 220.0) > 3.0 || std::abs (f1 - 440.0) > 6.0 || std::abs (f2 - 110.0) > 2.0) fail ("sampler pitch wrong");
+        // polifoni: 20 nota -> en çok 8 ses, sessizlik ve tavan korunur
+        { juce::MidiBuffer m; for (int k = 0; k < 20; ++k) m.addEvent (juce::MidiMessage::noteOn (1, 40 + k, (juce::uint8) 127), k); juce::AudioBuffer<float> b (2, 256); float pk = 0;
+          for (int blk = 0; blk < 60; ++blk) { b.clear(); p.processBlock (b, m); m.clear(); pk = std::max (pk, b.getMagnitude (0, 256)); if (! std::isfinite (pk)) break; }
+          if (! (pk > 0.01f && pk <= 0.8914f)) fail ("sampler poly peak " + juce::String (pk));
+          juce::MidiBuffer a; a.addEvent (juce::MidiMessage::allNotesOff (1), 0); b.clear(); p.processBlock (b, a); for (int blk = 0; blk < 80; ++blk) { juce::MidiBuffer e; b.clear(); p.processBlock (b, e); }
+          if (b.getMagnitude (0, 256) > 1e-4f) fail ("sampler stuck notes"); }
+        // durum: kaydet -> yeni işlemciye yükle (yol + ayarlar), sonra dosya silinmişken kayıp dosya
+        S.root = 61; S.transpose = 3; S.a = 0.123f; juce::MemoryBlock mb; p.getStateInformation (mb);
+        { auto q_h = std::make_unique<HitGenProcessor>(); auto& q = *q_h; q.setStateInformation (mb.getData(), (int) mb.getSize());
+          pump ([&] { return q.ref.state.load() == hg::RefEngine::Loaded; }, 15000);
+          if (q.ref.state.load() != hg::RefEngine::Loaded || q.ref.sampler.root.load() != 61 || q.ref.sampler.transpose.load() != 3 || std::abs (q.ref.sampler.a.load() - 0.123f) > 1e-4f) fail ("sampler state not restored"); }
+        wav.deleteFile();
+        { auto q_h = std::make_unique<HitGenProcessor>(); auto& q = *q_h; q.setStateInformation (mb.getData(), (int) mb.getSize()); pump ([&] { return q.ref.state.load() == hg::RefEngine::Failed; }, 5000);
+          if (q.ref.state.load() != hg::RefEngine::Failed || q.ref.error != "fileMissing" || q.ref.missingPath.isEmpty()) fail ("missing file not detected");
+          juce::MemoryBlock again; q.getStateInformation (again); auto r2_h = std::make_unique<HitGenProcessor>(); auto& r2 = *r2_h; r2.setStateInformation (again.getData(), (int) again.getSize()); pump ([&] { return r2.ref.state.load() == hg::RefEngine::Failed; }, 5000);
+          if (r2.ref.missingPath.isEmpty()) fail ("missing path lost on re-save"); }
+        // örnekleyici preset JSON gidiş-dönüş
+        { const auto v = p.ref.samplerToVar(); const auto txt = juce::JSON::toString (v); auto q_h = std::make_unique<HitGenProcessor>(); auto& q = *q_h; q.ref.samplerFromVar (juce::JSON::parse (txt));
+          if (q.ref.sampler.root.load() != 61 || q.ref.sampler.transpose.load() != 3) fail ("sampler preset roundtrip"); q.ref.samplerFromVar (juce::JSON::parse ("{\"root\":999,\"a\":\"x\",\"voices\":-4}"));
+          if (q.ref.sampler.root.load() != 127 || q.ref.sampler.maxVoices.load() != 1) fail ("sampler preset clamp"); }
+        std::cout << "sampler tests done\n";
+    }
+}
+static void testLibrary (const FailFn& fail)
+{
+    // 8) DNA kütüphanesi: kaydet, ara, favori, son kullanılan, yeniden adlandır, dışa/içe aktar, sil, bozuk dosya
+    {
+        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("hitgen-lib-test"); dir.deleteRecursively(); dir.createDirectory();
+        hg::DnaLibrary lib (dir); hg::TrackDna d; d.role = "lead"; d.sourceFile = "demo.wav"; d.f0Hz = 440; d.pitched = true; d.envDb.assign (16, -20.0f); d.harmonics.assign (8, 0.5f);
+        juce::File f1, f2; bool ok = lib.save (d, "Wavejackers", "Emotional Lead", &f1) && lib.save (d, "Wavejackers", "Deep Bass", &f2) && lib.save (d, "Black Coffee", "My Pad");
+        if (! ok || lib.entries().size() != 3) fail ("library save");
+        if (lib.query ("deep", hg::DnaLibrary::All).size() != 1 || lib.query ("WAVEJACKERS", hg::DnaLibrary::All).size() != 2 || lib.query ("zzz", hg::DnaLibrary::All).size() != 0) fail ("library search");
+        auto e = lib.query ("deep", hg::DnaLibrary::All)[0]; lib.setFavorite (e, true);
+        if (lib.query ("", hg::DnaLibrary::Favorites).size() != 1) fail ("library favorite");
+        hg::TrackDna got; e = lib.query ("deep", hg::DnaLibrary::All)[0]; if (! lib.load (e, got) || got.name != "Deep Bass" || got.artist != "Wavejackers") fail ("library load");
+        if (lib.query ("", hg::DnaLibrary::Recent).size() != 1) fail ("library recent");
+        e = lib.query ("deep", hg::DnaLibrary::All)[0]; if (! lib.rename (e, "Sub Bass") || lib.query ("sub", hg::DnaLibrary::All).size() != 1) fail ("library rename");
+        if (lib.query ("", hg::DnaLibrary::Favorites).size() != 1 || lib.query ("", hg::DnaLibrary::Recent).size() != 0) fail ("library rename keeps favorite / drops stale recent");
+        e = lib.query ("sub", hg::DnaLibrary::All)[0]; const auto ex = dir.getChildFile ("..").getChildFile ("hitgen-lib-export.hgdna"); ex.deleteFile();
+        if (! lib.exportTo (e, ex)) fail ("library export");
+        hg::DnaLibrary lib2 (dir.getChildFile ("..").getChildFile ("hitgen-lib-test2")); if (! lib2.importFile (ex) || lib2.entries().size() != 1) fail ("library import");
+        auto junk = dir.getChildFile ("..").getChildFile ("junk.hgdna"); junk.replaceWithText ("{ not a dna"); if (lib2.importFile (junk)) fail ("library accepted junk");
+        if (! lib.remove (e) || lib.entries().size() != 2) fail ("library delete");
+        hg::DnaLibrary lib3 (dir);   // yeniden aç: kalıcılık
+        if (lib3.entries().size() != 2) fail ("library persistence");
+        hg::DnaEntry outside; outside.file = junk; if (lib.remove (outside)) fail ("library deleted a file outside the folder");
+        dir.getChildFile ("..").getChildFile ("hitgen-lib-test2").deleteRecursively(); ex.deleteFile(); junk.deleteFile();
+        std::cout << "library tests done\n";
+    }
 }
 
 int main (int argc, char** argv)
@@ -306,147 +461,7 @@ int main (int argc, char** argv)
         delete e2;
         std::cout << "editor snapshots written\n";
     }
-    // 6) Referans sekmesi: yükle -> SMART DETECT -> aday seç -> BENZERİNİ ÜRET -> orijinali çal (gerçek arka plan iş parçacıklarıyla)
-    {
-        const double sr = 44100.0; const int n = (int) (sr * 24); juce::AudioBuffer<float> sb (2, n); sb.clear();
-        const double beat = 60.0 / 126.0; const double bar = beat * 4;
-        for (int i = 0; i < n; ++i)
-        {
-            const double t = i / sr; float v = 0;
-            const double qt = std::fmod (t, beat) / beat;                                              // bas: A1 vuruşta
-            v += 0.5f * (float) (std::sin (2 * juce::MathConstants<double>::pi * 55.0 * t) * std::exp (-qt * 3.0));
-            if (t >= bar * 4) { const double e = std::fmod (t - bar * 4, beat / 2); const double f = 440.0 * (std::fmod (std::floor ((t - bar * 4) / (beat / 2)), 2.0) < 1 ? 1.0 : 1.2599);
-                                float sq = 0; for (int h = 1; h <= 9; h += 2) sq += (float) (std::sin (2 * juce::MathConstants<double>::pi * f * h * t) / h); v += 0.2f * sq * (float) std::exp (-e * 9.0); }
-            sb.setSample (0, i, v); sb.setSample (1, i, v);
-        }
-        auto wav = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("hitgen-ui-ref.wav"); wav.deleteFile();
-        { juce::WavAudioFormat f; std::unique_ptr<juce::FileOutputStream> os (wav.createOutputStream()); std::unique_ptr<juce::AudioFormatWriter> w (f.createWriterFor (os.get(), sr, 2, 24, {}, 0)); if (w) { os.release(); w->writeFromAudioSampleBuffer (sb, 0, n); } }
-        auto pump = [&] (const std::function<bool()>& done, int ms) { const auto t0 = juce::Time::getMillisecondCounter(); while (! done() && juce::Time::getMillisecondCounter() - t0 < (juce::uint32) ms) juce::MessageManager::getInstance()->runDispatchLoopUntil (20); return done(); };
-        HitGenProcessor p; p.regenerateNow(); p.setRateAndBufferSizeDetails (48000.0, 256); p.prepareToPlay (48000.0, 256);
-        std::unique_ptr<HitGenEditor> ed (dynamic_cast<HitGenEditor*> (p.createEditor()));
-        ed->filesDropped ({ wav.getFullPathName() }, 0, 0);
-        if (ed->currentTab() != 3) fail ("drop did not open the reference tab");
-        if (! pump ([&] { return p.ref.state.load() == hg::RefEngine::Loaded; }, 15000)) fail ("reference did not load");
-        p.ref.analyse();
-        if (! pump ([&] { return p.ref.state.load() == hg::RefEngine::Ready; }, 60000)) fail ("analysis did not finish");
-        auto an = p.ref.analysis();
-        if (! an || ! an->ok || an->regions.empty()) fail ("no regions");
-        else
-        {
-            std::cout << "ui ref: bpm " << an->bpm << " key " << an->key << (an->minor ? "m" : "M") << " regions " << an->regions.size() << "\n";
-            if (std::abs (an->bpm - 126.0) > 2.0) fail ("ui ref bpm " + juce::String (an->bpm));
-            int cat = -1; for (int c : { hg::catLead, hg::catBass }) if (! an->top (c, 1).empty()) { cat = c; break; }
-            ed->reference().selectCandidate (cat, 0);
-            float before[hg::kNumSp], after[hg::kNumSp]; const int part = ed->reference().currentPart(); p.readSoundParams (part, before);
-            bool gotDna = false; ed->reference().generateNow();
-            pump ([&] { p.readSoundParams (part, after); return std::memcmp (before, after, sizeof before) != 0; }, 30000);
-            p.readSoundParams (part, after); gotDna = std::memcmp (before, after, sizeof before) != 0;
-            if (! gotDna) fail ("generate similar changed nothing: " + ed->reference().statusText());
-            else std::cout << "generate similar ok: " << ed->reference().statusText() << "\n";
-        }
-        // orijinali çal: çıkışta ses var ve tavan aşılmıyor; durdurunca sessiz
-        p.ref.regionStart = 2.0; p.ref.regionEnd = 6.0; p.ref.seekTo = 2.0; p.ref.loop = true; p.ref.playing = true;
-        juce::AudioBuffer<float> buf (2, 256); juce::MidiBuffer midi; float pk = 0;
-        for (int b = 0; b < 400; ++b) { buf.clear(); midi.clear(); p.processBlock (buf, midi); pk = std::max (pk, buf.getMagnitude (0, 256)); }
-        if (pk < 0.01f || pk > 0.8914f) fail ("original playback peak " + juce::String (pk));
-        p.ref.playing = false; buf.clear(); midi.clear(); p.processBlock (buf, midi); p.processBlock (buf, midi);
-        if (buf.getMagnitude (0, 256) > 1e-4f) fail ("playback did not stop");
-        std::cout << "original playback ok, peak " << pk << "\n";
-        for (auto l : p.data.langCodes)
-        {
-            ed->setLanguage (l); ed->setTab (3);
-            auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f);
-            auto f = outDir.getChildFile ("plugin-" + l + "-ref.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os);
-        }
-        ed->setLanguage ("en"); ed->reference().showSampler (true);
-        { auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f); auto f = outDir.getChildFile ("plugin-en-sampler.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os); }
-        ed->reference().showSampler (false);
-        ed->reference().showLibrary();
-        { auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f); auto f = outDir.getChildFile ("plugin-en-library.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os); }
-        ed->reference().showSampler (false);
-        // HIZLI mod: yüklü klip + analiz var; yeniden başlat -> aday seçilir ve ses üretilir; A/B
-        { float b4[hg::kNumSp], af[hg::kNumSp]; const int part = ed->reference().currentPart(); p.readSoundParams (part, b4);
-          ed->reference().quickNow(); pump ([&] { p.readSoundParams (part, af); return std::memcmp (b4, af, sizeof b4) != 0; }, 30000); p.readSoundParams (part, af);
-          if (std::memcmp (b4, af, sizeof b4) == 0) fail ("quick mode produced no sound: " + ed->reference().statusText());
-          float c1[hg::kNumSp], c2[hg::kNumSp], c3[hg::kNumSp]; ed->reference().pinNow(); ed->reference().generateNow(); pump ([&] { return false; }, 1500); p.readSoundParams (part, c1);
-          ed->reference().swapNow(); p.readSoundParams (part, c2); ed->reference().swapNow(); p.readSoundParams (part, c3);
-          if (std::memcmp (c1, c2, sizeof c1) == 0 || std::memcmp (c1, c3, sizeof c1) != 0) fail ("A/B swap");
-          std::cout << "quick + A/B ok\n"; }
-        // geçersiz dosya: hata iletisi, çökme yok
-        auto bad = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("hitgen-bad.wav"); bad.replaceWithText ("not audio at all");
-        ed->reference().openFile (bad); pump ([&] { return p.ref.state.load() == hg::RefEngine::Failed; }, 10000);
-        if (p.ref.state.load() != hg::RefEngine::Failed) fail ("bad file not rejected");
-        ed.reset();
-    }
-    // 7) Örnekleyici: MIDI -> doğru perde, polifoni, ADSR, durum geri yükleme, kayıp dosya
-    {
-        const double sr = 48000.0; const int n = (int) (sr * 4); juce::AudioBuffer<float> sb (2, n);
-        for (int i = 0; i < n; ++i) { const float v = 0.5f * (float) std::sin (2 * juce::MathConstants<double>::pi * 220.0 * i / sr); sb.setSample (0, i, v); sb.setSample (1, i, v); }   // A3 = MIDI 57
-        auto wav = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("hitgen-samp.wav"); wav.deleteFile();
-        { juce::WavAudioFormat f; std::unique_ptr<juce::FileOutputStream> os (wav.createOutputStream()); std::unique_ptr<juce::AudioFormatWriter> w (f.createWriterFor (os.get(), sr, 2, 24, {}, 0)); if (w) { os.release(); w->writeFromAudioSampleBuffer (sb, 0, n); } }
-        auto pump = [&] (const std::function<bool()>& done, int ms) { const auto t0 = juce::Time::getMillisecondCounter(); while (! done() && juce::Time::getMillisecondCounter() - t0 < (juce::uint32) ms) juce::MessageManager::getInstance()->runDispatchLoopUntil (20); return done(); };
-        HitGenProcessor p; p.regenerateNow(); p.setRateAndBufferSizeDetails (48000.0, 256); p.prepareToPlay (48000.0, 256);
-        p.ref.load (wav); if (! pump ([&] { return p.ref.state.load() == hg::RefEngine::Loaded; }, 15000)) fail ("sampler clip load");
-        auto& S = p.ref.sampler; S.enabled = true; S.root = 57; S.a = 0.001f; S.d = 0.01f; S.s = 1.0f; S.r = 0.05f; S.gain = 1.0f; S.velSens = 0.0f; S.loop = true; S.transpose = 0;
-        // dominant frekansı sıfır geçişlerinden ölç
-        auto measure = [&] (int note) -> double
-        {
-            juce::MidiBuffer m; juce::AudioBuffer<float> b (2, 256); std::vector<float> out; m.addEvent (juce::MidiMessage::noteOn (1, note, (juce::uint8) 100), 0);
-            for (int blk = 0; blk < 120; ++blk) { b.clear(); p.processBlock (b, m); m.clear(); for (int i = 0; i < 256; ++i) out.push_back (b.getSample (0, i)); }
-            juce::MidiBuffer off; off.addEvent (juce::MidiMessage::noteOff (1, note), 0); b.clear(); p.processBlock (b, off);
-            for (int blk = 0; blk < 40; ++blk) { juce::MidiBuffer e; b.clear(); p.processBlock (b, e); }
-            int z = 0, first = -1, last = -1; for (size_t i = 8000; i + 1 < out.size(); ++i) if (out[i] <= 0 && out[i + 1] > 0) { ++z; if (first < 0) first = (int) i; last = (int) i; }
-            return z > 2 ? (z - 1) * 48000.0 / (last - first) : 0.0;
-        };
-        const double f0 = measure (57), f1 = measure (69), f2 = measure (45);
-        std::cout << "sampler pitch: root " << f0 << " Hz, +12 " << f1 << " Hz, -12 " << f2 << " Hz\n";
-        if (std::abs (f0 - 220.0) > 3.0 || std::abs (f1 - 440.0) > 6.0 || std::abs (f2 - 110.0) > 2.0) fail ("sampler pitch wrong");
-        // polifoni: 20 nota -> en çok 8 ses, sessizlik ve tavan korunur
-        { juce::MidiBuffer m; for (int k = 0; k < 20; ++k) m.addEvent (juce::MidiMessage::noteOn (1, 40 + k, (juce::uint8) 127), k); juce::AudioBuffer<float> b (2, 256); float pk = 0;
-          for (int blk = 0; blk < 60; ++blk) { b.clear(); p.processBlock (b, m); m.clear(); pk = std::max (pk, b.getMagnitude (0, 256)); if (! std::isfinite (pk)) break; }
-          if (! (pk > 0.01f && pk <= 0.8914f)) fail ("sampler poly peak " + juce::String (pk));
-          juce::MidiBuffer a; a.addEvent (juce::MidiMessage::allNotesOff (1), 0); b.clear(); p.processBlock (b, a); for (int blk = 0; blk < 80; ++blk) { juce::MidiBuffer e; b.clear(); p.processBlock (b, e); }
-          if (b.getMagnitude (0, 256) > 1e-4f) fail ("sampler stuck notes"); }
-        // durum: kaydet -> yeni işlemciye yükle (yol + ayarlar), sonra dosya silinmişken kayıp dosya
-        S.root = 61; S.transpose = 3; S.a = 0.123f; juce::MemoryBlock mb; p.getStateInformation (mb);
-        { HitGenProcessor q; q.setStateInformation (mb.getData(), (int) mb.getSize());
-          pump ([&] { return q.ref.state.load() == hg::RefEngine::Loaded; }, 15000);
-          if (q.ref.state.load() != hg::RefEngine::Loaded || q.ref.sampler.root.load() != 61 || q.ref.sampler.transpose.load() != 3 || std::abs (q.ref.sampler.a.load() - 0.123f) > 1e-4f) fail ("sampler state not restored"); }
-        wav.deleteFile();
-        { HitGenProcessor q; q.setStateInformation (mb.getData(), (int) mb.getSize()); pump ([&] { return q.ref.state.load() == hg::RefEngine::Failed; }, 5000);
-          if (q.ref.state.load() != hg::RefEngine::Failed || q.ref.error != "fileMissing" || q.ref.missingPath.isEmpty()) fail ("missing file not detected");
-          juce::MemoryBlock again; q.getStateInformation (again); HitGenProcessor r2; r2.setStateInformation (again.getData(), (int) again.getSize()); pump ([&] { return r2.ref.state.load() == hg::RefEngine::Failed; }, 5000);
-          if (r2.ref.missingPath.isEmpty()) fail ("missing path lost on re-save"); }
-        // örnekleyici preset JSON gidiş-dönüş
-        { const auto v = p.ref.samplerToVar(); const auto txt = juce::JSON::toString (v); HitGenProcessor q; q.ref.samplerFromVar (juce::JSON::parse (txt));
-          if (q.ref.sampler.root.load() != 61 || q.ref.sampler.transpose.load() != 3) fail ("sampler preset roundtrip"); q.ref.samplerFromVar (juce::JSON::parse ("{\"root\":999,\"a\":\"x\",\"voices\":-4}"));
-          if (q.ref.sampler.root.load() != 127 || q.ref.sampler.maxVoices.load() != 1) fail ("sampler preset clamp"); }
-        std::cout << "sampler tests done\n";
-    }
-    // 8) DNA kütüphanesi: kaydet, ara, favori, son kullanılan, yeniden adlandır, dışa/içe aktar, sil, bozuk dosya
-    {
-        const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("hitgen-lib-test"); dir.deleteRecursively(); dir.createDirectory();
-        hg::DnaLibrary lib (dir); hg::TrackDna d; d.role = "lead"; d.sourceFile = "demo.wav"; d.f0Hz = 440; d.pitched = true; d.envDb.assign (16, -20.0f); d.harmonics.assign (8, 0.5f);
-        juce::File f1, f2; bool ok = lib.save (d, "Wavejackers", "Emotional Lead", &f1) && lib.save (d, "Wavejackers", "Deep Bass", &f2) && lib.save (d, "Black Coffee", "My Pad");
-        if (! ok || lib.entries().size() != 3) fail ("library save");
-        if (lib.query ("deep", hg::DnaLibrary::All).size() != 1 || lib.query ("WAVEJACKERS", hg::DnaLibrary::All).size() != 2 || lib.query ("zzz", hg::DnaLibrary::All).size() != 0) fail ("library search");
-        auto e = lib.query ("deep", hg::DnaLibrary::All)[0]; lib.setFavorite (e, true);
-        if (lib.query ("", hg::DnaLibrary::Favorites).size() != 1) fail ("library favorite");
-        hg::TrackDna got; e = lib.query ("deep", hg::DnaLibrary::All)[0]; if (! lib.load (e, got) || got.name != "Deep Bass" || got.artist != "Wavejackers") fail ("library load");
-        if (lib.query ("", hg::DnaLibrary::Recent).size() != 1) fail ("library recent");
-        e = lib.query ("deep", hg::DnaLibrary::All)[0]; if (! lib.rename (e, "Sub Bass") || lib.query ("sub", hg::DnaLibrary::All).size() != 1) fail ("library rename");
-        if (lib.query ("", hg::DnaLibrary::Favorites).size() != 1 || lib.query ("", hg::DnaLibrary::Recent).size() != 0) fail ("library rename keeps favorite / drops stale recent");
-        e = lib.query ("sub", hg::DnaLibrary::All)[0]; const auto ex = dir.getChildFile ("..").getChildFile ("hitgen-lib-export.hgdna"); ex.deleteFile();
-        if (! lib.exportTo (e, ex)) fail ("library export");
-        hg::DnaLibrary lib2 (dir.getChildFile ("..").getChildFile ("hitgen-lib-test2")); if (! lib2.importFile (ex) || lib2.entries().size() != 1) fail ("library import");
-        auto junk = dir.getChildFile ("..").getChildFile ("junk.hgdna"); junk.replaceWithText ("{ not a dna"); if (lib2.importFile (junk)) fail ("library accepted junk");
-        if (! lib.remove (e) || lib.entries().size() != 2) fail ("library delete");
-        hg::DnaLibrary lib3 (dir);   // yeniden aç: kalıcılık
-        if (lib3.entries().size() != 2) fail ("library persistence");
-        hg::DnaEntry outside; outside.file = junk; if (lib.remove (outside)) fail ("library deleted a file outside the folder");
-        dir.getChildFile ("..").getChildFile ("hitgen-lib-test2").deleteRecursively(); ex.deleteFile(); junk.deleteFile();
-        std::cout << "library tests done\n";
-    }
+    testReference (outDir, fail); testSampler (fail); testLibrary (fail);
     std::cout << (failures == 0 ? "ALL PASSED" : "FAILURES: " + std::to_string (failures)) << "\n";
     return failures == 0 ? 0 : 1;
 }

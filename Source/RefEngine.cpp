@@ -4,7 +4,7 @@
 namespace hg
 {
 RefEngine::RefEngine() : alive (std::make_shared<std::atomic<bool>> (true)) {}
-RefEngine::~RefEngine() { *alive = false; stopFlag = true; playing = false; pool.removeAllJobs (true, 5000); }
+RefEngine::~RefEngine() { *alive = false; stopFlag = true; playing = false; if (poolPtr) poolPtr->removeAllJobs (true, 5000); poolPtr.reset(); }
 
 void RefEngine::post (std::function<void()> f)
 {
@@ -20,7 +20,7 @@ void RefEngine::setClip (std::shared_ptr<RefClip> c)
     old.reset();
 }
 
-void RefEngine::cancel() { stopFlag = true; pool.removeAllJobs (true, 5000); stopFlag = false; if (state == Loading || state == Analysing) state = clipMsg ? Loaded : Idle; progress = 0; }
+void RefEngine::cancel() { stopFlag = true; if (poolPtr) poolPtr->removeAllJobs (true, 5000); stopFlag = false; if (state == Loading || state == Analysing) state = clipMsg ? Loaded : Idle; progress = 0; }
 
 void RefEngine::clear()
 {
@@ -32,7 +32,7 @@ void RefEngine::load (const juce::File& f)
 {
     cancel(); playing = false; error.clear(); state = Loading; progress = 0; analysisMsg.reset();
     if (onChange) onChange();
-    pool.addJob ([this, f]
+    pool().addJob ([this, f]
     {
         juce::String err; auto c = loadRefAudio (f, err, &stopFlag);
         if (stopFlag) return;
@@ -50,7 +50,7 @@ void RefEngine::analyse()
     auto c = clipMsg; if (c == nullptr) return;
     if (state == Loading || state == Analysing) return;
     state = Analysing; progress = 0; error.clear(); if (onChange) onChange();
-    pool.addJob ([this, c]
+    pool().addJob ([this, c]
     {
         auto res = std::make_shared<RefAnalysis>();
         const bool done = analyzeRef (*c, *res, &stopFlag, [this] (float p) { progress = p; });
@@ -62,7 +62,7 @@ void RefEngine::analyse()
 void RefEngine::extractDna (double t0, double t1, int role, std::function<void (bool, const TrackDna&)> done)
 {
     auto c = clipMsg; if (c == nullptr) { done (false, {}); return; }
-    pool.addJob ([this, c, t0, t1, role, done]
+    pool().addJob ([this, c, t0, t1, role, done]
     {
         TrackDna d; const bool ok = ::hg::extractDna (*c, t0, t1, role, d, &stopFlag);
         if (stopFlag) return;

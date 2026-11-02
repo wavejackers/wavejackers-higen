@@ -62,7 +62,8 @@ private:
     void setClip (std::shared_ptr<RefClip> c);
     mutable juce::CriticalSection pathLock; juce::String curPath, curName;   // DAW durum kaydı herhangi bir iş parçacığından okuyabilir
     void setPath (const juce::String& p, const juce::String& n) { const juce::ScopedLock sl (pathLock); curPath = p; curName = n; }
-    juce::ThreadPool pool { 1 };
+    std::unique_ptr<juce::ThreadPool> poolPtr;       // ilk işte (mesaj iş parçacığında) oluşturulur: boş çalışan eklenti örnekleri iş parçacığı açmaz
+    juce::ThreadPool& pool() { if (poolPtr == nullptr) poolPtr = std::make_unique<juce::ThreadPool> (1); return *poolPtr; }
     std::atomic<bool> stopFlag { false };
     std::shared_ptr<std::atomic<bool>> alive;
     std::shared_ptr<const RefClip> clipMsg;          // yalnızca mesaj iş parçacığı
