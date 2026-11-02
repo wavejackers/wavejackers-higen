@@ -4,8 +4,9 @@
 #include "Ui.h"
 #include "SoundPage.h"
 #include "PresetPage.h"
+#include "ReferencePage.h"
 
-class HitGenEditor : public juce::AudioProcessorEditor, private juce::Timer
+class HitGenEditor : public juce::AudioProcessorEditor, public juce::FileDragAndDropTarget, private juce::Timer
 {
 public:
     explicit HitGenEditor (HitGenProcessor&);
@@ -13,14 +14,17 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
     bool keyPressed (const juce::KeyPress&) override;
+    bool isInterestedInFileDrag (const juce::StringArray& files) override;
+    void filesDropped (const juce::StringArray& files, int, int) override;
     static constexpr int kW = 1180, kH = 760;
 
     // testler için
     juce::Component& contentComponent() { return content; }
     void setLanguage (const juce::String& l);
-    void setTab (int t);   // 0 üret, 1 ses tasarımı, 2 presetler
+    void setTab (int t);   // 0 üret, 1 ses tasarımı, 2 presetler, 3 referans
     int currentTab() const noexcept { return tab; }
     SoundPage& sounds() { return *soundPage; }
+    ReferencePage& reference() { return *refPage; }
 
 private:
     using SA = juce::AudioProcessorValueTreeState::SliderAttachment;
@@ -51,7 +55,7 @@ private:
     juce::ToggleButton contrastBtn, motionBtn, seventhsBtn, patternBtn, midiOutBtn;
     std::array<juce::TextButton, 4> altBtns;
     float phase = 0.0f, meter = 0.0f, meterHold = 0.0f; int frame = 0;
-    std::array<juce::TextButton, 8> groupBtns; std::array<juce::TextButton, 3> tabBtns; int tab = 0;
+    std::array<juce::TextButton, 8> groupBtns; std::array<juce::TextButton, 4> tabBtns; int tab = 0;
     juce::ListBox styleList; StyleModel styleModel { *this }; juce::Array<int> filtered; int group = 0;
     std::array<juce::TextButton, 4> varBtns;
     std::array<hgui::Knob, 6> genKnobs;
@@ -62,7 +66,7 @@ private:
     std::array<hgui::Knob, 8> partKnobs;
     hgui::DragTile loopTile, fullTile;
 
-    std::unique_ptr<SoundPage> soundPage; std::unique_ptr<PresetPage> presetPage;
+    std::unique_ptr<SoundPage> soundPage; std::unique_ptr<PresetPage> presetPage; std::unique_ptr<ReferencePage> refPage;
     std::vector<juce::Component*> genComps;
     bool isMine() const noexcept { return group == 7; }
     std::vector<std::unique_ptr<SA>> sa; std::vector<std::unique_ptr<CA>> ca; std::vector<std::unique_ptr<BA>> ba;

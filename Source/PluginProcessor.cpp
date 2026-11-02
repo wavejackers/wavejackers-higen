@@ -187,6 +187,25 @@ void HitGenProcessor::randomizeSound (int part)
     loadPatch (trackOfPart (part), true);
 }
 
+void HitGenProcessor::applySoundParams (int part, const float* vals)
+{
+    writeSd (part, vals); loadPatch (trackOfPart (part), true);
+}
+
+void HitGenProcessor::readSoundParams (int part, float* vals) const
+{
+    for (int i = 0; i < hg::kNumSp; ++i) vals[i] = apvts.getRawParameterValue (hg::spId (part, i))->load();
+}
+
+void HitGenProcessor::applyRefToProject (const hg::RefAnalysis& a)
+{
+    auto setP = [this] (const char* id, float plain) { if (auto* pr = apvts.getParameter (id)) { pr->beginChangeGesture(); pr->setValueNotifyingHost (pr->convertTo0to1 (plain)); pr->endChangeGesture(); } };
+    if (a.bpm >= 60 && a.bpm <= 190) setP ("bpm", (float) juce::roundToInt (a.bpm));
+    setP ("key", (float) a.key);
+    const int idx = data.scaleOrder.indexOf (a.minor ? "minor" : "major");
+    if (idx >= 0) setP ("scale", (float) (idx + 1));
+}
+
 void HitGenProcessor::setSound (int track, const juce::String& id, bool isManual)
 {
     sounds[(size_t) track] = id; if (isManual) manual[(size_t) track] = true;
@@ -444,6 +463,7 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         else engine.noteOff (e.track, e.note, 0);
     }
     if (pos < n) engine.render (buffer, pos, n - pos);
+    ref.render (buffer, getSampleRate());      // referans sesin orijinali (yalnızca kullanıcı çal dediğinde)
     for (int i = 0; i < numOffs;)
     {
         if (offs[(size_t) i].at < sampleClock + n)

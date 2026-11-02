@@ -6,6 +6,7 @@
 #include "SoundParams.h"
 #include "Presets.h"
 #include "Import.h"
+#include "RefEngine.h"
 
 // Ses iş parçacığının çaldığı desen: PPQ (çeyrek nota) cinsinden olaylar
 struct SeqEvent { double ppq = 0, len = 0; int track = 0, note = 0, vel = 0; };
@@ -49,6 +50,7 @@ public:
     void newIdea();
     void suggestAlternative (int track);   // yalnızca o izin MIDI'sini başka bir fikirle değiştir
     juce::String lang = "en";
+    hg::RefEngine ref;                     // referans ses: yükleme, SMART DETECT, orijinali çalma
     float uiScale = 1.0f; bool highContrast = false; bool animations = true;
     std::function<void()> onResultChanged;
     juce::File writeMidi (int which);
@@ -56,6 +58,9 @@ public:
     void resetSoundDesign (int part);          // seçili sesin ilk haline dön
     void randomizeSound (int part);            // role uygun rastgele ses
     juce::var currentSoundVar (int part) const;   // parametrelerden kurulan güncel ses
+    void applySoundParams (int part, const float* vals);     // Benzerini üret / geçmiş: değerleri yaz ve yamayı hemen kur
+    void readSoundParams (int part, float* vals) const;
+    void applyRefToProject (const hg::RefAnalysis& a);       // tespit edilen tempo, ton ve makamı üretici ayarlarına uygula
     juce::MidiKeyboardState keyboardState;     // ekran klavyesi
     std::atomic<int> auditionPart { -1 };      // ses tasarımı açıkken klavye bu izi çalar (-1: ayara göre)
     // ---- sanatçı presetleri
