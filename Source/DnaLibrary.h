@@ -5,7 +5,7 @@
 
 namespace hg
 {
-struct DnaEntry { juce::File file; juce::String name, artist, role, source; bool favorite = false; juce::int64 lastUsed = 0; };
+struct DnaEntry { juce::File file; juce::String name, artist, role, source; bool favorite = false; juce::int64 lastUsed = 0; juce::StringArray tags; };   // tags: dnaTags() anahtarları
 
 class DnaLibrary
 {
@@ -15,7 +15,8 @@ public:
     void refresh();                                                    // klasörü yeniden tarar (en çok 500 dosya, her biri ≤ 1 MB)
     const std::vector<DnaEntry>& entries() const noexcept { return all; }
     enum Filter { All, Favorites, Recent };
-    std::vector<DnaEntry> query (const juce::String& text, Filter f) const;     // ad/sanatçı/rol/kaynak içinde büyük-küçük harf duyarsız arama
+    // ad/sanatçı/rol/kaynak/etiket içinde büyük-küçük harf duyarsız arama; tagName verilirse etiketlerin çevrilmiş adları da aranır
+    std::vector<DnaEntry> query (const juce::String& text, Filter f, const std::function<juce::String (const juce::String&)>& tagName = {}) const;
     bool save (const TrackDna& d, const juce::String& artist, const juce::String& name, juce::File* written = nullptr);
     bool rename (const DnaEntry& e, const juce::String& newName);
     bool remove (const DnaEntry& e);

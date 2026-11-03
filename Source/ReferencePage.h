@@ -5,6 +5,12 @@
 #include "PluginProcessor.h"
 #include "Ui.h"
 #include "DnaLibrary.h"
+#include "StatusIndicator.h"
+#include "OrbView.h"
+#include "MacroRow.h"
+#include "LayerList.h"
+#include "Assist.h"
+#include "VariationGrid.h"
 
 class ReferencePage : public juce::Component, private juce::ScrollBar::Listener
 {
@@ -12,6 +18,9 @@ public:
     ReferencePage (HitGenProcessor& p, hgui::LookAndFeel& l);
     ~ReferencePage() override;
     void setLanguage (const juce::String& lang, bool rtl);
+    void setWorkspace (int w);                       // 0 Reference, 1 Smart Detect, 2 DNA Engine, 3 Generate
+    int workspace() const noexcept { return ws; }
+    std::function<void()> onSavePreset;              // editör: ön ayar kaydet penceresini açar
     void tick();                        // editör zamanlayıcısı (30 Hz)
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -22,12 +31,18 @@ public:
     // testler / otomasyon
     void selectCandidate (int cat, int row);
     void generateNow() { generate(); }
-    void showSampler (bool on) { setView (on ? 1 : 0); }
-    void showLibrary() { setView (2); }
+    void showSampler (bool on) { setWorkspace (2); setView (on ? 1 : 0); }
+    void showLibrary() { setWorkspace (2); setView (2); }
     void quickNow() { quickStart(); }
     void pinNow() { pinA(); }
     void swapNow() { swapAB(); }
     juce::String statusText() const { return status.getText(); }
+    void setLevel (float lv) { if (ws == 3) orb.setLevel (lv); }
+    bool undo(); bool redo();                        // Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z (editör yönlendirir)
+    void openGridNow() { openGrid(); }
+    bool gridVisible() const { return gridOpen; }
+    int undoDepth() const { return (int) undoStack.size(); }
+    juce::File rhythmFileNow() { return makeRhythmFile(); }
 
 private:
     struct Wave : public juce::Component
@@ -43,7 +58,7 @@ private:
     };
     struct Cands : public juce::Component
     {
-        ReferencePage* o = nullptr; void paint (juce::Graphics&) override; void mouseDown (const juce::MouseEvent&) override;
+        ReferencePage* o = nullptr; int hoverCat = -1, hoverRow = -1; void paint (juce::Graphics&) override; void mouseDown (const juce::MouseEvent&) override; void mouseMove (const juce::MouseEvent&) override; void mouseExit (const juce::MouseEvent&) override;
         juce::Rectangle<int> rowRect (int cat, int row) const;
     };
 
@@ -72,9 +87,25 @@ private:
     std::vector<hg::DnaEntry> libRows; juce::ListBox libList;
     juce::TextButton viewLib, libSave, libRename, libDelete, libImport, libExport, libFav, libUseBtn; juce::TextEditor searchEd, artistEd, nameEd; juce::ComboBox filterBox;
     void libRefresh(); void libSelChanged(); void libUse (int row); const hg::DnaEntry* libSel() const;
+    // AI Minimal çalışma alanları
+    int ws = 0; hgui::StatusIndicator stat { lnf }; juce::Label posLabel, regionLabel, dnaHint, summaryLabel;
+    juce::TextButton regenBtn, randBtn, previewNowBtn, savePresetBtn; hgui::Knob texK, movK, briK;
+    std::array<float, hg::kNumSp> baseVals {}; bool haveBase = false, dnaBusy = false, errorFlag = false; juce::int64 completedAt = 0; juce::uint32 lastSeed = 1;
+    void applyWorkspace(); void applyMacros(); void randomizeGen(); void regenerateSame(); void updateStat(); void markCompleted();
     // Quick Mode ve A/B
     juce::TextButton quickBtn, pinBtn, abBtn; bool quickPending = false; bool haveA = false; std::array<float, hg::kNumSp> slotA {}, slotB {}; bool abOnA = false;
     void quickStart(); void quickStep(); void pinA(); void swapAB();
+    // DNA Orb stüdyosu (GENERATE): halka, makro satırları, katman hapları
+    hgui::OrbView orb { lnf }; hgui::LayerList layers { lnf }; std::array<std::unique_ptr<hgui::MacroRow>, 5> macroRows; int selRow = -1;
+    void syncOrb();
+    // 2.5: bar hizalama, ritim MIDI'si, toplu analiz, varyasyon ızgarası, geri al / yinele
+    juce::ToggleButton snapBtn; hgui::DragTile rhythmTile; juce::TextButton libBatch, gridBtn, undoBtn, redoBtn;
+    hg::BatchAnalyser batch; int batchAdded = 0, batchFiles = 0, batchDoneFiles = 0; bool batchBusy = false;
+    hgui::VariationGrid grid { lnf }; bool gridPending = false, gridOpen = false;
+    struct UndoState { std::array<float, hg::kNumSp> base {}, cur {}; float tex = 50, mov = 50, bri = 50; bool haveBase = false; };
+    std::vector<UndoState> undoStack; int undoPos = -1; std::array<float, hg::kNumSp> curVals {}; juce::int64 macroDirtyAt = 0;
+    void pushUndo(); void restoreUndo (const UndoState& s); void updateUndoButtons();
+    void snapSelection(); juce::File makeRhythmFile(); void startBatch(); void openGrid(); void buildGrid(); void closeGrid(); void keepVariation (int i);
     bool keyPressed (const juce::KeyPress&) override;
     void setView (int v); void syncSampler(); void trimFromSelection(); void saveSampler(); void loadSampler();
     Wave wave; Cands cands; juce::ScrollBar bar { false };

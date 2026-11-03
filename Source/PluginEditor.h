@@ -21,7 +21,9 @@ public:
     // testler için
     juce::Component& contentComponent() { return content; }
     void setLanguage (const juce::String& l);
-    void setTab (int t);   // 0 üret, 1 ses tasarımı, 2 presetler, 3 referans
+    void setTab (int t);
+    void setWorkspace (int w);   // 0 Reference, 1 Smart Detect, 2 DNA Engine, 3 Generate
+    int currentWorkspace() const noexcept { return ws; }   // 0 üret, 1 ses tasarımı, 2 presetler, 3 referans
     int currentTab() const noexcept { return tab; }
     SoundPage& sounds() { return *soundPage; }
     ReferencePage& reference() { return *refPage; }
@@ -55,7 +57,10 @@ private:
     juce::ToggleButton contrastBtn, motionBtn, seventhsBtn, patternBtn, midiOutBtn;
     std::array<juce::TextButton, 4> altBtns;
     float phase = 0.0f, meter = 0.0f, meterHold = 0.0f; int frame = 0;
-    std::array<juce::TextButton, 8> groupBtns; std::array<juce::TextButton, 4> tabBtns; int tab = 0;
+    std::array<juce::TextButton, 8> groupBtns; std::array<juce::TextButton, 7> tabBtns; int tab = 3; int ws = 0;   // tabBtns 0-3: çalışma alanları (Reference, Smart Detect, DNA Engine, Generate); 4-6: MIDI Studio, Sound Design, Presets
+    juce::TextButton presetBtn, saveBtn, settingsBtn, helpBtn; bool settingsOpen = false;
+    struct Backdrop : public juce::Component { HitGenEditor* o = nullptr; void paint (juce::Graphics&) override; } settingsPanel;
+    void toggleSettings (bool on); void showHelp(); void showSaveDialog(); void showPresetMenu();
     juce::ListBox styleList; StyleModel styleModel { *this }; juce::Array<int> filtered; int group = 0;
     std::array<juce::TextButton, 4> varBtns;
     std::array<hgui::Knob, 6> genKnobs;
@@ -74,7 +79,7 @@ private:
 
     juce::String lang; bool rtl = false; int shownStyle = -1, shownVar = -1;
     std::array<juce::String, 4> shownSounds;
-    std::vector<std::pair<juce::Component*, juce::Rectangle<int>>> layoutList;
+    std::vector<std::pair<juce::Component*, juce::Rectangle<int>>> layoutList; juce::Rectangle<int> settingsPanelBounds;
 
     juce::String T (const juce::String& k) const { return data.tr (lang, k); }
     void timerCallback() override;

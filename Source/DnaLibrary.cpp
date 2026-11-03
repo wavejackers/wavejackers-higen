@@ -1,4 +1,5 @@
 #include "DnaLibrary.h"
+#include "Assist.h"
 #include <algorithm>
 
 namespace hg
@@ -42,7 +43,7 @@ void DnaLibrary::refresh()
         if (all.size() >= 500) break;
         if (f.getSize() > 1000000) continue;
         TrackDna d; if (! TrackDna::fromVar (JSON::parse (f.loadFileAsString()), d)) continue;
-        DnaEntry e; e.file = f; e.name = d.name.isNotEmpty() ? d.name : f.getFileNameWithoutExtension(); e.artist = d.artist; e.role = d.role; e.source = d.sourceFile;
+        DnaEntry e; e.file = f; e.name = d.name.isNotEmpty() ? d.name : f.getFileNameWithoutExtension(); e.artist = d.artist; e.role = d.role; e.source = d.sourceFile; e.tags = dnaTags (d);
         e.favorite = std::find (favs.begin(), favs.end(), f.getFileName()) != favs.end();
         for (auto& r : recents) if (r.first == f.getFileName()) e.lastUsed = r.second;
         all.push_back (e);
@@ -50,14 +51,15 @@ void DnaLibrary::refresh()
     std::sort (all.begin(), all.end(), [] (const DnaEntry& a, const DnaEntry& b) { const int c = a.artist.compareIgnoreCase (b.artist); return c != 0 ? c < 0 : a.name.compareIgnoreCase (b.name) < 0; });
 }
 
-std::vector<DnaEntry> DnaLibrary::query (const String& text, Filter f) const
+std::vector<DnaEntry> DnaLibrary::query (const String& text, Filter f, const std::function<String (const String&)>& tagName) const
 {
     std::vector<DnaEntry> out; const auto q = text.trim();
     for (auto& e : all)
     {
         if (f == Favorites && ! e.favorite) continue;
         if (f == Recent && e.lastUsed == 0) continue;
-        if (q.isNotEmpty() && ! (e.name.containsIgnoreCase (q) || e.artist.containsIgnoreCase (q) || e.role.containsIgnoreCase (q) || e.source.containsIgnoreCase (q))) continue;
+        auto tagHit = [&] { for (auto& t : e.tags) if (t.containsIgnoreCase (q) || (tagName && tagName (t).containsIgnoreCase (q))) return true; return false; };
+        if (q.isNotEmpty() && ! (e.name.containsIgnoreCase (q) || e.artist.containsIgnoreCase (q) || e.role.containsIgnoreCase (q) || e.source.containsIgnoreCase (q) || tagHit())) continue;
         out.push_back (e);
     }
     if (f == Recent) std::sort (out.begin(), out.end(), [] (const DnaEntry& a, const DnaEntry& b) { return a.lastUsed > b.lastUsed; });

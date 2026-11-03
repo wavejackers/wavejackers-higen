@@ -1,4 +1,5 @@
 // Referans ses ve Track DNA testleri: gerçek DSP analizi (sentetik ama ölçülebilir bir parça üzerinde), bozuk dosyalar, iptal, seri hale getirme, determinizm.
+#include "../Source/Assist.h"
 #include "../Source/RefAnalysis.h"
 #include "../Source/SoundParams.h"
 #include <cstdio>
@@ -141,6 +142,35 @@ int main()
         int uniq = 0; std::vector<std::vector<float>> seen; for (int sd = 0; sd < 200; ++sd) { float v[kNumSp]; dnaToSoundParams (Ld, 'm', 70, 50, (juce::uint32) sd, v); std::vector<float> vv (v, v + kNumSp); bool dup = false; for (auto& s : seen) if (s == vv) dup = true; if (! dup) { ++uniq; seen.push_back (vv); } for (int i = 0; i < kNumSp; ++i) if (! (v[i] >= spDef (i).lo - 1e-4f && v[i] <= spDef (i).hi + 1e-4f)) { CHECK (false, "aralik %d", i); break; } }
         CHECK (uniq >= 190, "benzersiz uretim %d", uniq);
         std::printf ("synth esleme ok: dalga %d, kesim %.0f Hz (DNA rolloff %.0f), atak %.0f ms, benzersiz %d/200, varyasyon sapmasi %.3f/%.3f/%.3f\n", (int) d2[o1w], d2[cut], Ld.rolloffHz, d2[envA] * 1000, uniq, s0, s30, s100);
+    }
+    // ---- 2.5 iş akışı yardımcıları
+    {
+        const auto bdir = dir.getChildFile ("batch"); bdir.deleteRecursively(); bdir.createDirectory(); const auto wav2 = writeWav (song, 44100.0, ".wav", bdir);
+        double a = 0, b = 0;
+        CHECK (snapToBars (1.1, 5.0, BPM, 0.0, sec, a, b), "bar hizalama basarisiz");
+        auto onGrid = [] (double t) { const double q = t / BAR; return std::abs (q - std::round (q)) < 1e-6; };
+        CHECK (onGrid (a) && onGrid (b) && b - a >= BAR - 1e-6 && std::abs (a - BAR) < 1e-6 && std::abs (b - 3 * BAR) < 1e-6, "bar hizalama %.4f %.4f", a, b);
+        CHECK (snapToBars (0.2, 0.3, BPM, 0.0, sec, a, b) && std::abs (b - a - BAR) < 1e-6, "en az bir bar %.4f %.4f", a, b);
+        CHECK (snapToBars (sec - 0.3, sec + 1, BPM, 0.0, sec, a, b) && b <= sec + 1e-6 && a >= 0, "dosya sonu %.4f %.4f", a, b);
+        CHECK (! snapToBars (1, 2, 0.0, 0.0, sec, a, b), "BPM yokken hizalama yapildi");
+        auto c = loadRefAudio (wav2, err); RefAnalysis an; CHECK (c != nullptr && analyzeRef (*c, an) && an.ok, "analiz");
+        if (c != nullptr && an.ok)
+        {
+            RhythmSketch perc, bass;
+            CHECK (onsetsToMidi (*c, an, BAR * 4, BAR * 8, perc), "ritim midi yok");
+            CHECK (onsetsToMidi (*c, an, 0, BAR * 4, bass), "bas ritim midi yok");
+            CHECK (perc.notes >= 24 && perc.hats > perc.kicks && perc.snares >= 4 && perc.hats > perc.snares, "vurmali bolum: %d nota, kick %d snare %d hat %d", perc.notes, perc.kicks, perc.snares, perc.hats);
+            CHECK (bass.kicks >= bass.hats, "bas bolumu: kick %d hat %d", bass.kicks, bass.hats);
+            juce::MemoryOutputStream mo; CHECK (perc.midi.writeTo (mo) && mo.getDataSize() > 40, "midi yazilamadi");
+            std::printf ("ritim taslagi ok: vurmali %d nota (kick %d snare %d hat %d), bas bolumu kick %d hat %d, bpm %.1f\n", perc.notes, perc.kicks, perc.snares, perc.hats, bass.kicks, bass.hats, perc.bpm);
+        }
+        std::vector<TrackDna> dnas; juce::String e2; const int nd = analyseFileToDna (wav2, dnas, e2);
+        CHECK (nd >= 3, "toplu analiz %d DNA (%s)", nd, e2.toRawUTF8());
+        for (auto& d : dnas) { CHECK (d.name.startsWith (wav2.getFileNameWithoutExtension()) && d.role.isNotEmpty(), "DNA adi %s", d.name.toRawUTF8()); CHECK (dnaTags (d).size() >= 1, "etiket yok"); }
+        juce::String tagLine; for (auto& d : dnas) tagLine << d.role << "[" << dnaTags (d).joinIntoString (",") << "] ";
+        CHECK (BatchAnalyser::audioFilesIn (bdir).contains (wav2), "klasor taramasi");
+        std::vector<TrackDna> none; CHECK (analyseFileToDna (dir.getChildFile ("yok.wav"), none, e2) == 0 && e2.isNotEmpty(), "olmayan dosya");
+        std::printf ("toplu analiz ok: %d DNA  %s\n", nd, tagLine.toRawUTF8());
     }
     std::printf (fails ? "\n%d BASARISIZ\n" : "\nREF TESTLERI GECTI\n", fails);
     return fails ? 1 : 0;
