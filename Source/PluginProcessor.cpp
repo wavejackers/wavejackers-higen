@@ -93,6 +93,7 @@ HitGenProcessor::HitGenProcessor()
     applyStyleDefaults();
     presets.rescan();
     regenerateNow();
+    midiLearn.init (*this); midiLearn.loadDefault();      // proje durumu gelirse kendi eşlemesi geçerli olur
     startTimerHz (30);
 }
 
@@ -348,6 +349,7 @@ void HitGenProcessor::timerCallback()
     for (int part = 0; part < 3; ++part)
         if (sdDirty[(size_t) part].exchange (false)) loadPatch (trackOfPart (part), true);
     if (regenPending.exchange (false)) regenerateNow();
+    midiLearn.timerTick();
 }
 
 void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
@@ -400,7 +402,9 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     numBlockEv = 0;
     for (const auto meta : midi)
     {
-        const auto msg = meta.getMessage(); if (numBlockEv >= (int) blockEv.size()) break;
+        const auto msg = meta.getMessage();
+        if (msg.isController() && midiLearn.handle (msg)) continue;      // eşlenmiş CC ya da MIDI Learn: kilitsiz, bellek ayırmadan
+        if (numBlockEv >= (int) blockEv.size()) break;
         if (msg.isNoteOn()) blockEv[(size_t) numBlockEv++] = { meta.samplePosition, 1, keysTrack, msg.getNoteNumber(), msg.getVelocity(), -1 };
         else if (msg.isNoteOff()) blockEv[(size_t) numBlockEv++] = { meta.samplePosition, 2, keysTrack, msg.getNoteNumber(), 0, 0 };
         else if (msg.isAllNotesOff() || msg.isAllSoundOff()) { engine.allNotesOff(); ref.samplerAllOff(); }
@@ -522,20 +526,25 @@ juce::ValueTree HitGenProcessor::stateTree()
     extra.setProperty ("userArtist", userArtist, nullptr); extra.setProperty ("userPreset", userPreset, nullptr);
     if (ref.hasPath() || ref.sampler.enabled.load() || ref.sampler.enabled.load()) extra.setProperty ("ref", juce::JSON::toString (ref.stateToVar(), true), nullptr);
     state.removeChild (state.getChildWithName ("extra"), nullptr);
+    state.removeChild (state.getChildWithName ("midimap"), nullptr);     // MIDI eşlemeleri preset'e girmez
     state.appendChild (extra, nullptr);
     return state;
 }
 
 void HitGenProcessor::getStateInformation (juce::MemoryBlock& dest)
 {
-    if (auto xml = stateTree().createXml()) copyXmlToBinary (*xml, dest);
+    auto state = stateTree(); state.appendChild (midiLearn.toTree(), nullptr);   // eşlemeler yalnızca proje durumunda
+    if (auto xml = state.createXml()) copyXmlToBinary (*xml, dest);
 }
 
 void HitGenProcessor::setStateInformation (const void* d, int size)
 {
     auto xml = getXmlFromBinary (d, size);
     if (xml == nullptr || ! xml->hasTagName (apvts.state.getType())) return;
-    restoreFromTree (juce::ValueTree::fromXml (*xml), true);
+    auto tree = juce::ValueTree::fromXml (*xml);
+    const auto mm = tree.getChildWithName ("midimap").createCopy(); tree.removeChild (tree.getChildWithName ("midimap"), nullptr);
+    restoreFromTree (tree, true);
+    if (mm.isValid()) midiLearn.fromTree (mm);     // eski projelerde eşleme yok: mevcut (varsayılan) eşlemeler kalır
 }
 
 void HitGenProcessor::restoreFromTree (const juce::ValueTree& source, bool includeUi)

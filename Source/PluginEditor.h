@@ -14,6 +14,7 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
     bool keyPressed (const juce::KeyPress&) override;
+    void mouseDown (const juce::MouseEvent&) override;   // alt bileşenlerden de gelir: sağ tık > MIDI Learn
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
     void filesDropped (const juce::StringArray& files, int, int) override;
     static constexpr int kW = 1180, kH = 760;
@@ -61,6 +62,15 @@ private:
     juce::TextButton presetBtn, saveBtn, settingsBtn, helpBtn; bool settingsOpen = false;
     struct Backdrop : public juce::Component { HitGenEditor* o = nullptr; void paint (juce::Graphics&) override; } settingsPanel;
     void toggleSettings (bool on); void showHelp(); void showSaveDialog(); void showPresetMenu();
+    // MIDI Learn
+    juce::TextButton midiBtn; int midiShownVer = -1, midiSeenLearned = -1; juce::String midiToast; juce::int64 midiToastUntil = 0;
+    void showMidiMenu (juce::Component& target, const juce::String& paramId); void showMidiMappings(); void refreshMidiBadges(); void toast (const juce::String& s, int ms = 3500);
+public:
+    // testler için
+    void midiLearnFor (const juce::String& paramId) { const int i = proc.midiLearn.indexOf (paramId); if (i >= 0) proc.midiLearn.startLearn (i); }
+    juce::String midiToastText() const { return midiToast; }
+    void refreshMidiNow() { refreshMidiBadges(); }
+private:
     juce::ListBox styleList; StyleModel styleModel { *this }; juce::Array<int> filtered; int group = 0;
     std::array<juce::TextButton, 4> varBtns;
     std::array<hgui::Knob, 6> genKnobs;

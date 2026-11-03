@@ -91,7 +91,8 @@ void SoundPage::fillBase()
 void SoundPage::bind()
 {
     sa.clear(); ca.clear(); ba.clear();
-    for (auto& [i, k] : knobs) sa.push_back (std::make_unique<SA> (proc.apvts, spId (part, i), k->slider));
+    for (auto& [i, k] : knobs) { sa.push_back (std::make_unique<SA> (proc.apvts, spId (part, i), k->slider)); hgui::tagParam (k->slider, spId (part, i)); }
+    if (onRebind) onRebind();
     for (auto& [i, c] : combos) ca.push_back (std::make_unique<CA> (proc.apvts, spId (part, i), *c));
     for (auto& [i, t] : toggles) ba.push_back (std::make_unique<BA> (proc.apvts, spId (part, i), *t));
 }

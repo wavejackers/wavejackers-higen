@@ -107,4 +107,7 @@ public:
 private:
     bool dragging = false; std::unique_ptr<juce::FileChooser> chooser;
 };
+// MIDI Learn: bir kaydırıcıyı eklenti parametresine etiketler (sağ tık menüsü ve CC rozeti bu etiketi okur)
+inline void tagParam (juce::Component& c, const juce::String& paramId) { c.getProperties().set ("hgParam", paramId); }
+
 }

@@ -31,7 +31,7 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
     playBtn.onClick = [this] { proc.previewPlaying.store (! proc.previewPlaying.load()); playBtn.setToggleState (proc.previewPlaying.load(), dontSendNotification); relabel(); };
     addC (newBtn); newBtn.onClick = [this] { proc.newIdea(); };
     addC (seed); seed.setSliderStyle (Slider::IncDecButtons); seed.setTextBoxStyle (Slider::TextBoxLeft, false, 64, 28); seed.setWantsKeyboardFocus (true);
-    sa.push_back (std::make_unique<SA> (A, "seed", seed));
+    sa.push_back (std::make_unique<SA> (A, "seed", seed)); hgui::tagParam (seed, "seed");
 
     for (int i = 0; i < data.langNames.size(); ++i) langBox.addItem (data.langNames[i], i + 1);
     addC (langBox); langBox.onChange = [this] { setLanguage (data.langCodes[langBox.getSelectedId() - 1]); };
@@ -64,7 +64,7 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
         b.onClick = [this, i] { if (varBtns[(size_t) i].getToggleState()) setParam ("variation", (float) i); };
     }
     const char* genIds[6] = { "orig", "energy", "thick", "human", "pump", "swing" };
-    for (int i = 0; i < 6; ++i) { addC (genKnobs[(size_t) i]); sa.push_back (std::make_unique<SA> (A, genIds[i], genKnobs[(size_t) i].slider)); }
+    for (int i = 0; i < 6; ++i) { addC (genKnobs[(size_t) i]); sa.push_back (std::make_unique<SA> (A, genIds[i], genKnobs[(size_t) i].slider)); hgui::tagParam (genKnobs[(size_t) i].slider, genIds[i]); }
     for (auto& n : data.noteNames) keyBox.addItem (n, keyBox.getNumItems() + 1);
     addC (keyBox); ca.push_back (std::make_unique<CA> (A, "key", keyBox));
     scaleBox.addItem ("auto", 1); for (auto& s : data.scaleOrder) scaleBox.addItem (s, scaleBox.getNumItems() + 1);
@@ -131,12 +131,16 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
     if (auto* c = getConstrainer()) { c->setFixedAspectRatio ((double) kW / kH); c->setSizeLimits (kW * 3 / 4, kH * 3 / 4, kW * 2, kH * 2); }
     setSize (roundToInt (kW * proc.uiScale), roundToInt (kH * proc.uiScale));
     setWantsKeyboardFocus (true);
-    startTimerHz (30);
+    addC (midiBtn); midiBtn.onClick = [this] { showMidiMappings(); };
+    soundPage->onRebind = [this] { midiShownVer = -1; };
+    addMouseListener (this, true);              // sağ tık > MIDI Learn (tüm alt bileşenler)
+    midiSeenLearned = proc.midiLearn.lastLearned(); startTimerHz (30);   // editör açılırken eski bildirimi gösterme
 }
 
 HitGenEditor::~HitGenEditor()
 {
-    stopTimer();
+    stopTimer(); removeMouseListener (this);
+    if (proc.midiLearn.learning() >= 0) proc.midiLearn.cancelLearn();
     proc.onResultChanged = nullptr; proc.auditionPart.store (-1);
     soundPage.reset(); presetPage.reset(); refPage.reset();
     partSa.clear(); sa.clear(); ca.clear(); ba.clear(); muteBa.clear();
@@ -198,7 +202,7 @@ void HitGenEditor::toggleSettings (bool on)
 {
     settingsOpen = on; settingsPanel.setVisible (on);
     if (on) settingsPanel.toFront (false);
-    for (auto* c : std::initializer_list<Component*> { &langLabel, &langBox, &qualityLabel, &qualityBox, &sizeBox, &contrastBtn, &motionBtn }) { c->setVisible (on); if (on) c->toFront (false); }
+    for (auto* c : std::initializer_list<Component*> { &langLabel, &langBox, &qualityLabel, &qualityBox, &sizeBox, &contrastBtn, &motionBtn, &midiBtn }) { c->setVisible (on); if (on) c->toFront (false); }
     sizeLabel.setVisible (false);
     settingsBtn.setToggleState (on, dontSendNotification); repaint();
 }
@@ -261,7 +265,7 @@ void HitGenEditor::relabel()
     };
     refill (qualityBox, { T ("pEco"), T ("pBal"), T ("pHigh") });
     sizeLabel.setText (T ("pUiSize"), dontSendNotification); sizeBox.setTitle (T ("pUiSize"));
-    contrastBtn.setButtonText (T ("pContrast")); motionBtn.setButtonText (T ("pMotion"));
+    contrastBtn.setButtonText (T ("pContrast")); motionBtn.setButtonText (T ("pMotion")); midiBtn.setButtonText (T ("mlAll")); midiBtn.setTooltip (T ("mlHint"));
     for (int i = 0; i < 8; ++i) groupBtns[(size_t) i].setButtonText (T (kGroupKeys[i]));
     presetBtn.setButtonText (proc.userArtist.isNotEmpty() ? proc.userArtist + " - " + proc.userPreset : T ("hdPreset")); saveBtn.setButtonText (T ("hdSave")); settingsBtn.setButtonText (T ("hdSettings")); helpBtn.setButtonText (T ("hdHelp"));
     for (int i = 0; i < 7; ++i) { tabBtns[(size_t) i].setButtonText (T (kTabKeys[i]).toUpperCase()); tabBtns[(size_t) i].setTooltip ((juce::SystemStats::getOperatingSystemType() & juce::SystemStats::MacOSX) != 0 ? "Cmd+" + String (i + 1) : "Ctrl+" + String (i + 1)); }
@@ -413,7 +417,8 @@ void HitGenEditor::bindPart (int p)
     part = p; partSa.clear();
     const char* ids[8] = { "cut_", "res_", "atk_", "rel_", "drv_", "rev_", "dly_", "vol_" };
     const char* pn = p == 0 ? "chords" : p == 1 ? "bass" : "melody";
-    for (int i = 0; i < 8; ++i) partSa.push_back (std::make_unique<SA> (proc.apvts, String (ids[i]) + pn, partKnobs[(size_t) i].slider));
+    for (int i = 0; i < 8; ++i) { partSa.push_back (std::make_unique<SA> (proc.apvts, String (ids[i]) + pn, partKnobs[(size_t) i].slider)); hgui::tagParam (partKnobs[(size_t) i].slider, String (ids[i]) + pn); }
+    midiShownVer = -1;     // rozetleri yeni parametrelere göre yenile
 }
 
 void HitGenEditor::refreshResult()
@@ -445,6 +450,8 @@ void HitGenEditor::timerCallback()
         const float pk = proc.engine.peakOut.exchange (0.0f);
         meter = pk > meter ? pk : meter * 0.86f;
         meterHold = pk > meterHold ? pk : jmax (0.0f, meterHold - 0.012f);
+        if (proc.midiLearn.version() != midiShownVer) refreshMidiBadges();
+        if (midiToastUntil > 0 && Time::currentTimeMillis() > midiToastUntil && proc.midiLearn.learning() < 0) { midiToastUntil = 0; midiToast.clear(); content.repaint(); }
         if (refPage != nullptr && tab == 3) refPage->setLevel (jlimit (0.0f, 1.0f, meter / .891f));
         const int q = (int) proc.apvts.getRawParameterValue ("quality")->load();
         juce::ignoreUnused (q);
@@ -481,6 +488,7 @@ void HitGenEditor::timerCallback()
 bool HitGenEditor::keyPressed (const KeyPress& k)
 {
     if (dynamic_cast<TextEditor*> (getCurrentlyFocusedComponent()) != nullptr) return false;
+    if (k == KeyPress::escapeKey && proc.midiLearn.learning() >= 0) { proc.midiLearn.cancelLearn(); toast (T ("mlCancelled")); return true; }
     if (k == KeyPress::spaceKey && dynamic_cast<Button*> (getCurrentlyFocusedComponent()) == nullptr) { playBtn.triggerClick(); return true; }
     if (k.getTextCharacter() == 'n' || k.getTextCharacter() == 'N') { proc.newIdea(); return true; }
     if (k.getModifiers().isCommandDown() && tab == 3 && refPage != nullptr && (k.getKeyCode() == 'Z' || k.getKeyCode() == 'z' || k.getKeyCode() == 'Y' || k.getKeyCode() == 'y'))
@@ -521,6 +529,16 @@ void HitGenEditor::Content::paint (Graphics& g)
         g.setColour (lv > 0.95f ? P.warning : P.accent); g.fillRoundedRectangle (m.withWidth (jmax (2.0f, m.getWidth() * lv)), 2.0f);
         g.setColour (P.mute); g.fillRect (m.getX() + m.getWidth() * hv - 1, m.getY() - 1, 2.0f, m.getHeight() + 2);
     }
+    // MIDI Learn bildirimi: altta ortada küçük bir hap (öğrenirken kalıcı)
+    if (ed.midiToast.isNotEmpty())
+    {
+        const bool learning = ed.proc.midiLearn.learning() >= 0;
+        const auto f = ed.lnf.font (12.5f, true); const float w = jmin ((float) kW - 80.0f, GlyphArrangement::getStringWidth (f, ed.midiToast) + 48.0f);
+        auto pill = Rectangle<float> (w, 34.0f).withCentre ({ kW * 0.5f, (float) kH - 30.0f });
+        g.setColour (P.panel2.withAlpha (0.97f)); g.fillRoundedRectangle (pill, 17.0f); g.setColour (learning ? P.accent : P.line); g.drawRoundedRectangle (pill.reduced (0.5f), 17.0f, learning ? 1.6f : 1.0f);
+        g.setColour (learning ? P.accent : P.success); g.fillEllipse (Rectangle<float> (8, 8).withCentre ({ pill.getX() + 20, pill.getCentreY() }));
+        g.setColour (P.ink); g.setFont (f); g.drawText (ed.midiToast, pill.withTrimmedLeft (34).withTrimmedRight (14), Justification::centredLeft, true);
+    }
 }
 
 void HitGenEditor::layoutContent()
@@ -535,7 +553,8 @@ void HitGenEditor::layoutContent()
     for (int i = 0; i < 3; ++i) place (tabBtns[(size_t) (4 + i)], { 570 + i * 112, 56, 108, 34 });
     place (seed, { 930, 58, 110, 30 }); place (newBtn, { 1046, 58, 110, 30 }); place (seedLabel, { 0, 0, 0, 0 });
     // ayarlar paneli (yalnızca açıkken görünür)
-    settingsPanelBounds = Rectangle<int> (760, 94, 396, 196);
+    settingsPanelBounds = Rectangle<int> (760, 94, 396, 232);
+    place (midiBtn, { 780, 254, 360, 28 });
     place (langLabel, { 780, 108, 110, 28 }); place (langBox, { 900, 108, 240, 28 });
     place (qualityLabel, { 780, 144, 110, 28 }); place (qualityBox, { 900, 144, 240, 28 });
     place (sizeLabel, { 0, 0, 0, 0 }); place (sizeBox, { 900, 180, 240, 28 }); place (contrastBtn, { 780, 218, 180, 28 }); place (motionBtn, { 968, 218, 172, 28 });
@@ -584,4 +603,100 @@ bool HitGenEditor::isInterestedInFileDrag (const StringArray& files) { for (auto
 void HitGenEditor::filesDropped (const StringArray& files, int, int)
 {
     for (auto& f : files) if (isAudioName (f)) { setTab (3); refPage->openFile (File (f)); return; }
+}
+
+// ---------------------------------------------------------------- MIDI Learn (arayüz)
+void HitGenEditor::toast (const String& s, int ms) { midiToast = s; midiToastUntil = Time::currentTimeMillis() + ms; content.repaint(); }
+
+static String ccLabel (const hg::MidiLearn::Map& m) { return "CC " + String (m.cc) + " / ch " + String (m.channel); }
+
+void HitGenEditor::mouseDown (const MouseEvent& e)
+{
+    if (! e.mods.isPopupMenu()) return;
+    for (auto* c = e.eventComponent; c != nullptr && c != this; c = c->getParentComponent())
+    {
+        const auto id = c->getProperties().getWithDefault ("hgParam", var()).toString();
+        if (id.isNotEmpty() && c->isEnabled()) { showMidiMenu (*c, id); return; }
+    }
+}
+
+void HitGenEditor::showMidiMenu (Component& target, const String& paramId)
+{
+    auto& ml = proc.midiLearn; const int idx = ml.indexOf (paramId); if (idx < 0) return;
+    const auto m = ml.mappingFor (idx); const bool learningThis = ml.learning() == idx;
+    PopupMenu menu; menu.setLookAndFeel (&lnf);
+    menu.addSectionHeader (ml.nameOf (idx));
+    menu.addItem (1, learningThis ? T ("mlCancel") : T ("mlLearn"));
+    if (m.param >= 0) menu.addItem (2, T ("mlRemove").replace ("{cc}", ccLabel (m)));
+    menu.addSeparator(); menu.addItem (3, T ("mlAll"));
+    menu.showMenuAsync (PopupMenu::Options().withTargetComponent (&target), [this, idx, learningThis] (int r)
+    {
+        auto& ml2 = proc.midiLearn;
+        if (r == 1)
+        {
+            if (learningThis) { ml2.cancelLearn(); toast (T ("mlCancelled")); }
+            else { midiSeenLearned = ml2.lastLearned(); ml2.startLearn (idx); midiToast = T ("mlWaiting").replace ("{p}", ml2.nameOf (idx)); midiToastUntil = Time::currentTimeMillis() + 600000; content.repaint(); }
+        }
+        else if (r == 2) { ml2.removeMapping (idx); toast (T ("mlRemoved")); }
+        else if (r == 3) showMidiMappings();
+    });
+}
+
+void HitGenEditor::showMidiMappings()
+{
+    auto& ml = proc.midiLearn; const auto maps = ml.all();
+    PopupMenu menu; menu.setLookAndFeel (&lnf);
+    menu.addSectionHeader (T ("mlTitle"));
+    if (maps.empty()) menu.addItem (-1, T ("mlNone"), false);
+    for (size_t i = 0; i < maps.size(); ++i)
+    {
+        PopupMenu sub; sub.addItem (1000 + (int) i, T ("mlRemove").replace ("{cc}", ccLabel (maps[i])));
+        sub.addItem (2000 + (int) i, T ("mlLearn"));
+        menu.addSubMenu (ml.nameOf (maps[i].param) + "    " + ccLabel (maps[i]), sub);
+    }
+    menu.addSeparator();
+    menu.addItem (1, T ("mlClear"), ! maps.empty());
+    menu.addItem (2, T ("mlSaveDef"), ! maps.empty());
+    menu.addItem (3, T ("mlLoadDef"), hg::MidiLearn::defaultFile().existsAsFile());
+    menu.showMenuAsync (PopupMenu::Options().withTargetComponent (&midiBtn), [this, maps] (int r)
+    {
+        auto& ml2 = proc.midiLearn;
+        if (r == 1) { ml2.clear(); toast (T ("mlRemoved")); }
+        else if (r == 2) toast (T (ml2.saveDefault() ? "mlSavedDef" : "rfSaveFail"));
+        else if (r == 3) { const bool ok = ml2.loadDefault(); toast (ok ? T ("mlLoadedDef").replace ("{n}", String ((int) ml2.all().size())) : T ("rfSaveFail")); }
+        else if (r >= 1000 && r < 1000 + (int) maps.size()) { ml2.removeMapping (maps[(size_t) (r - 1000)].param); toast (T ("mlRemoved")); }
+        else if (r >= 2000 && r < 2000 + (int) maps.size()) { const int p = maps[(size_t) (r - 2000)].param; midiSeenLearned = ml2.lastLearned(); ml2.startLearn (p); midiToast = T ("mlWaiting").replace ("{p}", ml2.nameOf (p)); midiToastUntil = Time::currentTimeMillis() + 600000; content.repaint(); }
+    });
+}
+
+// Etiketli kaydırıcılara CC rozeti / öğrenme halkası; yeni bir eşleme öğrenildiyse bildirim
+void HitGenEditor::refreshMidiBadges()
+{
+    auto& ml = proc.midiLearn; midiShownVer = ml.version(); const int learning = ml.learning();
+    std::function<void (Component&)> walk = [&] (Component& c)
+    {
+        const auto id = c.getProperties().getWithDefault ("hgParam", var()).toString();
+        if (id.isNotEmpty())
+        {
+            const int idx = ml.indexOf (id); const auto m = ml.mappingFor (idx);
+            const var cc = m.param >= 0 ? var ("CC" + String (m.cc)) : var(); const bool lrn = idx >= 0 && idx == learning;
+            auto& pr = c.getProperties();
+            if (pr.getWithDefault ("hgCC", var()).toString() != cc.toString() || (bool) pr.getWithDefault ("hgLearn", false) != lrn)
+            {
+                if (cc.isVoid()) pr.remove ("hgCC"); else pr.set ("hgCC", cc);
+                pr.set ("hgLearn", lrn); c.repaint();
+                if (m.param >= 0) c.setHelpText (ml.nameOf (idx) + ": " + ccLabel (m));
+            }
+        }
+        for (auto* ch : c.getChildren()) walk (*ch);
+    };
+    walk (content);
+    if (learning >= 0) { midiToast = T ("mlWaiting").replace ("{p}", ml.nameOf (learning)); midiToastUntil = Time::currentTimeMillis() + 600000; content.repaint(); return; }
+    const int ll = ml.lastLearned();
+    if (ll >= 0 && ll != midiSeenLearned && learning < 0)
+    {
+        midiSeenLearned = ll; const auto m = ml.mappingFor (ll);
+        if (m.param >= 0) toast (T ("mlLearned").replace ("{p}", ml.nameOf (ll)).replace ("{cc}", String (m.cc)).replace ("{ch}", String (m.channel)));
+    }
+    else if (learning < 0 && midiToastUntil > Time::currentTimeMillis() + 60000) { midiToastUntil = Time::currentTimeMillis() + 1; }   // öğrenme başka yerden bitti
 }
