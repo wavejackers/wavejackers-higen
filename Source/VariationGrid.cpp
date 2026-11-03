@@ -75,7 +75,7 @@ bool VariationGrid::keyPressed (const KeyPress& k)
     if (k == KeyPress::escapeKey) { if (onClose) onClose(); return true; }
     if (k == KeyPress::returnKey && playing >= 0) { if (onKeep) onKeep (playing); return true; }
     int d = 0; if (k == KeyPress::rightKey) d = rtl ? -1 : 1; else if (k == KeyPress::leftKey) d = rtl ? 1 : -1; else if (k == KeyPress::downKey) d = 3; else if (k == KeyPress::upKey) d = -3;
-    else if (k.getTextCharacter() >= '1' && k.getTextCharacter() <= '6') { playing = jmin (n - 1, k.getTextCharacter() - '1'); repaint(); if (onAudition) onAudition (playing); return true; }
+    else if (k.getTextCharacter() >= '1' && k.getTextCharacter() <= '6') { playing = jmin (n - 1, (int) (k.getTextCharacter() - '1')); repaint(); if (onAudition) onAudition (playing); return true; }
     if (d == 0) return false;
     playing = jlimit (0, n - 1, (playing < 0 ? 0 : playing + d)); repaint(); if (onAudition) onAudition (playing); return true;
 }
