@@ -9,6 +9,8 @@
 #include "OrbView.h"
 #include "MacroRow.h"
 #include "LayerList.h"
+#include "Assist.h"
+#include "VariationGrid.h"
 
 class ReferencePage : public juce::Component, private juce::ScrollBar::Listener
 {
@@ -36,6 +38,11 @@ public:
     void swapNow() { swapAB(); }
     juce::String statusText() const { return status.getText(); }
     void setLevel (float lv) { if (ws == 3) orb.setLevel (lv); }
+    bool undo(); bool redo();                        // Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z (editör yönlendirir)
+    void openGridNow() { openGrid(); }
+    bool gridVisible() const { return gridOpen; }
+    int undoDepth() const { return (int) undoStack.size(); }
+    juce::File rhythmFileNow() { return makeRhythmFile(); }
 
 private:
     struct Wave : public juce::Component
@@ -91,6 +98,14 @@ private:
     // DNA Orb stüdyosu (GENERATE): halka, makro satırları, katman hapları
     hgui::OrbView orb { lnf }; hgui::LayerList layers { lnf }; std::array<std::unique_ptr<hgui::MacroRow>, 5> macroRows; int selRow = -1;
     void syncOrb();
+    // 2.5: bar hizalama, ritim MIDI'si, toplu analiz, varyasyon ızgarası, geri al / yinele
+    juce::ToggleButton snapBtn; hgui::DragTile rhythmTile; juce::TextButton libBatch, gridBtn, undoBtn, redoBtn;
+    hg::BatchAnalyser batch; int batchAdded = 0, batchFiles = 0, batchDoneFiles = 0; bool batchBusy = false;
+    hgui::VariationGrid grid { lnf }; bool gridPending = false, gridOpen = false;
+    struct UndoState { std::array<float, hg::kNumSp> base {}, cur {}; float tex = 50, mov = 50, bri = 50; bool haveBase = false; };
+    std::vector<UndoState> undoStack; int undoPos = -1; std::array<float, hg::kNumSp> curVals {}; juce::int64 macroDirtyAt = 0;
+    void pushUndo(); void restoreUndo (const UndoState& s); void updateUndoButtons();
+    void snapSelection(); juce::File makeRhythmFile(); void startBatch(); void openGrid(); void buildGrid(); void closeGrid(); void keepVariation (int i);
     bool keyPressed (const juce::KeyPress&) override;
     void setView (int v); void syncSampler(); void trimFromSelection(); void saveSampler(); void loadSampler();
     Wave wave; Cands cands; juce::ScrollBar bar { false };

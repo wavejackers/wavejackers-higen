@@ -7,6 +7,7 @@
 #include "../Source/PluginEditor.h"
 #include "../Source/SoundParams.h"
 #include "../Source/DnaLibrary.h"
+#include "../Source/Assist.h"
 #include <iostream>
 #include <functional>
 #include <memory>
@@ -134,6 +135,20 @@ static void testReference (const juce::File& outDir, const FailFn& fail)
           ed->reference().swapNow(); p.readSoundParams (part, c2); ed->reference().swapNow(); p.readSoundParams (part, c3);
           if (std::memcmp (c1, c2, sizeof c1) == 0 || std::memcmp (c1, c3, sizeof c1) != 0) fail ("A/B swap");
           std::cout << "quick + A/B ok\n"; }
+        // 2.5: varyasyon ızgarası, geri al / yinele, ritim MIDI'si
+        { const int part = ed->reference().currentPart(); ed->setWorkspace (3);
+          ed->reference().openGridNow(); pump ([&] { return ed->reference().gridVisible(); }, 30000);
+          if (! ed->reference().gridVisible()) fail ("variation grid did not open: " + ed->reference().statusText());
+          { auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f); auto f = outDir.getChildFile ("plugin-en-grid.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os); }
+          float g0[hg::kNumSp], u1[hg::kNumSp], u2[hg::kNumSp]; p.readSoundParams (part, g0);
+          if (! ed->reference().undo()) fail ("undo refused, depth " + juce::String (ed->reference().undoDepth()));
+          p.readSoundParams (part, u1); if (std::memcmp (g0, u1, sizeof g0) == 0) fail ("undo changed nothing");
+          ed->reference().redo(); p.readSoundParams (part, u2); if (std::memcmp (g0, u2, sizeof g0) != 0) fail ("redo did not restore");
+          ed->reference().openGridNow(); if (ed->reference().gridVisible()) fail ("grid did not close");
+          auto mf = ed->reference().rhythmFileNow(); int ons = 0;
+          if (! mf.existsAsFile()) fail ("rhythm midi not written: " + ed->reference().statusText());
+          else { juce::FileInputStream in (mf); juce::MidiFile m; if (m.readFrom (in) && m.getNumTracks() > 0) for (auto* ev : *m.getTrack (0)) if (ev->message.isNoteOn()) ++ons; if (ons == 0) fail ("rhythm midi empty"); }
+          std::cout << "grid + undo/redo + rhythm midi ok (" << ons << " notes, undo depth " << ed->reference().undoDepth() << ")\n"; }
         // geçersiz dosya: hata iletisi, çökme yok
         auto bad = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("hitgen-bad.wav"); bad.replaceWithText ("not audio at all");
         ed->reference().openFile (bad); pump ([&] { return p.ref.state.load() == hg::RefEngine::Failed; }, 10000);
@@ -213,6 +228,28 @@ static void testLibrary (const FailFn& fail)
         if (lib3.entries().size() != 2) fail ("library persistence");
         hg::DnaEntry outside; outside.file = junk; if (lib.remove (outside)) fail ("library deleted a file outside the folder");
         dir.getChildFile ("..").getChildFile ("hitgen-lib-test2").deleteRecursively(); ex.deleteFile(); junk.deleteFile();
+        // 2.5: etiket araması (anahtar ve çevrilmiş ad) ve klasörü toplu analiz
+        { const auto td = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("hitgen-tag-test"); td.deleteRecursively(); td.createDirectory();
+          hg::DnaLibrary tl (td); hg::TrackDna t1 = d; t1.pitched = true; hg::TrackDna t2 = d; t2.pitched = false; tl.save (t1, "A", "One"); tl.save (t2, "A", "Two");
+          if (tl.query ("tagUnpitched", hg::DnaLibrary::All).size() != 1) fail ("tag search by key");
+          if (tl.query ("perdesiz", hg::DnaLibrary::All, [] (const juce::String& k) { return k == "tagUnpitched" ? juce::String ("Perdesiz") : k; }).size() != 1) fail ("tag search by translated name");
+          // toplu analiz: 2 sentetik dosya + 1 bozuk dosya
+          const auto bd = td.getChildFile ("Batch Artist"); bd.createDirectory(); const double sr = 44100; juce::AudioBuffer<float> b (2, (int) (sr * 8)); b.clear(); juce::Random rnd (7);
+          for (int q = 0; q < 16; ++q) { const int s0 = (int) (q * 0.476 * sr); for (int i = 0; i < (int) (0.4 * sr) && s0 + i < b.getNumSamples(); ++i) { const double t = i / sr; float v = 0; for (int h = 1; h < 9; ++h) v += (float) std::sin (2 * juce::MathConstants<double>::pi * 55 * h * t) / h; v *= 0.3f * (float) std::exp (-t * 3); b.addSample (0, s0 + i, v); b.addSample (1, s0 + i, v); } }
+          for (int k = 0; k < 2; ++k) { auto wf = bd.getChildFile ("loop" + juce::String (k) + ".wav"); std::unique_ptr<juce::FileOutputStream> os (wf.createOutputStream()); juce::WavAudioFormat fmt; std::unique_ptr<juce::AudioFormatWriter> w (fmt.createWriterFor (os.get(), sr, 2, 16, {}, 0)); if (w) { os.release(); w->writeFromAudioSampleBuffer (b, 0, b.getNumSamples()); } }
+          bd.getChildFile ("broken.wav").replaceWithText ("nope");
+          auto pump = [&] (const std::function<bool()>& done, int ms) { const auto t0 = juce::Time::getMillisecondCounter(); while (! done() && juce::Time::getMillisecondCounter() - t0 < (juce::uint32) ms) juce::MessageManager::getInstance()->runDispatchLoopUntil (20); return done(); };
+          hg::BatchAnalyser ba; int filesSeen = 0, dnaCount = 0, errors = 0; bool done = false, cancelled = true;
+          ba.onFile = [&] (int, int, const juce::File&, const std::vector<hg::TrackDna>& v, const juce::String& err) { ++filesSeen; dnaCount += (int) v.size(); if (err.isNotEmpty()) ++errors; for (auto& x : v) tl.save (x, bd.getFileName(), x.name); };
+          ba.onDone = [&] (bool c) { done = true; cancelled = c; };
+          const auto files = hg::BatchAnalyser::audioFilesIn (bd); if (files.size() != 3) fail ("batch file scan " + juce::String (files.size()));
+          ba.start (files); pump ([&] { return done; }, 60000);
+          if (! done || cancelled || filesSeen != 3 || errors != 1 || dnaCount < 2) fail ("batch analysis: files " + juce::String (filesSeen) + " dna " + juce::String (dnaCount) + " errors " + juce::String (errors));
+          if (tl.query ("Batch Artist", hg::DnaLibrary::All).size() != (size_t) dnaCount) fail ("batch results not in library");
+          // iptal: hemen iptal et, takılmadan bitmeli
+          hg::BatchAnalyser bc; bool d2 = false; bc.onDone = [&] (bool) { d2 = true; }; bc.start (files); bc.cancel(); pump ([&] { return d2; }, 10000); if (! d2) fail ("batch cancel did not finish");
+          std::cout << "tags + batch ok: " << dnaCount << " DNA from " << filesSeen << " files (" << errors << " broken)\n";
+          td.deleteRecursively(); }
         std::cout << "library tests done\n";
     }
 }

@@ -133,6 +133,38 @@ ReferencePage::ReferencePage (HitGenProcessor& p, hgui::LookAndFeel& l) : proc (
         hgui::Knob* ks[5] = { &simK, &varK, &texK, &movK, &briK };
         for (int i = 0; i < 5; ++i) { macroRows[(size_t) i] = std::make_unique<hgui::MacroRow> (lnf, ks[i]->slider); addAndMakeVisible (*macroRows[(size_t) i]); }
     }
+    // ---- 2.5
+    for (auto* c : std::initializer_list<Component*> { &snapBtn, &rhythmTile, &libBatch, &gridBtn, &undoBtn, &redoBtn, &grid }) addAndMakeVisible (*c);
+    snapBtn.setToggleState (true, dontSendNotification);
+    rhythmTile.makeFile = [this] { return makeRhythmFile(); };
+    rhythmTile.palette = [this]() -> const hgui::Palette& { return lnf.pal(); }; rhythmTile.font = [this] (float h, bool b) { return lnf.font (h, b); };
+    libBatch.onClick = [this] { if (batch.running()) batch.cancel(); else startBatch(); };
+    gridBtn.onClick = [this] { openGrid(); }; gridBtn.setComponentID ("primary");
+    undoBtn.onClick = [this] { undo(); }; redoBtn.onClick = [this] { redo(); };
+    grid.onAudition = [this] (int i)
+    {
+        if (i < 0 || i >= (int) grid.items.size()) return;
+        proc.applySoundParams (part, grid.items[(size_t) i].v.data()); curVals = grid.items[(size_t) i].v; startPhrase();
+    };
+    grid.onKeep = [this] (int i) { keepVariation (i); };
+    grid.onClose = [this] { closeGrid(); };
+    grid.spName = [this] (int sp) { return T (spDef (sp).label); };
+    batch.onFile = [this] (int i, int n, const File& f, const std::vector<TrackDna>& dnas, const String& err)
+    {
+        const String artist = f.getParentDirectory().getFileName();
+        for (auto& d : dnas) if (lib.save (d, artist, d.name)) ++batchAdded;
+        batchDoneFiles = i + 1;
+        status.setText (err.isNotEmpty() ? T ("batchFail").replace ("{f}", f.getFileName())
+                                         : T ("batchProg").replace ("{i}", String (i + 1)).replace ("{n}", String (n)).replace ("{f}", f.getFileName()), dontSendNotification);
+        libRefresh();
+    };
+    batch.onDone = [this] (bool cancelled)
+    {
+        batchBusy = false; libRefresh(); relabel();
+        status.setText (T (cancelled ? "batchCancelled" : "batchDone").replace ("{d}", String (batchAdded)).replace ("{n}", String (batchDoneFiles)), dontSendNotification);
+        if (! cancelled) markCompleted();
+    };
+    updateUndoButtons();
     setWantsKeyboardFocus (true);
     libRefresh();
     setView (0); setWorkspace (0);
@@ -166,6 +198,13 @@ void ReferencePage::relabel()
     simK.setText (T ("dnaSim"), T ("rfSimHint")); varK.setText (T ("dnaVar"), T ("rfVarHint"));
     texK.setText (T ("dnaTex"), T ("dnaTexHint")); movK.setText (T ("dnaMov"), T ("dnaMovHint")); briK.setText (T ("dnaBri"), T ("dnaBriHint"));
     dnaHint.setText (haveBase ? T ("dnaHintOn") : T ("dnaHintOff"), dontSendNotification);
+    snapBtn.setButtonText (T ("snapBars")); snapBtn.setTooltip (T ("snapHint"));
+    rhythmTile.label = T ("rhythmTile"); rhythmTile.hint = T ("rhythmHint"); rhythmTile.setTooltip (T ("rhythmHint")); rhythmTile.setTitle (T ("rhythmTile")); rhythmTile.repaint();
+    libBatch.setButtonText (T (batchBusy ? "libBatchCancel" : "libBatch")); libBatch.setTooltip (T ("libBatchHint"));
+    gridBtn.setButtonText (T ("gridBtn")); gridBtn.setTooltip (T ("gridHint"));
+    undoBtn.setButtonText (T ("undo")); redoBtn.setButtonText (T ("redo"));
+    undoBtn.setTooltip ((SystemStats::getOperatingSystemType() & SystemStats::MacOSX) != 0 ? "Cmd+Z" : "Ctrl+Z"); redoBtn.setTooltip ((SystemStats::getOperatingSystemType() & SystemStats::MacOSX) != 0 ? "Cmd+Shift+Z" : "Ctrl+Shift+Z");
+    grid.title = T ("gridTitle"); grid.hint = T ("gridHint"); grid.keepWord = T ("gridKeep"); grid.closeWord = T ("gridClose"); grid.seedWord = T ("seed"); grid.rtl = rtl;
     {
         const char* nk[5] = { "dnaSim", "dnaVar", "dnaTex", "dnaMov", "dnaBri" }; const char* hk[5] = { "rfSimHint", "rfVarHint", "dnaTexHint", "dnaMovHint", "dnaBriHint" };
         for (int i = 0; i < 5; ++i) if (macroRows[(size_t) i]) { macroRows[(size_t) i]->setName (T (nk[i]), T (hk[i])); macroRows[(size_t) i]->rtl = rtl; }
@@ -264,6 +303,8 @@ void ReferencePage::tick()
     const bool pl = proc.ref.playing.load(); if ((playBtn.getButtonText() == T ("rfStop")) != pl) relabel();
     if (pl) wave.repaint();
     updateStat(); stat.advance();
+    if (macroDirtyAt > 0 && Time::currentTimeMillis() - macroDirtyAt > 450) { macroDirtyAt = 0; pushUndo(); }
+    if (gridPending && errorFlag) gridPending = false;
     if (ws == 3)
     {
         orb.setPlayhead (proc.ref.posSec.load(), pl); orb.topText = T (kPartKeys[part]);
@@ -320,7 +361,9 @@ void ReferencePage::doGenerate (const TrackDna& d)
     dnaInfo.setText (T ("rfDnaInfo").replace ("{f0}", d.pitched ? F (d.f0Hz, 1) + " Hz" : T ("rfUnpitched")).replace ("{cent}", F (d.centroidHz, 0)).replace ("{atk}", F (d.attackMs, 0)).replace ("{sus}", F (d.sustainLevel, 2))
                          .replace ("{wid}", F (d.width, 2)).replace ("{noi}", F (d.noise, 2)).replace ("{dur}", fmtTime (d.regionEnd - d.regionStart)).replace ("{src}", d.sourceFile), dontSendNotification);
     status.setText (T ("rfGenerated").replace ("{p}", T (kPartKeys[part])).replace ("{s}", String ((int) sd)), dontSendNotification);
-    if (previewBtn.getToggleState()) startPhrase();
+    curVals = baseVals; pushUndo();
+    if (gridPending) { gridPending = false; buildGrid(); }
+    else if (previewBtn.getToggleState()) startPhrase();
     repaint();
 }
 
@@ -340,6 +383,7 @@ void ReferencePage::applyHistory (int pos)
     baseVals = history[(size_t) pos].v; haveBase = true; for (auto* k : { &texK, &movK, &briK }) { k->slider.setValue (50, dontSendNotification); k->slider.setEnabled (true); }
     prevBtn.setEnabled (histPos > 0); nextBtn.setEnabled (histPos + 1 < (int) history.size());
     histLabel.setText (T ("rfHist") + " " + String (histPos + 1) + "/" + String ((int) history.size()) + "  (seed " + String ((int) history[(size_t) pos].seed) + ")", dontSendNotification);
+    curVals = baseVals; pushUndo();
     if (previewBtn.getToggleState()) startPhrase();
 }
 
@@ -381,11 +425,11 @@ void ReferencePage::resized()
         P (posLabel, { 590, 8, 140, 36 }); P (applyBtn, { 1004, 8, 144, 36 }); P (quickBtn, { 1004, 560, 144, 36 });
         P (info, { 16, 52, kW - 32, 22 }); statusRow (76);
         P (wave, { 16, 104, kW - 32, 420 }); P (bar, { 16, 528, kW - 32, 12 });
-        P (zoomOut, { 16, 548, 40, 28 }); P (zoomIn, { 60, 548, 40, 28 }); P (zoomFit, { 104, 548, 84, 28 }); P (regionLabel, { 200, 548, 780, 28 });
+        P (zoomOut, { 16, 548, 40, 28 }); P (zoomIn, { 60, 548, 40, 28 }); P (zoomFit, { 104, 548, 84, 28 }); P (snapBtn, { 200, 548, 190, 28 }); P (regionLabel, { 398, 548, 390, 28 }); P (rhythmTile, { 796, 560, 200, 36 });
     }
     else if (ws == 1)
     {
-        P (smartBtn, { 16, 8, 260, 44 }); P (playBtn, { 284, 8, 140, 44 }); P (banner, { 440, 6, kW - 456, 48 }); statusRow (58);
+        P (smartBtn, { 16, 8, 260, 44 }); P (playBtn, { 284, 8, 140, 44 }); P (banner, { 440, 6, kW - 456, 48 }); P (stat, { 16, 58, 120, 24 }); P (status, { 140, 58, 790, 22 }); P (rhythmTile, { 948, 52, 200, 32 });
         P (wave, { 16, 90, kW - 32, 130 });
         P (cands, { 16, 232, kW - 32, 400 });
     }
@@ -416,20 +460,20 @@ void ReferencePage::resized()
             P (artistEd, { 534, y0 + 6, 300, 32 }); P (nameEd, { 842, y0 + 6, 306, 32 });
             P (libSave, { 534, y0 + 48, 614, 34 });
             P (libUseBtn, { 534, y0 + 94, 148, 34 }); P (libFav, { 690, y0 + 94, 148, 34 }); P (libRename, { 846, y0 + 94, 148, 34 }); P (libDelete, { 1002, y0 + 94, 146, 34 });
-            P (libImport, { 534, y0 + 138, 148, 34 }); P (libExport, { 690, y0 + 138, 148, 34 });
+            P (libImport, { 534, y0 + 138, 148, 34 }); P (libExport, { 690, y0 + 138, 148, 34 }); P (libBatch, { 846, y0 + 138, 302, 34 });
         }
     }
     else
     {
         // DNA Orb stüdyosu: sol makrolar, ortada halka, sağda katmanlar, altta üretim yuvası
         for (int i = 0; i < 3; ++i) P (partBtns[(size_t) i], { 16 + i * 100, 10, 96, 32 });
-        P (stat, { 340, 14, 120, 24 }); P (status, { 462, 12, 520, 22 }); P (quickBtn, { 1032, 10, 116, 32 });
+        P (stat, { 340, 14, 120, 24 }); P (status, { 462, 12, 420, 22 }); P (gridBtn, { 890, 10, 134, 32 }); P (quickBtn, { 1032, 10, 116, 32 });
         for (int i = 0; i < 5; ++i) if (macroRows[(size_t) i]) P (*macroRows[(size_t) i], { 16, 84 + i * 56, 300, 48 });
         P (seedLabel, { 16, 372, 80, 22 }); P (seed, { 16, 396, 200, 32 }); P (seedNewBtn, { 222, 396, 40, 32 }); P (previewBtn, { 16, 436, 300, 30 });
-        P (orb, { 342, 50, 480, 480 });
+        P (orb, { 342, 50, 480, 480 }); P (grid, { 342, 50, 480, 480 });
         P (layers, { 848, 150, 300, 224 });
         P (prevBtn, { 848, 392, 40, 32 }); P (nextBtn, { 892, 392, 40, 32 }); P (pinBtn, { 940, 392, 96, 32 }); P (abBtn, { 1044, 392, 64, 32 });
-        P (histLabel, { 848, 430, 300, 22 }); P (summaryLabel, { 848, 454, 300, 40 });
+        P (histLabel, { 848, 430, 300, 22 }); P (summaryLabel, { 848, 454, 300, 40 }); P (undoBtn, { 848, 500, 146, 32 }); P (redoBtn, { 1002, 500, 146, 32 });
         P (regenBtn, { 36, 572, 170, 46 }); P (randBtn, { 214, 572, 170, 46 }); P (genBtn, { 400, 564, 364, 62 });
         P (previewNowBtn, { 780, 572, 170, 46 }); P (savePresetBtn, { 958, 572, 170, 46 });
     }
@@ -526,6 +570,7 @@ void ReferencePage::Wave::mouseUp (const MouseEvent& e)
 {
     if (o->proc.ref.clip() == nullptr) return;
     if (! dragging) { o->proc.ref.seekTo = jlimit (0.0, o->proc.ref.clip()->seconds(), xToSec ((float) e.x)); if (e.mods.isShiftDown()) o->setSelection (0, 0, -1); }
+    else if (! e.mods.isAltDown()) o->snapSelection();            // Alt: hizalamadan serbest seçim
     dragging = false; o->repaint();
 }
 void ReferencePage::Wave::mouseWheelMove (const MouseEvent& e, const MouseWheelDetails& w)
@@ -601,7 +646,8 @@ void ReferencePage::applyWorkspace()
     auto vis = [] (CL l, bool on) { for (auto* x : l) x->setVisible (on); };
     // her çalışma alanında ortak: dalga formu, durum göstergesi
     vis ({ &stat, &status }, true); vis ({ &wave }, ! r3); vis ({ &info }, r0);
-    vis ({ &orb, &layers }, r3); for (auto& m : macroRows) if (m) m->setVisible (r3);
+    vis ({ &orb }, r3 && ! gridOpen); vis ({ &grid }, r3 && gridOpen); vis ({ &layers, &gridBtn, &undoBtn, &redoBtn }, r3); for (auto& m : macroRows) if (m) m->setVisible (r3);
+    vis ({ &snapBtn }, r0); vis ({ &rhythmTile }, r0 || r1); vis ({ &libBatch }, lb);
     vis ({ &openBtn, &loopBtn, &gainL, &gainS, &posLabel, &applyBtn, &bar, &zoomIn, &zoomOut, &zoomFit, &regionLabel }, r0);
     vis ({ &playBtn }, r0 || r1); vis ({ &quickBtn }, r0 || r3);
     vis ({ &smartBtn, &banner, &cands }, r1);
@@ -662,10 +708,12 @@ void ReferencePage::LibModel::paintListBoxItem (int row, Graphics& g, int w, int
     if (row < 0 || row >= (int) o->libRows.size()) return; const auto& e = o->libRows[(size_t) row]; const auto& P = o->lnf.pal();
     if (sel) { g.setColour (P.accent.withAlpha (0.25f)); g.fillRect (0, 0, w, h); }
     g.setColour (e.favorite ? P.accent : P.mute); g.setFont (o->lnf.font (13.0f, true)); g.drawText (e.favorite ? "*" : "-", 4, 0, 14, h, Justification::centred);
-    g.setColour (P.ink); g.setFont (o->lnf.font (12.5f)); g.drawText ((e.artist.isNotEmpty() ? e.artist + "  /  " : String()) + e.name, 22, 0, w - 130, h, Justification::centredLeft, true);
+    g.setColour (P.ink); g.setFont (o->lnf.font (12.5f)); g.drawText ((e.artist.isNotEmpty() ? e.artist + "  /  " : String()) + e.name, 22, 0, w / 2 - 22, h, Justification::centredLeft, true);
+    String tg; for (int i = 0; i < jmin (3, e.tags.size()); ++i) tg << (i ? "  " : "") << o->T (e.tags[i]).toLowerCase();
+    g.setColour (P.accent.withAlpha (0.85f)); g.setFont (o->lnf.font (11.0f)); g.drawText (tg, w / 2 + 4, 0, w / 2 - 110, h, Justification::centredLeft, true);
     g.setColour (P.mute); g.drawText (e.role, w - 100, 0, 94, h, Justification::centredRight);
 }
-void ReferencePage::libRefresh() { libRows = lib.query (searchEd.getText(), (hg::DnaLibrary::Filter) (filterBox.getSelectedId() - 1)); libList.updateContent(); libList.repaint(); }
+void ReferencePage::libRefresh() { libRows = lib.query (searchEd.getText(), (hg::DnaLibrary::Filter) (filterBox.getSelectedId() - 1), [this] (const String& t) { return T (t); }); libList.updateContent(); libList.repaint(); }
 const hg::DnaEntry* ReferencePage::libSel() const { const int r = libList.getSelectedRow(); return r >= 0 && r < (int) libRows.size() ? &libRows[(size_t) r] : nullptr; }
 void ReferencePage::libSelChanged() { if (auto* e = libSel()) { nameEd.setText (e->name, dontSendNotification); artistEd.setText (e->artist, dontSendNotification); } }
 void ReferencePage::libUse (int row)
@@ -730,7 +778,8 @@ void ReferencePage::updateStat()
 {
     using S = hgui::StatusIndicator;
     const int st = proc.ref.state.load();
-    if (dnaBusy || st == RefEngine::Loading || st == RefEngine::Analysing)
+    if (batchBusy) stat.set (S::Processing, batchFiles > 0 ? (float) batchDoneFiles / (float) batchFiles : -1.0f, T ("stProc"));
+    else if (dnaBusy || st == RefEngine::Loading || st == RefEngine::Analysing)
         stat.set (S::Processing, st == RefEngine::Analysing ? proc.ref.progress.load() : -1.0f, T (st == RefEngine::Analysing ? "rfAnalysing" : "stProc"));
     else if (errorFlag || st == RefEngine::Failed) stat.set (S::Error, -1.0f, T ("stErr"));
     else if (Time::currentTimeMillis() - completedAt < 4000 && completedAt > 0) stat.set (S::Completed, -1.0f, T ("stDone"));
@@ -748,7 +797,7 @@ void ReferencePage::applyMacros()
     v[noise] = clampTo (noise, baseVals[(size_t) noise] + t * 0.30f); v[fxDrive] = clampTo (fxDrive, baseVals[(size_t) fxDrive] + t * 0.25f);
     v[l1depth] = clampTo (l1depth, baseVals[(size_t) l1depth] + m * 0.5f);
     if (m > 0 && baseVals[(size_t) l1depth] < 0.05f) { v[l1target] = 0; v[l1rate] = clampTo (l1rate, std::max (baseVals[(size_t) l1rate], 0.4f)); }   // kullanılmayan LFO'yu filtreye bağla
-    proc.applySoundParams (part, v);
+    proc.applySoundParams (part, v); std::copy (v, v + kNumSp, curVals.begin()); macroDirtyAt = Time::currentTimeMillis();
 }
 
 void ReferencePage::regenerateSame() { if (history.empty()) { generate(); return; } seed.setValue (lastSeed, dontSendNotification); generate(); }
@@ -759,3 +808,110 @@ void ReferencePage::randomizeGen()
     varK.slider.setValue (25 + Random::getSystemRandom().nextInt (46), dontSendNotification);
     generate();
 }
+
+// ---------------------------------------------------------------- 2.5: iş akışı yardımcıları
+void ReferencePage::snapSelection()
+{
+    if (! snapBtn.getToggleState()) return;
+    auto c = proc.ref.clip(); auto a = proc.ref.analysis(); if (c == nullptr || a == nullptr || ! a->ok || a->bpm <= 0 || selB <= selA + 0.01) return;
+    double na = 0, nb = 0; const double anchor = a->onsets.empty() ? 0.0 : (double) a->onsets.front();
+    if (snapToBars (selA, selB, a->bpm, anchor, c->seconds(), na, nb)) setSelection (na, nb, -1);
+}
+
+File ReferencePage::makeRhythmFile()
+{
+    auto c = proc.ref.clip(); auto a = proc.ref.analysis();
+    if (c == nullptr || a == nullptr || ! a->ok) { status.setText (T ("rhythmNone"), dontSendNotification); return {}; }
+    RhythmSketch rs; if (! onsetsToMidi (*c, *a, selA, selB, rs)) { status.setText (T ("rhythmNone"), dontSendNotification); return {}; }
+    auto dir = File::getSpecialLocation (File::tempDirectory).getChildFile ("HitGen"); dir.createDirectory();
+    auto f = dir.getChildFile (File::createLegalFileName (c->name + " rhythm " + String (roundToInt (rs.bpm)) + "bpm") + ".mid"); f.deleteFile();
+    { FileOutputStream os (f); if (! os.openedOk() || ! rs.midi.writeTo (os)) { status.setText (T ("rfSaveFail"), dontSendNotification); return {}; } }
+    status.setText (T ("rhythmDone").replace ("{n}", String (rs.notes)).replace ("{k}", String (rs.kicks)).replace ("{s}", String (rs.snares)).replace ("{h}", String (rs.hats)), dontSendNotification);
+    return f;
+}
+
+void ReferencePage::startBatch()
+{
+    chooser = std::make_unique<FileChooser> (T ("libBatch"), File::getSpecialLocation (File::userMusicDirectory), "*");
+    chooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectDirectories, [this] (const FileChooser& fc)
+    {
+        const auto dir = fc.getResult(); if (! dir.isDirectory()) return;
+        const auto files = BatchAnalyser::audioFilesIn (dir);
+        if (files.isEmpty()) { status.setText (T ("batchNone"), dontSendNotification); return; }
+        batchFiles = files.size(); batchAdded = 0; batchDoneFiles = 0;
+        if (batch.start (files)) { batchBusy = true; errorFlag = false; status.setText (T ("batchProg").replace ("{i}", "0").replace ("{n}", String (batchFiles)).replace ("{f}", dir.getFileName()), dontSendNotification); relabel(); }
+    });
+}
+
+void ReferencePage::openGrid()
+{
+    if (gridOpen) { closeGrid(); return; }
+    gridPending = true; generate();                    // önce DNA ve temel ses; ızgara doGenerate sonunda kurulur
+}
+
+void ReferencePage::buildGrid()
+{
+    if (! haveDna) return;
+    grid.items.clear(); const char role = part == 1 ? 'b' : part == 0 ? 'c' : 'm';
+    for (int i = 0; i < 6; ++i)
+    {
+        hgui::VariationGrid::Item it; it.seed = lastSeed + (juce::uint32) i;
+        dnaToSoundParams (dna, role, (float) simK.slider.getValue(), (float) varK.slider.getValue(), it.seed, it.v.data());
+        grid.items.push_back (it);
+    }
+    grid.playing = 0; gridOpen = true; applyWorkspace(); grid.toFront (true);
+    if (previewBtn.getToggleState()) startPhrase();
+}
+
+void ReferencePage::closeGrid() { gridOpen = false; applyWorkspace(); }
+
+void ReferencePage::keepVariation (int i)
+{
+    if (i < 0 || i >= (int) grid.items.size()) return;
+    const auto it = grid.items[(size_t) i];
+    proc.applySoundParams (part, it.v.data()); pushHistory (it.v.data(), it.seed); lastSeed = it.seed;
+    baseVals = it.v; haveBase = true; curVals = it.v;
+    for (auto* k : { &texK, &movK, &briK }) { k->slider.setValue (50, dontSendNotification); k->slider.setEnabled (true); }
+    pushUndo(); markCompleted(); dnaHint.setText (T ("dnaHintOn"), dontSendNotification);
+    status.setText (T ("rfGenerated").replace ("{p}", T (kPartKeys[part])).replace ("{s}", String ((int) it.seed)), dontSendNotification);
+    closeGrid(); repaint();
+}
+
+void ReferencePage::pushUndo()
+{
+    UndoState u; u.base = baseVals; u.cur = curVals; u.haveBase = haveBase;
+    u.tex = (float) texK.slider.getValue(); u.mov = (float) movK.slider.getValue(); u.bri = (float) briK.slider.getValue();
+    if (undoPos >= 0 && undoPos < (int) undoStack.size())
+    {
+        const auto& t = undoStack[(size_t) undoPos];
+        if (t.cur == u.cur && t.base == u.base && t.tex == u.tex && t.mov == u.mov && t.bri == u.bri && t.haveBase == u.haveBase) return;   // değişiklik yok
+    }
+    if (undoPos + 1 < (int) undoStack.size()) undoStack.resize ((size_t) undoPos + 1);
+    undoStack.push_back (u); if (undoStack.size() > 60) undoStack.erase (undoStack.begin());
+    undoPos = (int) undoStack.size() - 1; updateUndoButtons();
+}
+
+void ReferencePage::restoreUndo (const UndoState& u)
+{
+    macroDirtyAt = 0; baseVals = u.base; curVals = u.cur; haveBase = u.haveBase;
+    texK.slider.setValue (u.tex, dontSendNotification); movK.slider.setValue (u.mov, dontSendNotification); briK.slider.setValue (u.bri, dontSendNotification);
+    for (auto* k : { &texK, &movK, &briK }) k->slider.setEnabled (haveBase);
+    if (haveBase) proc.applySoundParams (part, curVals.data());
+    if (previewBtn.getToggleState()) startPhrase();
+    updateUndoButtons(); repaint();
+}
+
+bool ReferencePage::undo()
+{
+    if (macroDirtyAt > 0) { macroDirtyAt = 0; pushUndo(); }        // bekleyen makro değişikliği önce kayda geçer
+    if (undoPos <= 0) { status.setText (T ("undoNone"), dontSendNotification); return false; }
+    restoreUndo (undoStack[(size_t) --undoPos]); status.setText (T ("undo") + "  " + String (undoPos + 1) + "/" + String ((int) undoStack.size()), dontSendNotification); return true;
+}
+
+bool ReferencePage::redo()
+{
+    if (undoPos + 1 >= (int) undoStack.size()) { status.setText (T ("redoNone"), dontSendNotification); return false; }
+    restoreUndo (undoStack[(size_t) ++undoPos]); status.setText (T ("redo") + "  " + String (undoPos + 1) + "/" + String ((int) undoStack.size()), dontSendNotification); return true;
+}
+
+void ReferencePage::updateUndoButtons() { undoBtn.setEnabled (undoPos > 0); redoBtn.setEnabled (undoPos + 1 < (int) undoStack.size()); }

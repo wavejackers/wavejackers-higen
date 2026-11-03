@@ -483,6 +483,8 @@ bool HitGenEditor::keyPressed (const KeyPress& k)
     if (dynamic_cast<TextEditor*> (getCurrentlyFocusedComponent()) != nullptr) return false;
     if (k == KeyPress::spaceKey && dynamic_cast<Button*> (getCurrentlyFocusedComponent()) == nullptr) { playBtn.triggerClick(); return true; }
     if (k.getTextCharacter() == 'n' || k.getTextCharacter() == 'N') { proc.newIdea(); return true; }
+    if (k.getModifiers().isCommandDown() && tab == 3 && refPage != nullptr && (k.getKeyCode() == 'Z' || k.getKeyCode() == 'z' || k.getKeyCode() == 'Y' || k.getKeyCode() == 'y'))
+    { if (k.getModifiers().isShiftDown() || k.getKeyCode() == 'Y' || k.getKeyCode() == 'y') refPage->redo(); else refPage->undo(); return true; }
     if (k.getModifiers().isCommandDown() && (k.getKeyCode() == 'S' || k.getKeyCode() == 's')) { loopTile.saveAs(); return true; }
     if (k.getModifiers().isCommandDown() && k.getKeyCode() >= '1' && k.getKeyCode() <= '7') { const int i = k.getKeyCode() - '1'; if (i < 4) setWorkspace (i); else setTab (i - 4); return true; }
     if (k == KeyPress::escapeKey && settingsOpen) { toggleSettings (false); return true; }
