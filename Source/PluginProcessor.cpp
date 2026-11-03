@@ -141,6 +141,9 @@ void HitGenProcessor::loadPatch (int track, bool live)
     float vals[hg::kNumSp]; readSd (part, vals);
     auto np = hg::Patch::fromVar (hg::spToSound (base, vals), data, sr, tableCache[(size_t) part].get());
     if (np->usesTable()) tableCache[(size_t) part] = std::make_unique<hg::Patch> (*np);
+    // eski yamaları hemen sil: zamanlayıcı işlemeden peş peşe çok yama gelirse (ör. mesaj döngüsü olmayan test ya da sunucu)
+    // 64'lük çöp kuyruğu dolup yama sızdırmasın. Yalnızca mesaj iş parçacığında: setStateInformation başka iş parçacığından gelebilir.
+    if (juce::MessageManager::existsAndIsCurrentThread()) engine.collectGarbage();
     engine.setPatch (track == hg::kMelody ? 2 : track, std::move (np), live);
 }
 
