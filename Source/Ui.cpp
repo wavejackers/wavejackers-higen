@@ -18,11 +18,12 @@ Palette Palette::make (bool hc, Colour)
     }
     else
     {
-        p.bg = Colour (0xff101116); p.panel = Colour (0xff191b22); p.panel2 = Colour (0xff22252e); p.ink = Colour (0xfff3f3f7); p.mute = Colour (0xff999baa);
-        p.line = Colour (0xff30323c); p.accent = Colour (0xff9b8cf5); p.accent2 = Colour (0xff7c70d6); p.accentInk = Colour (0xff101116);
-        p.grid = Colour (0xff1e2028); p.grid2 = Colour (0xff3a3d49); p.focus = Colour (0xffc2b9ff);
+        // derin çivit: yüzeyler mora çalan lacivert, tek lavanta vurgu; kategoriler için dört ayrışık ton
+        p.bg = Colour (0xff0c0b19); p.panel = Colour (0xff141329); p.panel2 = Colour (0xff1d1b38); p.ink = Colour (0xfff3f2fa); p.mute = Colour (0xff9896b8);
+        p.line = Colour (0xff2b2950); p.accent = Colour (0xff9b8cf5); p.accent2 = Colour (0xff7c70d6); p.accentInk = Colour (0xff0c0b19);
+        p.grid = Colour (0xff181730); p.grid2 = Colour (0xff36345e); p.focus = Colour (0xffc2b9ff);
         p.success = Colour (0xff64c9ad); p.warning = Colour (0xffe7b96b);
-        p.track[0] = Colour (0xff9b8cf5); p.track[1] = Colour (0xff64c9ad); p.track[2] = Colour (0xffe7b96b); p.track[3] = Colour (0xffc4bcfb);
+        p.track[0] = Colour (0xffd68be0); p.track[1] = Colour (0xff9b8cf5); p.track[2] = Colour (0xffe7b96b); p.track[3] = Colour (0xff6fd3e6);
     }
     return p;
 }

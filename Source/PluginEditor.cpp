@@ -445,6 +445,7 @@ void HitGenEditor::timerCallback()
         const float pk = proc.engine.peakOut.exchange (0.0f);
         meter = pk > meter ? pk : meter * 0.86f;
         meterHold = pk > meterHold ? pk : jmax (0.0f, meterHold - 0.012f);
+        if (refPage != nullptr && tab == 3) refPage->setLevel (jlimit (0.0f, 1.0f, meter / .891f));
         const int q = (int) proc.apvts.getRawParameterValue ("quality")->load();
         juce::ignoreUnused (q);
         ++frame;
@@ -493,7 +494,10 @@ void HitGenEditor::paint (Graphics& g) { g.fillAll (lnf.pal().bg); }
 void HitGenEditor::Content::paint (Graphics& g)
 {
     auto& ed = *owner; const auto& P = ed.lnf.pal();
-    g.fillAll (P.bg);                                   // düz antrasit zemin: gradyan, parıltı ve arka plan animasyonu yok
+    g.fillAll (P.bg);
+    // derin çivit atmosfer: üstte ve sağ altta çok hafif iki ışık havuzu (durağan; animasyon yok)
+    { ColourGradient a (P.accent.withAlpha (0.10f), kW * 0.5f, 120.0f, P.accent.withAlpha (0.0f), kW * 0.5f + 620.0f, 120.0f, true); g.setGradientFill (a); g.fillRect (0, 0, kW, kH); }
+    { ColourGradient b (P.track[3].withAlpha (0.05f), kW * 0.92f, (float) kH, P.track[3].withAlpha (0.0f), kW * 0.92f - 520.0f, (float) kH, true); g.setGradientFill (b); g.fillRect (0, 0, kW, kH); }
     // ince başlık ve gezinme çizgileri
     g.setColour (P.line); g.fillRect (0, 52, kW, 1); g.fillRect (0, 90, kW, 1);
     if (ed.tab == 0)

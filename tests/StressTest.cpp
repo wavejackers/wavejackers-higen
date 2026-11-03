@@ -118,6 +118,8 @@ static void testReference (const juce::File& outDir, const FailFn& fail)
         }
         ed->setLanguage ("en");
         for (int w = 0; w < 4; ++w) { ed->setWorkspace (w); auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f); auto f = outDir.getChildFile ("plugin-en-ws" + juce::String (w) + ".png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os); }
+        for (auto l : { "ar", "tr" }) { ed->setLanguage (l); ed->setWorkspace (3); auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f); auto f = outDir.getChildFile ("plugin-" + juce::String (l) + "-ws3.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os); }
+        ed->setLanguage ("en");
         ed->setWorkspace (2); ed->reference().showSampler (true);
         { auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f); auto f = outDir.getChildFile ("plugin-en-sampler.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os); }
         ed->reference().showSampler (false);

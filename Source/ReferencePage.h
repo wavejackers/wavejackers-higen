@@ -6,6 +6,9 @@
 #include "Ui.h"
 #include "DnaLibrary.h"
 #include "StatusIndicator.h"
+#include "OrbView.h"
+#include "MacroRow.h"
+#include "LayerList.h"
 
 class ReferencePage : public juce::Component, private juce::ScrollBar::Listener
 {
@@ -32,6 +35,7 @@ public:
     void pinNow() { pinA(); }
     void swapNow() { swapAB(); }
     juce::String statusText() const { return status.getText(); }
+    void setLevel (float lv) { if (ws == 3) orb.setLevel (lv); }
 
 private:
     struct Wave : public juce::Component
@@ -84,6 +88,9 @@ private:
     // Quick Mode ve A/B
     juce::TextButton quickBtn, pinBtn, abBtn; bool quickPending = false; bool haveA = false; std::array<float, hg::kNumSp> slotA {}, slotB {}; bool abOnA = false;
     void quickStart(); void quickStep(); void pinA(); void swapAB();
+    // DNA Orb stüdyosu (GENERATE): halka, makro satırları, katman hapları
+    hgui::OrbView orb { lnf }; hgui::LayerList layers { lnf }; std::array<std::unique_ptr<hgui::MacroRow>, 5> macroRows; int selRow = -1;
+    void syncOrb();
     bool keyPressed (const juce::KeyPress&) override;
     void setView (int v); void syncSampler(); void trimFromSelection(); void saveSampler(); void loadSampler();
     Wave wave; Cands cands; juce::ScrollBar bar { false };

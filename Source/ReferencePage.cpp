@@ -117,6 +117,22 @@ ReferencePage::ReferencePage (HitGenProcessor& p, hgui::LookAndFeel& l) : proc (
     regenBtn.onClick = [this] { regenerateSame(); }; randBtn.onClick = [this] { randomizeGen(); };
     previewNowBtn.onClick = [this] { startPhrase(); }; savePresetBtn.onClick = [this] { if (onSavePreset) onSavePreset(); };
     quickBtn.onClick = [this] { quickStart(); }; pinBtn.onClick = [this] { pinA(); }; abBtn.onClick = [this] { swapAB(); }; abBtn.setEnabled (false);
+    // DNA Orb stüdyosu
+    addAndMakeVisible (orb); addAndMakeVisible (layers);
+    orb.catColour = [this] (int k) { return catColour (k); }; layers.colour = [this] (int k) { return catColour (k); };
+    orb.onOpen = [this] { openBtn.onClick(); };
+    orb.onSeek = [this] (double t) { proc.ref.seekTo = t; if (! proc.ref.playing.load()) { proc.ref.regionStart = 0; proc.ref.regionEnd = 0; proc.ref.loop = loopBtn.getToggleState(); proc.ref.playing = true; relabel(); } };
+    layers.cands = &candList;
+    layers.onPick = [this] (int k)
+    {
+        const int n = (int) candList[(size_t) k].size(); if (n == 0) return;
+        const int row = (k == selCat && selRow >= 0) ? (selRow + 1) % n : 0; selectCandidate (k, row);
+    };
+    layers.onStop = [this] { proc.ref.playing = false; relabel(); };
+    {
+        hgui::Knob* ks[5] = { &simK, &varK, &texK, &movK, &briK };
+        for (int i = 0; i < 5; ++i) { macroRows[(size_t) i] = std::make_unique<hgui::MacroRow> (lnf, ks[i]->slider); addAndMakeVisible (*macroRows[(size_t) i]); }
+    }
     setWantsKeyboardFocus (true);
     libRefresh();
     setView (0); setWorkspace (0);
@@ -150,6 +166,12 @@ void ReferencePage::relabel()
     simK.setText (T ("dnaSim"), T ("rfSimHint")); varK.setText (T ("dnaVar"), T ("rfVarHint"));
     texK.setText (T ("dnaTex"), T ("dnaTexHint")); movK.setText (T ("dnaMov"), T ("dnaMovHint")); briK.setText (T ("dnaBri"), T ("dnaBriHint"));
     dnaHint.setText (haveBase ? T ("dnaHintOn") : T ("dnaHintOff"), dontSendNotification);
+    {
+        const char* nk[5] = { "dnaSim", "dnaVar", "dnaTex", "dnaMov", "dnaBri" }; const char* hk[5] = { "rfSimHint", "rfVarHint", "dnaTexHint", "dnaMovHint", "dnaBriHint" };
+        for (int i = 0; i < 5; ++i) if (macroRows[(size_t) i]) { macroRows[(size_t) i]->setName (T (nk[i]), T (hk[i])); macroRows[(size_t) i]->rtl = rtl; }
+        layers.name = [this] (int k) { return T (kCatKeys[k]); }; layers.noneText = T ("rfNone"); layers.ofWord = T ("scCands"); layers.rtl = rtl; orb.rtl = rtl;
+        orb.emptyText = T ("rfDropHint"); orb.topText = T (kPartKeys[part]); orb.bpmWord = "BPM";
+    }
     viewLib.setButtonText (T ("rfViewLib")); libSave.setButtonText (T ("libSave")); libRename.setButtonText (T ("libRename")); libDelete.setButtonText (T ("libDelete")); libImport.setButtonText (T ("libImport")); libExport.setButtonText (T ("libExport")); libFav.setButtonText (T ("libFav")); libUseBtn.setButtonText (T ("libUse"));
     searchEd.setTextToShowWhenEmpty (T ("libSearch"), lnf.pal().mute); artistEd.setTextToShowWhenEmpty (T ("libArtist"), lnf.pal().mute); nameEd.setTextToShowWhenEmpty (T ("libName"), lnf.pal().mute);
     { const int id = filterBox.getSelectedId(); filterBox.clear (dontSendNotification); filterBox.addItem (T ("libAll"), 1); filterBox.addItem (T ("libFavs"), 2); filterBox.addItem (T ("libRecent"), 3); filterBox.setSelectedId (id > 0 ? id : 1, dontSendNotification); }
@@ -199,7 +221,7 @@ void ReferencePage::refreshAfterChange()
     else if (proc.ref.missingPath.isNotEmpty()) status.setText (T ("fileMissing") + " " + proc.ref.missingPath, dontSendNotification);
     else status.setText (T ("rfDropHint"), dontSendNotification);
     banner.setText (T ("rfBanner"), dontSendNotification);
-    syncSampler(); lastState = st; wave.repaint(); cands.repaint(); repaint();
+    syncSampler(); lastState = st; wave.repaint(); cands.repaint(); syncOrb(); repaint();
 }
 
 void ReferencePage::setView (double start, double len)
@@ -215,7 +237,7 @@ void ReferencePage::setSelection (double a, double b, int cat)
     selA = std::min (a, b); selB = std::max (a, b); selCat = cat;
     proc.ref.regionStart = selA; proc.ref.regionEnd = selB > selA + 0.05 ? selB : 0.0;
     const int pc = partOfCat (cat); if (pc >= 0) { part = pc; partBtns[(size_t) pc].setToggleState (true, dontSendNotification); proc.auditionPart.store (part); }
-    haveDna = haveDna && dnaA == -2; wave.repaint(); cands.repaint();
+    haveDna = haveDna && dnaA == -2; wave.repaint(); cands.repaint(); if (cat < 0) selRow = -1; syncOrb();
     regionLabel.setText (selB > selA + 0.02 ? T ("rfRegion").replace ("{a}", fmtTime (selA)).replace ("{b}", fmtTime (selB)).replace ("{d}", String (selB - selA, 1) + " s") : T ("rfRegionNone"), dontSendNotification); repaint();
 }
 
@@ -223,7 +245,7 @@ void ReferencePage::selectCandidate (int cat, int row)
 {
     if (cat < 0 || cat >= (int) candList.size() || row < 0 || row >= (int) candList[(size_t) cat].size()) return;
     const auto& g = candList[(size_t) cat][(size_t) row];
-    setSelection (g.t0, g.t1, cat); proc.ref.seekTo = g.t0; proc.ref.loop = true; loopBtn.setToggleState (true, dontSendNotification); proc.ref.playing = true; relabel();
+    setSelection (g.t0, g.t1, cat); selRow = row; syncOrb(); proc.ref.seekTo = g.t0; proc.ref.loop = true; loopBtn.setToggleState (true, dontSendNotification); proc.ref.playing = true; relabel();
     setView (std::max (0.0, g.t0 - (g.t1 - g.t0) * 0.5), (g.t1 - g.t0) * 2.0);
 }
 
@@ -242,6 +264,11 @@ void ReferencePage::tick()
     const bool pl = proc.ref.playing.load(); if ((playBtn.getButtonText() == T ("rfStop")) != pl) relabel();
     if (pl) wave.repaint();
     updateStat(); stat.advance();
+    if (ws == 3)
+    {
+        orb.setPlayhead (proc.ref.posSec.load(), pl); orb.topText = T (kPartKeys[part]);
+        if (layers.playing != pl) { layers.playing = pl; layers.repaint(); }
+    }
     if (ws == 0) { auto cl = proc.ref.clip(); const double pos = proc.ref.posSec.load(); const String t = cl ? fmtTime (pos) + " / " + fmtTime (cl->seconds()) : String ("0:00.0 / 0:00.0"); if (posLabel.getText() != t) posLabel.setText (t, dontSendNotification); }
     if (phraseRun)
     {
@@ -394,19 +421,24 @@ void ReferencePage::resized()
     }
     else
     {
-        for (int i = 0; i < 3; ++i) P (partBtns[(size_t) i], { 16 + i * 112, 8, 108, 34 });
-        P (quickBtn, { 1004, 8, 144, 34 }); statusRow (48); P (wave, { 16, 76, kW - 32, 100 });
-        P (genBtn, { 16, 196, 440, 84 }); P (regenBtn, { 468, 196, 170, 38 }); P (randBtn, { 468, 242, 170, 38 }); P (previewNowBtn, { 646, 196, 170, 38 }); P (savePresetBtn, { 646, 242, 170, 38 });
-        P (seedLabel, { 836, 196, 80, 24 }); P (seed, { 836, 220, 190, 32 }); P (seedNewBtn, { 1032, 220, 40, 32 }); P (previewBtn, { 836, 258, 250, 30 });
-        P (prevBtn, { 16, 304, 44, 34 }); P (nextBtn, { 66, 304, 44, 34 }); P (pinBtn, { 118, 304, 90, 34 }); P (abBtn, { 214, 304, 64, 34 }); P (histLabel, { 290, 304, 400, 34 });
-        P (summaryLabel, { 16, 356, kW - 32, 26 }); P (dnaInfo, { 16, 388, kW - 32, 60 });
+        // DNA Orb stüdyosu: sol makrolar, ortada halka, sağda katmanlar, altta üretim yuvası
+        for (int i = 0; i < 3; ++i) P (partBtns[(size_t) i], { 16 + i * 100, 10, 96, 32 });
+        P (stat, { 340, 14, 120, 24 }); P (status, { 462, 12, 520, 22 }); P (quickBtn, { 1032, 10, 116, 32 });
+        for (int i = 0; i < 5; ++i) if (macroRows[(size_t) i]) P (*macroRows[(size_t) i], { 16, 84 + i * 56, 300, 48 });
+        P (seedLabel, { 16, 372, 80, 22 }); P (seed, { 16, 396, 200, 32 }); P (seedNewBtn, { 222, 396, 40, 32 }); P (previewBtn, { 16, 436, 300, 30 });
+        P (orb, { 342, 50, 480, 480 });
+        P (layers, { 848, 150, 300, 224 });
+        P (prevBtn, { 848, 392, 40, 32 }); P (nextBtn, { 892, 392, 40, 32 }); P (pinBtn, { 940, 392, 96, 32 }); P (abBtn, { 1044, 392, 64, 32 });
+        P (histLabel, { 848, 430, 300, 22 }); P (summaryLabel, { 848, 454, 300, 40 });
+        P (regenBtn, { 36, 572, 170, 46 }); P (randBtn, { 214, 572, 170, 46 }); P (genBtn, { 400, 564, 364, 62 });
+        P (previewNowBtn, { 780, 572, 170, 46 }); P (savePresetBtn, { 958, 572, 170, 46 });
     }
 }
 
 void ReferencePage::paint (Graphics& g)
 {
     const auto& P = lnf.pal();
-    g.setColour (P.panel); g.fillRoundedRectangle (getLocalBounds().toFloat(), 12); g.setColour (P.line); g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.5f), 12, 1);
+    g.setColour (P.panel.withAlpha (ws == 3 ? 0.55f : 0.82f)); g.fillRoundedRectangle (getLocalBounds().toFloat(), 12); g.setColour (P.line); g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.5f), 12, 1);
     auto an = proc.ref.analysis();
     if (ws == 0)
     {
@@ -422,7 +454,24 @@ void ReferencePage::paint (Graphics& g)
         static const char* const kn[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
         chip ({ 862, 4, 134, 44 }, T ("rfKey").toUpperCase(), ok ? String (kn[an->key]) + (an->minor ? " m" : " M") + "  " + String (roundToInt (an->keyConf * 100)) + "%" : String (juce::CharPointer_UTF8 ("\xe2\x80\x94")), ok);
     }
-    if (proc.ref.clip() == nullptr && proc.ref.state.load() != RefEngine::Loading)
+    if (ws == 3)
+    {
+        const auto jl = rtl ? Justification::centredRight : Justification::centredLeft;
+        auto R = [this] (Rectangle<int> r) { return rtl ? r.withX (kW - r.getRight()) : r; };
+        g.setColour (P.mute); g.setFont (lnf.font (11.0f, true)); g.drawText ("SOUND DNA", R ({ 16, 60, 300, 16 }), jl);
+        g.drawText (T ("rfSmart").toUpperCase(), R ({ 848, 60, 300, 16 }), jl);
+        // sağ başlık: seçili katman ya da üretilecek parça, büyük yazı; altında kaynak
+        const String big = selCat >= 0 ? T (kCatKeys[selCat]) : T (kPartKeys[part]);
+        g.setColour (P.ink); g.setFont (lnf.font (30.0f, true)); g.drawText (big, R ({ 848, 78, 300, 38 }), jl);
+        g.setColour (P.mute); g.setFont (lnf.font (12.0f));
+        auto c = proc.ref.clip(); g.drawText (c ? c->name + "  " + (selB > selA + 0.02 ? fmtTime (selA) + " - " + fmtTime (selB) : String()) : T ("rfNeedClip"), R ({ 848, 116, 300, 20 }), jl);
+        // alt yuva
+        auto dock = Rectangle<float> (16, 552, (float) kW - 32, 86);
+        ColourGradient dg (P.panel2, 0, dock.getY(), P.panel, 0, dock.getBottom(), false); g.setGradientFill (dg); g.fillRoundedRectangle (dock, 14);
+        g.setColour (P.line); g.drawRoundedRectangle (dock.reduced (0.5f), 14, 1);
+        g.setColour (P.line); g.fillRect (R ({ 332, 84, 1, 380 })); g.fillRect (R ({ 834, 84, 1, 380 }));
+    }
+    if (ws != 3 && proc.ref.clip() == nullptr && proc.ref.state.load() != RefEngine::Loading)
     {
         g.setColour (P.accent2.withAlpha (0.6f)); g.drawRoundedRectangle (wave.getBounds().toFloat().reduced (1), 12, 1.2f);
         g.setColour (P.mute); g.setFont (lnf.font (15.0f)); g.drawText (T ("rfDropHint"), wave.getBounds().reduced (24, 0), Justification::centred);
@@ -490,17 +539,6 @@ std::unique_ptr<AccessibilityHandler> ReferencePage::Wave::createAccessibilityHa
 
 Rectangle<int> ReferencePage::Cands::rowRect (int cat, int row) const { const int cw = getWidth() / 4; return { cat * cw + 14, 84 + row * 52, cw - 28, 46 }; }
 
-// Kategori simgesi: küçük, çizgisel
-static void drawCatIcon (Graphics& g, int cat, Rectangle<float> r, Colour col)
-{
-    g.setColour (col); Path p; const float x = r.getX(), y = r.getY(), w = r.getWidth(), h = r.getHeight(), cy = y + h * 0.5f;
-    if (cat == catBass) { for (int i = 0; i <= 24; ++i) { const float t = i / 24.0f; const float px = x + t * w, py = cy - std::sin (t * 6.2832f) * h * 0.30f; if (i == 0) p.startNewSubPath (px, py); else p.lineTo (px, py); } }
-    else if (cat == catLead) { p.startNewSubPath (x, cy + h * 0.28f); p.lineTo (x + w * 0.5f, cy - h * 0.28f); p.lineTo (x + w * 0.5f, cy + h * 0.28f); p.lineTo (x + w, cy - h * 0.28f); }
-    else if (cat == catPad) { for (int k = 0; k < 3; ++k) for (int i = 0; i <= 20; ++i) { const float t = i / 20.0f; const float px = x + t * w, py = y + h * (0.28f + 0.22f * k) + std::sin (t * 6.2832f + k) * h * 0.07f; if (i == 0) p.startNewSubPath (px, py); else p.lineTo (px, py); } }
-    else { const float bw = w / 7.0f; for (int i = 0; i < 4; ++i) { const float bh = h * (i % 2 ? 0.35f : 0.8f); g.fillRoundedRectangle (x + i * bw * 2, cy - bh * 0.5f, bw, bh, 1.5f); } return; }
-    g.strokePath (p, PathStrokeType (1.8f, PathStrokeType::curved, PathStrokeType::rounded));
-}
-
 void ReferencePage::Cands::paint (Graphics& g)
 {
     const auto& P = o->lnf.pal(); const int cw = getWidth() / 4; const bool rtl = o->rtl;
@@ -510,7 +548,7 @@ void ReferencePage::Cands::paint (Graphics& g)
         const auto col = o->catColour (k); const auto& L = o->candList[(size_t) k]; const bool sel = o->selCat == k;
         const auto card = Rectangle<float> ((float) (k * cw + 4), 0.0f, (float) (cw - 8), (float) getHeight());
         g.setColour (P.bg); g.fillRoundedRectangle (card, 12); g.setColour (sel ? col : P.line); g.drawRoundedRectangle (card.reduced (0.5f), 12, sel ? 1.6f : 1.0f);
-        drawCatIcon (g, k, Rectangle<float> (card.getX() + 16, 18, 26, 22), col);
+        drawCategoryIcon (g, k, Rectangle<float> (card.getX() + 16, 18, 26, 22), col);
         g.setColour (P.ink); g.setFont (o->lnf.font (14.5f, true)); g.drawText (o->T (kCatKeys[k]).toUpperCase(), Rectangle<float> (card.getX() + 52, 12, card.getWidth() - 130, 20), just);
         g.setColour (sel ? col : P.mute); g.setFont (o->lnf.font (11.0f));
         g.drawText (sel ? o->T ("scSelected") : (L.empty() ? o->T ("rfNone") : String (L.size()) + " " + o->T ("scCands")), Rectangle<float> (card.getX() + 52, 32, card.getWidth() - 130, 16), just);
@@ -548,21 +586,31 @@ void ReferencePage::setView (int v) { view = v; viewSynth.setToggleState (v == 0
 
 void ReferencePage::setWorkspace (int w) { ws = jlimit (0, 3, w); applyWorkspace(); }
 
+void ReferencePage::syncOrb()
+{
+    hgui::OrbView::Model m; m.clip = proc.ref.clip(); m.cands = candList; m.selA = selA; m.selB = selB; m.selCat = selCat;
+    if (auto a = proc.ref.analysis(); a != nullptr && a->ok) { m.bpm = a->bpm; m.key = a->key; m.minor = a->minor; }
+    orb.setModel (m); layers.selCat = selCat; layers.selRow = selCat >= 0 ? selRow : -1; layers.repaint();
+    if (auto c = proc.ref.clip()) orb.bottomText = c->name; else orb.bottomText = {};
+}
+
 void ReferencePage::applyWorkspace()
 {
     using CL = std::initializer_list<Component*>;
     const bool r0 = ws == 0, r1 = ws == 1, r2 = ws == 2, r3 = ws == 3, d = r2 && view == 0, s = r2 && view == 1, lb = r2 && view == 2;
     auto vis = [] (CL l, bool on) { for (auto* x : l) x->setVisible (on); };
     // her çalışma alanında ortak: dalga formu, durum göstergesi
-    vis ({ &wave, &stat, &status }, true); vis ({ &info }, r0);
+    vis ({ &stat, &status }, true); vis ({ &wave }, ! r3); vis ({ &info }, r0);
+    vis ({ &orb, &layers }, r3); for (auto& m : macroRows) if (m) m->setVisible (r3);
     vis ({ &openBtn, &loopBtn, &gainL, &gainS, &posLabel, &applyBtn, &bar, &zoomIn, &zoomOut, &zoomFit, &regionLabel }, r0);
     vis ({ &playBtn }, r0 || r1); vis ({ &quickBtn }, r0 || r3);
     vis ({ &smartBtn, &banner, &cands }, r1);
     vis ({ &partBtns[0], &partBtns[1], &partBtns[2] }, r2 || r3); vis ({ &viewSynth, &viewSamp, &viewLib }, r2);
-    vis ({ &simK, &varK, &texK, &movK, &briK, &saveDnaBtn, &loadDnaBtn, &dnaHint }, d); vis ({ &dnaInfo }, d || r3);
+    vis ({ &simK, &varK, &texK, &movK, &briK, &saveDnaBtn, &loadDnaBtn, &dnaHint }, d); vis ({ &dnaInfo }, d);
     vis ({ &sEnable, &sLoop, &rootBox, &trS, &voiceS, &rootL, &trL, &voiceL, &sTrimBtn, &sLoopSelBtn, &sSaveBtn, &sLoadBtn, &sInfo, &sKnobs[0], &sKnobs[1], &sKnobs[2], &sKnobs[3], &sKnobs[4], &sKnobs[5] }, s);
     vis ({ &libList, &libSave, &libRename, &libDelete, &libImport, &libExport, &libFav, &libUseBtn, &searchEd, &artistEd, &nameEd, &filterBox }, lb);
     vis ({ &genBtn, &regenBtn, &randBtn, &previewNowBtn, &savePresetBtn, &previewBtn, &seed, &seedLabel, &seedNewBtn, &prevBtn, &nextBtn, &pinBtn, &abBtn, &histLabel, &summaryLabel }, r3);
+    if (r3) syncOrb();
     resized(); repaint();
 }
 
