@@ -2,6 +2,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "Generator.h"
+#include <map>
 
 class HitGenProcessor;
 
@@ -9,7 +10,7 @@ namespace hgui
 {
 struct Palette
 {
-    juce::Colour bg, panel, panel2, ink, mute, line, accent, accentInk, grid, grid2, focus;
+    juce::Colour bg, panel, panel2, ink, mute, line, accent, accent2, accentInk, grid, grid2, focus, success, warning;
     juce::Colour track[4];
     static Palette make (bool highContrast, juce::Colour accent);
 };
@@ -22,6 +23,9 @@ public:
     void setPalette (const Palette& p);
     const Palette& pal() const noexcept { return palette; }
     juce::Font font (float h, bool bold = false) const;
+    // Üzerine gelince yumuşak geçiş: çizim sırasında hedef kaydedilir, editörün zamanlayıcısı (arayüz iş parçacığı) değeri yaklaştırır.
+    float hover (const juce::Component& c, bool over);
+    void stepHover (bool animate);
 
     juce::Typeface::Ptr getTypefaceForFont (const juce::Font&) override;
     void drawRotarySlider (juce::Graphics&, int x, int y, int w, int h, float pos, float a0, float a1, juce::Slider&) override;
@@ -37,6 +41,8 @@ public:
     void drawFocusRing (juce::Graphics& g, juce::Rectangle<float> r, float radius);
 
 private:
+    struct HoverState { juce::Component::SafePointer<juce::Component> comp; float amt = 0, target = 0; };
+    std::map<const juce::Component*, HoverState> hov;
     Palette palette;
     juce::Typeface::Ptr latR, latB, arR, arB, hiR, hiB, curR, curB;
 };

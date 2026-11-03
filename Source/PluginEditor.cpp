@@ -6,7 +6,7 @@ namespace
 {
 const char* const kPart[4] = { "chords", "bass", "drums", "melody" };
 const char* const kGroupKeys[8] = { "gAll", "gTechno", "gHouse", "gMain", "gTrance", "gHard", "gAfro", "gMine" };
-const char* const kTabKeys[4] = { "tabGen", "tabSound", "tabPresets", "tabRef" };
+const char* const kTabKeys[7] = { "navRef", "navDetect", "navDna", "navGen", "navMidi", "tabSound", "tabPresets" };
 const char* const kAwardKeys[][2] = { { "house", "awHouse" }, { "techno", "awTechno" }, { "trance", "awTrance" }, { "psy", "awPsy" }, { "hard", "awHard" }, { "group", "awGroup" } };
 String fill (String s, const String& k, const String& v) { return s.replace ("{" + k + "}", v); }
 String stripTags (String s) { while (s.contains ("<")) { auto a = s.indexOf ("<"), b = s.indexOf (a, ">"); if (b < 0) break; s = s.substring (0, a) + s.substring (b + 1); } return s; }
@@ -36,17 +36,21 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
     for (int i = 0; i < data.langNames.size(); ++i) langBox.addItem (data.langNames[i], i + 1);
     addC (langBox); langBox.onChange = [this] { setLanguage (data.langCodes[langBox.getSelectedId() - 1]); };
     qualityBox.addItemList ({ "Eco", "Balanced", "High" }, 1); addC (qualityBox); ca.push_back (std::make_unique<CA> (A, "quality", qualityBox));
-    for (int s : { 75, 100, 125, 150, 200 }) sizeBox.addItem (String (s) + "%", s);
+    sizeBox.addItem ("Compact 900", 76); sizeBox.addItem ("Default 1100", 93); sizeBox.addItem ("Expanded 1400", 119);
     addC (sizeBox); sizeBox.onChange = [this] { proc.uiScale = sizeBox.getSelectedId() / 100.0f; setSize (roundToInt (kW * proc.uiScale), roundToInt (kH * proc.uiScale)); };
     addC (contrastBtn); contrastBtn.onClick = [this] { proc.highContrast = contrastBtn.getToggleState(); applyPalette(); };
     addC (motionBtn); motionBtn.setToggleState (proc.animations, dontSendNotification); motionBtn.onClick = [this] { proc.animations = motionBtn.getToggleState(); content.repaint(); };
 
-    for (int i = 0; i < 4; ++i)
+    for (int i = 0; i < 7; ++i)
     {
-        auto& b = tabBtns[(size_t) i]; addC (b); b.setClickingTogglesState (true); b.setRadioGroupId (100);
-        b.onClick = [this, i] { if (tabBtns[(size_t) i].getToggleState() && tab != i) setTab (i); };
+        auto& b = tabBtns[(size_t) i]; addC (b); b.setClickingTogglesState (true); b.setRadioGroupId (100); b.setComponentID ("nav");
+        b.onClick = [this, i] { if (! tabBtns[(size_t) i].getToggleState()) return; if (i < 4) { if (tab != 3 || ws != i) setWorkspace (i); } else if (tab != i - 4) setTab (i - 4); };
     }
     tabBtns[0].setToggleState (true, dontSendNotification);
+    settingsPanel.o = this; content.addChildComponent (settingsPanel);
+    for (auto* b : { &presetBtn, &saveBtn, &settingsBtn, &helpBtn }) addC (*b);
+    presetBtn.onClick = [this] { showPresetMenu(); }; saveBtn.onClick = [this] { showSaveDialog(); };
+    settingsBtn.setClickingTogglesState (false); settingsBtn.onClick = [this] { toggleSettings (! settingsOpen); }; helpBtn.onClick = [this] { showHelp(); };
     for (int i = 0; i < 8; ++i)
     {
         auto& b = groupBtns[(size_t) i]; addC (b); b.setClickingTogglesState (true); b.setRadioGroupId (101);
@@ -100,6 +104,7 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
     soundPage = std::make_unique<SoundPage> (proc, lnf); content.addChildComponent (*soundPage);
     presetPage = std::make_unique<PresetPage> (proc, lnf); content.addChildComponent (*presetPage);
     refPage = std::make_unique<ReferencePage> (proc, lnf); content.addChildComponent (*refPage);
+    refPage->onSavePreset = [this] { showSaveDialog(); };
     presetPage->onLoaded = [this] { shownStyle = -1; shownVar = -1; fillSoundBoxes(); refreshStyleList(); applyPalette(); };
     for (auto* c : std::initializer_list<Component*> { &styleList, &varLabel, &keyLabel, &keyBox, &scaleLabel, &scaleBox, &barsLabel, &barsBox, &chords, &roll, &soundLabel,
                                                      &patternBtn, &midiOutBtn, &keysToLabel, &keysToBox, &seventhsBtn, &loopTile, &fullTile, &status, &disclaimer })
@@ -112,7 +117,7 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
     for (auto& k : partKnobs) genComps.push_back (&k);
     lang = proc.lang; rtl = data.isRtl (lang);
     langBox.setSelectedId (data.langCodes.indexOf (lang) + 1, dontSendNotification);
-    sizeBox.setSelectedId (roundToInt (proc.uiScale * 100), dontSendNotification);
+    { const int want = roundToInt (proc.uiScale * 100); sizeBox.setSelectedId (std::abs (want - 76) <= std::abs (want - 93) && std::abs (want - 76) <= std::abs (want - 119) ? 76 : std::abs (want - 93) <= std::abs (want - 119) ? 93 : 119, dontSendNotification); }
     contrastBtn.setToggleState (proc.highContrast, dontSendNotification);
     partBtns[0].setToggleState (true, dontSendNotification); bindPart (0);
     shownVar = (int) proc.apvts.getRawParameterValue ("variation")->load();
@@ -175,12 +180,67 @@ void HitGenEditor::setLanguage (const String& l)
 void HitGenEditor::setTab (int t)
 {
     tab = jlimit (0, 3, t);
-    tabBtns[(size_t) tab].setToggleState (true, dontSendNotification);
+    tabBtns[(size_t) (tab == 3 ? ws : 4 + tab)].setToggleState (true, dontSendNotification);
     for (auto* c : genComps) c->setVisible (tab == 0);
     soundPage->setVisible (tab == 1); presetPage->setVisible (tab == 2); refPage->setVisible (tab == 3);
+    for (auto* c : std::initializer_list<Component*> { &seed, &newBtn }) c->setVisible (tab == 0);
     proc.auditionPart.store (tab == 1 ? soundPage->currentPart() : tab == 3 ? refPage->currentPart() : -1);
     if (tab == 1) soundPage->tick();
-    repaint();
+    toggleSettings (false); repaint();
+}
+
+void HitGenEditor::setWorkspace (int w)
+{
+    ws = jlimit (0, 3, w); refPage->setWorkspace (ws); setTab (3);
+}
+
+void HitGenEditor::toggleSettings (bool on)
+{
+    settingsOpen = on; settingsPanel.setVisible (on);
+    if (on) settingsPanel.toFront (false);
+    for (auto* c : std::initializer_list<Component*> { &langLabel, &langBox, &qualityLabel, &qualityBox, &sizeBox, &contrastBtn, &motionBtn }) { c->setVisible (on); if (on) c->toFront (false); }
+    sizeLabel.setVisible (false);
+    settingsBtn.setToggleState (on, dontSendNotification); repaint();
+}
+
+void HitGenEditor::Backdrop::paint (Graphics& g)
+{
+    const auto& P = o->lnf.pal(); auto r = getLocalBounds().toFloat().reduced (1);
+    g.setColour (P.panel2); g.fillRoundedRectangle (r, 12); g.setColour (P.line); g.drawRoundedRectangle (r, 12, 1);
+}
+
+void HitGenEditor::showHelp()
+{
+    const auto opts = MessageBoxOptions::makeOptionsOk (MessageBoxIconType::InfoIcon, T ("hdHelp"), T ("helpText"), "OK", this);
+    AlertWindow::showAsync (opts, nullptr);
+}
+
+void HitGenEditor::showSaveDialog()
+{
+    auto* w = new AlertWindow (T ("hdSave"), T ("saveAsk"), MessageBoxIconType::NoIcon, this);
+    w->addTextEditor ("artist", proc.userArtist, T ("prArtist")); w->addTextEditor ("name", proc.userPreset, T ("prName"));
+    w->addButton (T ("hdSave"), 1, KeyPress (KeyPress::returnKey)); w->addButton (T ("libCancel"), 0, KeyPress (KeyPress::escapeKey));
+    w->enterModalState (true, ModalCallbackFunction::create ([this, w] (int r)
+    {
+        if (r == 1)
+        {
+            String f; const bool ok = proc.savePreset (w->getTextEditorContents ("artist"), w->getTextEditorContents ("name"), f);
+            status.setText (ok ? fill (T ("pSavedTo"), "f", f) : T ("saveNeed"), sendNotificationAsync); presetBtn.setButtonText (proc.userArtist.isNotEmpty() ? proc.userArtist + " - " + proc.userPreset : T ("hdPreset"));
+        }
+    }), true);
+}
+
+void HitGenEditor::showPresetMenu()
+{
+    PopupMenu m; const auto items = proc.presets.items();
+    for (int i = 0; i < items.size() && i < 200; ++i) m.addItem (i + 1, items[i].artist + " - " + items[i].name);
+    if (items.isEmpty()) m.addItem (-1, T ("hdNoPresets"), false);
+    m.addSeparator(); m.addItem (1000, T ("hdBrowse"));
+    m.showMenuAsync (PopupMenu::Options().withTargetComponent (presetBtn), [this, items] (int r)
+    {
+        if (r == 1000) { setTab (2); return; }
+        if (r >= 1 && r <= items.size() && proc.loadPreset (items[r - 1].file)) { shownStyle = -1; shownVar = -1; fillSoundBoxes(); refreshStyleList(); applyPalette(); presetBtn.setButtonText (items[r - 1].artist + " - " + items[r - 1].name); }
+    });
 }
 
 void HitGenEditor::relabel()
@@ -203,7 +263,8 @@ void HitGenEditor::relabel()
     sizeLabel.setText (T ("pUiSize"), dontSendNotification); sizeBox.setTitle (T ("pUiSize"));
     contrastBtn.setButtonText (T ("pContrast")); motionBtn.setButtonText (T ("pMotion"));
     for (int i = 0; i < 8; ++i) groupBtns[(size_t) i].setButtonText (T (kGroupKeys[i]));
-    for (int i = 0; i < 4; ++i) { tabBtns[(size_t) i].setButtonText (T (kTabKeys[i])); tabBtns[(size_t) i].setTooltip ((juce::SystemStats::getOperatingSystemType() & juce::SystemStats::MacOSX) != 0 ? "Cmd+" + String (i + 1) : "Ctrl+" + String (i + 1)); }
+    presetBtn.setButtonText (proc.userArtist.isNotEmpty() ? proc.userArtist + " - " + proc.userPreset : T ("hdPreset")); saveBtn.setButtonText (T ("hdSave")); settingsBtn.setButtonText (T ("hdSettings")); helpBtn.setButtonText (T ("hdHelp"));
+    for (int i = 0; i < 7; ++i) { tabBtns[(size_t) i].setButtonText (T (kTabKeys[i]).toUpperCase()); tabBtns[(size_t) i].setTooltip ((juce::SystemStats::getOperatingSystemType() & juce::SystemStats::MacOSX) != 0 ? "Cmd+" + String (i + 1) : "Ctrl+" + String (i + 1)); }
     styleList.setTitle (T ("pStyleList"));
     varLabel.setText (T ("variation"), dontSendNotification); varLabel.setJustificationType (just);
     const char* genKeys[6] = { "orig", "energy", "thick", "human", "pump", "swing" };
@@ -268,7 +329,7 @@ void HitGenEditor::StyleModel::paintListBoxItem (int row, Graphics& g, int w, in
         const auto& it = ed.proc.presets.items(); if (row >= it.size()) return;
         const auto& P = ed.lnf.pal(); const auto& pr = it[row];
         const int si = ed.data.styleIndex (pr.style);
-        const auto acc = si >= 0 && ! ed.proc.highContrast ? Colour::fromString ("ff" + ed.data.style (si)["accent"].toString().substring (1)).withMultipliedSaturation (.62f).withMultipliedBrightness (.9f) : P.accent;
+        const auto acc = P.accent;
         auto r = Rectangle<int> (0, 0, w, h).reduced (2, 2).toFloat();
         g.setColour (selected ? acc.withAlpha (.16f) : P.panel2); g.fillRoundedRectangle (r, 8);
         g.setColour (acc); g.fillRect (ed.rtl ? r.getRight() - 4 : r.getX(), r.getY() + 4, 4.0f, r.getHeight() - 8);
@@ -280,7 +341,7 @@ void HitGenEditor::StyleModel::paintListBoxItem (int row, Graphics& g, int w, in
         return;
     }
     const auto& P = ed.lnf.pal(); const auto& S = ed.data.style (ed.filtered[row]);
-    const auto acc = ed.proc.highContrast ? P.accent : Colour::fromString ("ff" + S["accent"].toString().substring (1)).withMultipliedSaturation (.62f).withMultipliedBrightness (.9f);
+    const auto acc = P.accent;
     auto r = Rectangle<int> (0, 0, w, h).reduced (2, 2).toFloat();
     g.setColour (selected ? acc.withAlpha (.16f) : P.panel2); g.fillRoundedRectangle (r, 8);
     g.setColour (acc); g.fillRect (ed.rtl ? r.getRight() - 4 : r.getX(), r.getY() + 4, 4.0f, r.getHeight() - 8);
@@ -385,12 +446,11 @@ void HitGenEditor::timerCallback()
         meter = pk > meter ? pk : meter * 0.86f;
         meterHold = pk > meterHold ? pk : jmax (0.0f, meterHold - 0.012f);
         const int q = (int) proc.apvts.getRawParameterValue ("quality")->load();
-        const int every = q == 0 ? 0 : q == 1 ? 3 : 2;
+        juce::ignoreUnused (q);
         ++frame;
-        if (proc.animations && every > 0) { phase += 0.035f * every; if (phase > 6283.0f) phase = 0; }
-        if ((proc.animations && every > 0 && frame % every == 0) || frame % 3 == 0) content.repaint (0, 0, kW, 100);
-        if (proc.animations && every > 0 && frame % (every * 2) == 0 && tab == 0) content.repaint();
+        if (frame % 3 == 0) content.repaint (548, 16, 140, 16);
     }
+    lnf.stepHover (proc.animations && (int) proc.apvts.getRawParameterValue ("quality")->load() != 0);   // hover geçişleri yalnızca arayüz iş parçacığında
     const bool hostPlay = proc.hostPlaying.load(), prev = proc.previewPlaying.load();
     roll.setPlayhead (proc.playPpq.load(), hostPlay || prev);
     chords.setCurrentBar (hostPlay || prev ? (int) (proc.playPpq.load() / 4.0) : -1);
@@ -423,7 +483,8 @@ bool HitGenEditor::keyPressed (const KeyPress& k)
     if (k == KeyPress::spaceKey && dynamic_cast<Button*> (getCurrentlyFocusedComponent()) == nullptr) { playBtn.triggerClick(); return true; }
     if (k.getTextCharacter() == 'n' || k.getTextCharacter() == 'N') { proc.newIdea(); return true; }
     if (k.getModifiers().isCommandDown() && (k.getKeyCode() == 'S' || k.getKeyCode() == 's')) { loopTile.saveAs(); return true; }
-    if (k.getModifiers().isCommandDown() && k.getKeyCode() >= '1' && k.getKeyCode() <= '4') { setTab (k.getKeyCode() - '1'); return true; }
+    if (k.getModifiers().isCommandDown() && k.getKeyCode() >= '1' && k.getKeyCode() <= '7') { const int i = k.getKeyCode() - '1'; if (i < 4) setWorkspace (i); else setTab (i - 4); return true; }
+    if (k == KeyPress::escapeKey && settingsOpen) { toggleSettings (false); return true; }
     return false;
 }
 
@@ -432,52 +493,46 @@ void HitGenEditor::paint (Graphics& g) { g.fillAll (lnf.pal().bg); }
 void HitGenEditor::Content::paint (Graphics& g)
 {
     auto& ed = *owner; const auto& P = ed.lnf.pal();
-    g.fillAll (P.bg);
-    if (ed.proc.animations && ! ed.proc.highContrast)
-    {
-        // akan renk bulutları: vurgu rengi ve iz renkleri etrafında dolanır
-        const float ph = ed.phase * .12f;
-        const Colour cs[3] = { P.accent, P.track[1], P.track[3] };
-        for (int i = 0; i < 3; ++i)
-        {
-            const float cx = kW * (.5f + .42f * std::sin (ph * (1.0f + .37f * i) + i * 2.1f));
-            const float cy = kH * (.5f + .40f * std::cos (ph * (.8f + .29f * i) + i * 1.3f));
-            ColourGradient cg (cs[i].withAlpha (.09f), cx, cy, cs[i].withAlpha (0.0f), cx + 430.0f, cy, true);
-            g.setGradientFill (cg); g.fillRect (0, 0, kW, kH);
-        }
-    }
-    g.setColour (P.panel.withAlpha (ed.proc.animations && ! ed.proc.highContrast ? .90f : 1.0f));
+    g.fillAll (P.bg);                                   // düz antrasit zemin: gradyan, parıltı ve arka plan animasyonu yok
+    // ince başlık ve gezinme çizgileri
+    g.setColour (P.line); g.fillRect (0, 52, kW, 1); g.fillRect (0, 90, kW, 1);
     if (ed.tab == 0)
         for (auto r : { Rectangle<float> (8, 98, 340, 654), Rectangle<float> (352, 98, 820, 386), Rectangle<float> (352, 488, 820, 264) })
-            g.fillRoundedRectangle (ed.rtl ? r.withX (kW - r.getRight()) : r, 14);
-    // marka yazısı: "Wavejackers" + vurgu renginde "HitGen"
-    auto f = ed.lnf.font (28, true); g.setFont (f);
-    const String a = "Wavejackers ", b = "HitGen";
-    GlyphArrangement ga; ga.addLineOfText (f, a, 0, 0); const float wa = ga.getBoundingBox (0, -1, true).getWidth() + 4;
-    const float x0 = ed.rtl ? kW - 20 - wa - GlyphArrangement::getStringWidth (f, b) : 20;
-    g.setColour (P.ink); g.drawText (a, Rectangle<float> (x0, 10, wa + 10, 36), Justification::centredLeft);
-    g.setColour (P.accent); g.drawText (b, Rectangle<float> (x0 + wa, 10, 200, 36), Justification::centredLeft);
+        {
+            const auto rr = ed.rtl ? r.withX (kW - r.getRight()) : r;
+            g.setColour (P.panel); g.fillRoundedRectangle (rr, 12); g.setColour (P.line); g.drawRoundedRectangle (rr.reduced (0.5f), 12, 1);
+        }
+    // marka: WAVEJACKERS / HITGEN, altında ürün tanımı
+    const float bx = ed.rtl ? kW - 300.0f : 20.0f; const auto jl = ed.rtl ? Justification::centredRight : Justification::centredLeft;
+    g.setFont (ed.lnf.font (19, true)); g.setColour (P.ink); g.drawText ("WAVEJACKERS", Rectangle<float> (bx, 6, 160, 26), jl);
+    g.setColour (P.accent); g.drawText ("/ HITGEN", Rectangle<float> (ed.rtl ? bx - 100 : bx + 148, 6, 110, 26), jl);
+    g.setFont (ed.lnf.font (10.5f)); g.setColour (P.mute); g.drawText ("ARTIST SOUND DNA ENGINE", Rectangle<float> (bx, 31, 280, 16), jl);
     // çıkış seviyesi: tavan -1 dBFS (0.891); tepe tutma çizgisi ile
     {
-        Rectangle<float> m (262, 25, 250, 6); if (ed.rtl) m = m.withX (kW - 262 - m.getWidth());
-        g.setColour (P.line); g.fillRoundedRectangle (m, 2.5f);
+        Rectangle<float> m (556, 24, 120, 4); if (ed.rtl) m = m.withX (kW - 556 - m.getWidth());
+        g.setColour (P.line); g.fillRoundedRectangle (m, 2.0f);
         const float lv = jlimit (0.0f, 1.0f, ed.meter / .891f), hv = jlimit (0.0f, 1.0f, ed.meterHold / .891f);
-        ColourGradient mg (P.track[1], m.getX(), 0, P.accent, m.getRight(), 0, false); mg.addColour (.82, P.track[3]);
-        g.setGradientFill (mg); g.fillRoundedRectangle (m.withWidth (jmax (2.0f, m.getWidth() * lv)), 2.5f);
-        g.setColour (P.ink); g.fillRect (m.getX() + m.getWidth() * hv - 1, m.getY() - 1, 2.0f, m.getHeight() + 2);
+        g.setColour (lv > 0.95f ? P.warning : P.accent); g.fillRoundedRectangle (m.withWidth (jmax (2.0f, m.getWidth() * lv)), 2.0f);
+        g.setColour (P.mute); g.fillRect (m.getX() + m.getWidth() * hv - 1, m.getY() - 1, 2.0f, m.getHeight() + 2);
     }
 }
 
 void HitGenEditor::layoutContent()
 {
     layoutList.clear();
-    place (tagline, { 20, 44, 420, 18 });
-    for (int i = 0; i < 4; ++i) place (tabBtns[(size_t) i], { 20 + i * 120, 64, 114, 28 });
-    place (playBtn, { 540, 14, 120, 36 }); place (hostLabel, { 668, 14, 150, 36 });
-    place (seedLabel, { 822, 14, 60, 36 }); place (seed, { 880, 14, 130, 36 }); place (newBtn, { 1016, 14, 148, 36 });
-    place (langLabel, { 540, 60, 70, 28 }); place (langBox, { 610, 60, 122, 28 });
-    place (qualityLabel, { 738, 60, 92, 28 }); place (qualityBox, { 830, 60, 116, 28 });
-    place (sizeLabel, { 952, 60, 0, 28 }); place (sizeBox, { 952, 60, 84, 28 }); place (contrastBtn, { 1040, 60, 128, 28 }); place (motionBtn, { 262, 38, 170, 22 });
+    // başlık (y 0-52): marka solda; çal / BPM / seviye ortada; ön ayar, kaydet, ayarlar, yardım sağda
+    place (tagline, { 0, 0, 0, 0 });
+    place (playBtn, { 330, 10, 100, 32 }); place (hostLabel, { 438, 10, 112, 32 });
+    place (presetBtn, { 700, 10, 214, 32 }); place (saveBtn, { 920, 10, 64, 32 }); place (settingsBtn, { 990, 10, 94, 32 }); place (helpBtn, { 1090, 10, 66, 32 });
+    // gezinme (y 56-90): dört çalışma alanı, ayraç, üç stüdyo sayfası
+    for (int i = 0; i < 4; ++i) place (tabBtns[(size_t) i], { 16 + i * 132, 56, 128, 34 });
+    for (int i = 0; i < 3; ++i) place (tabBtns[(size_t) (4 + i)], { 570 + i * 112, 56, 108, 34 });
+    place (seed, { 930, 58, 110, 30 }); place (newBtn, { 1046, 58, 110, 30 }); place (seedLabel, { 0, 0, 0, 0 });
+    // ayarlar paneli (yalnızca açıkken görünür)
+    settingsPanelBounds = Rectangle<int> (760, 94, 396, 196);
+    place (langLabel, { 780, 108, 110, 28 }); place (langBox, { 900, 108, 240, 28 });
+    place (qualityLabel, { 780, 144, 110, 28 }); place (qualityBox, { 900, 144, 240, 28 });
+    place (sizeLabel, { 0, 0, 0, 0 }); place (sizeBox, { 900, 180, 240, 28 }); place (contrastBtn, { 780, 218, 180, 28 }); place (motionBtn, { 968, 218, 172, 28 });
     for (int i = 0; i < 8; ++i) place (groupBtns[(size_t) i], { 16 + (i % 3) * 110, 106 + (i / 3) * 32, 104, 28 });
     place (styleList, { 16, 204, 324, 218 });
     place (varLabel, { 16, 428, 324, 18 });
@@ -506,6 +561,7 @@ void HitGenEditor::layoutContent()
     if (soundPage) soundPage->setBounds (8, 98, SoundPage::kW, SoundPage::kH);
     if (presetPage) presetPage->setBounds (8, 98, PresetPage::kW, PresetPage::kH);
     if (refPage) refPage->setBounds (8, 98, ReferencePage::kW, ReferencePage::kH);
+    settingsPanel.setBounds (settingsPanelBounds);
     sizeLabel.setVisible (false);
 }
 

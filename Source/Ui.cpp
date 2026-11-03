@@ -5,21 +5,24 @@ namespace hgui
 {
 using namespace juce;
 
-Palette Palette::make (bool hc, Colour accent)
+Palette Palette::make (bool hc, Colour)
 {
+    // AI Minimal: koyu antrasit yüzeyler, tek bir lavanta vurgu; ikinci renkler yalnızca durum anlamı taşır.
     Palette p;
     if (hc)
     {
         p.bg = Colours::black; p.panel = Colours::black; p.panel2 = Colour (0xff101010); p.ink = Colours::white; p.mute = Colour (0xffe6e6e6);
-        p.line = Colours::white; p.accent = Colour (0xffffd400); p.accentInk = Colours::black; p.grid = Colour (0xff3a3a3a); p.grid2 = Colour (0xff8a8a8a); p.focus = Colour (0xff00e5ff);
+        p.line = Colours::white; p.accent = Colour (0xffffd400); p.accent2 = p.accent; p.accentInk = Colours::black; p.grid = Colour (0xff3a3a3a); p.grid2 = Colour (0xff8a8a8a); p.focus = Colour (0xff00e5ff);
+        p.success = Colour (0xff5cf2cf); p.warning = Colour (0xffffd45c);
         p.track[0] = Colour (0xffa8b2ff); p.track[1] = Colour (0xff5cf2cf); p.track[2] = Colour (0xffff8fbb); p.track[3] = Colour (0xffffd45c);
     }
     else
     {
-        p.bg = Colour (0xff090b0e); p.panel = Colour (0xff11151a); p.panel2 = Colour (0xff171c23); p.ink = Colour (0xffeaf0f5); p.mute = Colour (0xff9aa5b1);
-        p.line = Colour (0xff2a3340); p.accent = accent.withMultipliedSaturation (.62f).withMultipliedBrightness (.9f); p.accentInk = p.accent.getPerceivedBrightness() > .55f ? Colour (0xff05090a) : Colours::white;
-        p.grid = Colour (0xff1a2129); p.grid2 = Colour (0xff2e3946); p.focus = Colour (0xff9db4ff);
-        p.track[0] = Colour (0xff8790cc); p.track[1] = Colour (0xff5db8a4); p.track[2] = Colour (0xffd17a93); p.track[3] = Colour (0xffcdae62);
+        p.bg = Colour (0xff101116); p.panel = Colour (0xff191b22); p.panel2 = Colour (0xff22252e); p.ink = Colour (0xfff3f3f7); p.mute = Colour (0xff999baa);
+        p.line = Colour (0xff30323c); p.accent = Colour (0xff9b8cf5); p.accent2 = Colour (0xff7c70d6); p.accentInk = Colour (0xff101116);
+        p.grid = Colour (0xff1e2028); p.grid2 = Colour (0xff3a3d49); p.focus = Colour (0xffc2b9ff);
+        p.success = Colour (0xff64c9ad); p.warning = Colour (0xffe7b96b);
+        p.track[0] = Colour (0xff9b8cf5); p.track[1] = Colour (0xff64c9ad); p.track[2] = Colour (0xffe7b96b); p.track[3] = Colour (0xffc4bcfb);
     }
     return p;
 }
@@ -33,7 +36,7 @@ LookAndFeel::LookAndFeel()
     hiR = Typeface::createSystemTypefaceFor (BinaryData::NotoSansDevanagariRegular_ttf, BinaryData::NotoSansDevanagariRegular_ttfSize);
     hiB = Typeface::createSystemTypefaceFor (BinaryData::NotoSansDevanagariBold_ttf, BinaryData::NotoSansDevanagariBold_ttfSize);
     setLanguage ("en");
-    setPalette (Palette::make (false, Colour (0xff2fd6c6)));
+    setPalette (Palette::make (false, Colour()));
 }
 
 void LookAndFeel::setLanguage (const String& lang)
@@ -86,28 +89,65 @@ void LookAndFeel::drawRotarySlider (Graphics& g, int x, int y, int w, int h, flo
     auto b = Rectangle<float> ((float) x, (float) y, (float) w, (float) h).reduced (4);
     const float r = jmin (b.getWidth(), b.getHeight()) / 2, cx = b.getCentreX(), cy = b.getCentreY(), ang = a0 + pos * (a1 - a0);
     Path track; track.addCentredArc (cx, cy, r - 3, r - 3, 0, a0, a1, true);
-    g.setColour (palette.line); g.strokePath (track, PathStrokeType (4, PathStrokeType::curved, PathStrokeType::rounded));
+    g.setColour (palette.line); g.strokePath (track, PathStrokeType (3, PathStrokeType::curved, PathStrokeType::rounded));
     Path val; val.addCentredArc (cx, cy, r - 3, r - 3, 0, a0, ang, true);
-    g.setColour (s.isEnabled() ? palette.accent : palette.mute); g.strokePath (val, PathStrokeType (4, PathStrokeType::curved, PathStrokeType::rounded));
+    g.setColour (s.isEnabled() ? palette.accent : palette.grid2); g.strokePath (val, PathStrokeType (3, PathStrokeType::curved, PathStrokeType::rounded));
     g.setColour (palette.ink);
     g.drawLine (cx + (r * .3f) * std::sin (ang), cy - (r * .3f) * std::cos (ang), cx + (r - 6) * std::sin (ang), cy - (r - 6) * std::cos (ang), 2.4f);
     if (s.hasKeyboardFocus (false)) drawFocusRing (g, Rectangle<float> (cx - r - 2, cy - r - 2, 2 * r + 4, 2 * r + 4), r + 2);
 }
 
+float LookAndFeel::hover (const Component& cm, bool over)
+{
+    auto& e = hov[&cm]; e.comp = const_cast<Component*> (&cm); e.target = over ? 1.0f : 0.0f; return e.amt;
+}
+
+void LookAndFeel::stepHover (bool animate)
+{
+    for (auto it = hov.begin(); it != hov.end();)
+    {
+        auto& e = it->second;
+        if (e.comp == nullptr) { it = hov.erase (it); continue; }
+        const float n = animate ? e.amt + (e.target - e.amt) * 0.35f : e.target;
+        const float v = std::abs (n - e.target) < 0.02f ? e.target : n;
+        if (v != e.amt) { e.amt = v; e.comp->repaint(); }
+        ++it;
+    }
+}
+
 void LookAndFeel::drawButtonBackground (Graphics& g, Button& b, const Colour&, bool over, bool down)
 {
     auto r = b.getLocalBounds().toFloat().reduced (1);
-    const bool on = b.getToggleState();
-    g.setColour (on ? palette.accent : palette.panel2.brighter (down ? .15f : 0));
-    g.fillRoundedRectangle (r, 8);
-    g.setColour (over || on ? palette.accent : palette.line); g.drawRoundedRectangle (r, 8, 1);
+    const bool on = b.getToggleState(); const float hv = hover (b, over && b.isEnabled());
+    if (b.getComponentID() == "nav")
+    {
+        // gezinme sekmesi: arka plan yok; etkin sekme ince bir lavanta alt çizgi ile gösterilir
+        if (on) { g.setColour (palette.accent); g.fillRect (r.getX() + 6, r.getBottom() - 2.0f, r.getWidth() - 12, 2.0f); }
+        else if (hv > 0) { g.setColour (palette.line.interpolatedWith (palette.mute, hv)); g.fillRect (r.getX() + 6, r.getBottom() - 1.0f, (r.getWidth() - 12) * hv, 1.0f); }
+        if (b.hasKeyboardFocus (false)) drawFocusRing (g, r.expanded (1), 6);
+        return;
+    }
+    const bool primary = b.getComponentID() == "primary";
+    Colour fill = on || primary ? palette.accent : palette.panel2.interpolatedWith (palette.panel2.brighter (0.12f), hv);
+    if (down) fill = fill.brighter (0.12f);
+    if (! b.isEnabled()) fill = palette.panel;
+    g.setColour (fill); g.fillRoundedRectangle (down ? r.reduced (0.5f) : r, 8);
+    g.setColour (on || primary ? palette.accent : palette.line.interpolatedWith (palette.accent2, hv)); g.drawRoundedRectangle (r, 8, 1);
     if (b.hasKeyboardFocus (false)) drawFocusRing (g, r.expanded (1), 9);
 }
 
 void LookAndFeel::drawButtonText (Graphics& g, TextButton& b, bool, bool)
 {
+    if (b.getComponentID() == "nav")
+    {
+        g.setFont (font (juce::jmin (14.0f, b.getHeight() * .46f), true));
+        g.setColour (b.getToggleState() ? palette.ink : palette.mute.interpolatedWith (palette.ink, hover (b, b.isMouseOver())));
+        g.drawFittedText (b.getButtonText(), b.getLocalBounds().reduced (4, 2), Justification::centred, 1, .8f);
+        return;
+    }
+    const bool primary = b.getComponentID() == "primary";
     g.setFont (font (jmin (15.0f, b.getHeight() * .45f), true));
-    g.setColour (b.getToggleState() ? palette.accentInk : (b.isEnabled() ? palette.ink : palette.mute));
+    g.setColour (b.getToggleState() || primary ? palette.accentInk : (b.isEnabled() ? palette.ink : palette.mute.withAlpha (0.6f)));
     g.drawFittedText (b.getButtonText(), b.getLocalBounds().reduced (8, 2), Justification::centred, 2, .85f);
 }
 

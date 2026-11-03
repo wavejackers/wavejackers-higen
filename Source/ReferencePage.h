@@ -5,6 +5,7 @@
 #include "PluginProcessor.h"
 #include "Ui.h"
 #include "DnaLibrary.h"
+#include "StatusIndicator.h"
 
 class ReferencePage : public juce::Component, private juce::ScrollBar::Listener
 {
@@ -12,6 +13,9 @@ public:
     ReferencePage (HitGenProcessor& p, hgui::LookAndFeel& l);
     ~ReferencePage() override;
     void setLanguage (const juce::String& lang, bool rtl);
+    void setWorkspace (int w);                       // 0 Reference, 1 Smart Detect, 2 DNA Engine, 3 Generate
+    int workspace() const noexcept { return ws; }
+    std::function<void()> onSavePreset;              // editör: ön ayar kaydet penceresini açar
     void tick();                        // editör zamanlayıcısı (30 Hz)
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -22,8 +26,8 @@ public:
     // testler / otomasyon
     void selectCandidate (int cat, int row);
     void generateNow() { generate(); }
-    void showSampler (bool on) { setView (on ? 1 : 0); }
-    void showLibrary() { setView (2); }
+    void showSampler (bool on) { setWorkspace (2); setView (on ? 1 : 0); }
+    void showLibrary() { setWorkspace (2); setView (2); }
     void quickNow() { quickStart(); }
     void pinNow() { pinA(); }
     void swapNow() { swapAB(); }
@@ -43,7 +47,7 @@ private:
     };
     struct Cands : public juce::Component
     {
-        ReferencePage* o = nullptr; void paint (juce::Graphics&) override; void mouseDown (const juce::MouseEvent&) override;
+        ReferencePage* o = nullptr; int hoverCat = -1, hoverRow = -1; void paint (juce::Graphics&) override; void mouseDown (const juce::MouseEvent&) override; void mouseMove (const juce::MouseEvent&) override; void mouseExit (const juce::MouseEvent&) override;
         juce::Rectangle<int> rowRect (int cat, int row) const;
     };
 
@@ -72,6 +76,11 @@ private:
     std::vector<hg::DnaEntry> libRows; juce::ListBox libList;
     juce::TextButton viewLib, libSave, libRename, libDelete, libImport, libExport, libFav, libUseBtn; juce::TextEditor searchEd, artistEd, nameEd; juce::ComboBox filterBox;
     void libRefresh(); void libSelChanged(); void libUse (int row); const hg::DnaEntry* libSel() const;
+    // AI Minimal çalışma alanları
+    int ws = 0; hgui::StatusIndicator stat { lnf }; juce::Label posLabel, regionLabel, dnaHint, summaryLabel;
+    juce::TextButton regenBtn, randBtn, previewNowBtn, savePresetBtn; hgui::Knob texK, movK, briK;
+    std::array<float, hg::kNumSp> baseVals {}; bool haveBase = false, dnaBusy = false, errorFlag = false; juce::int64 completedAt = 0; juce::uint32 lastSeed = 1;
+    void applyWorkspace(); void applyMacros(); void randomizeGen(); void regenerateSame(); void updateStat(); void markCompleted();
     // Quick Mode ve A/B
     juce::TextButton quickBtn, pinBtn, abBtn; bool quickPending = false; bool haveA = false; std::array<float, hg::kNumSp> slotA {}, slotB {}; bool abOnA = false;
     void quickStart(); void quickStep(); void pinA(); void swapAB();

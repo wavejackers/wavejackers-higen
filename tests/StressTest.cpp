@@ -112,11 +112,13 @@ static void testReference (const juce::File& outDir, const FailFn& fail)
         std::cout << "original playback ok, peak " << pk << "\n";
         for (auto l : p.data.langCodes)
         {
-            ed->setLanguage (l); ed->setTab (3);
+            ed->setLanguage (l); ed->setWorkspace (1);
             auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f);
             auto f = outDir.getChildFile ("plugin-" + l + "-ref.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os);
         }
-        ed->setLanguage ("en"); ed->reference().showSampler (true);
+        ed->setLanguage ("en");
+        for (int w = 0; w < 4; ++w) { ed->setWorkspace (w); auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f); auto f = outDir.getChildFile ("plugin-en-ws" + juce::String (w) + ".png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os); }
+        ed->setWorkspace (2); ed->reference().showSampler (true);
         { auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f); auto f = outDir.getChildFile ("plugin-en-sampler.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os); }
         ed->reference().showSampler (false);
         ed->reference().showLibrary();
