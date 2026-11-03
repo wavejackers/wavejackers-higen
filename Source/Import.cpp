@@ -6,6 +6,18 @@ namespace hg
 {
 namespace
 {
+// Dosyadan gelen metin: geçersiz UTF-8 (bozuk / kasıtlı hazırlanmış dosya) juce::String'e verilmez; aksi halde JUCE
+// eksik çok baytlı diziyi okurken tamponun sonunu aşabilir (ASan: heap-buffer-overflow). Geçersizse bayt bayt Latin-1 alınır.
+juce::String safeText (const char* p, size_t len)
+{
+    len = juce::jmin (len, (size_t) (1 << 24));
+    if (len == 0) return {};
+    if (juce::CharPointer_UTF8::isValidString (p, (int) len)) return juce::String::fromUTF8 (p, (int) len);
+    juce::String s; s.preallocateBytes (len * 2);
+    for (size_t k = 0; k < len && p[k] != 0; ++k) s += (juce::juce_wchar) (uint8_t) p[k];
+    return s;
+}
+
 constexpr size_t kMaxFile = 256u * 1024u * 1024u, kMaxCbor = 16u * 1024u * 1024u;
 
 uint32_t be32 (const uint8_t* p) { return ((uint32_t) p[0] << 24) | ((uint32_t) p[1] << 16) | ((uint32_t) p[2] << 8) | p[3]; }
@@ -34,7 +46,7 @@ struct Cbor
             case 0: { const auto v = arg (ai); return (double) v; }
             case 1: { const auto v = arg (ai); return -1.0 - (double) v; }
             case 2: { const auto l = arg (ai); if (l > n - i) { bad = true; return {}; } i += (size_t) l; return {}; }
-            case 3: { const auto l = arg (ai); if (l > n - i) { bad = true; return {}; } juce::String s = juce::String::fromUTF8 ((const char*) b + i, (int) l); i += (size_t) l; return s; }
+            case 3: { const auto l = arg (ai); if (l > n - i) { bad = true; return {}; } juce::String s = safeText ((const char*) b + i, (size_t) l); i += (size_t) l; return s; }
             case 4:
             {
                 const auto c = arg (ai); if (bad || c > 100000) { bad = true; return {}; }
@@ -176,7 +188,7 @@ ImportedSound importSoundBytes (const void* data, size_t size, const juce::Strin
     {
         const uint32_t jl = le32 (b + 9);
         if (jl > size || 17 + (size_t) jl + 8 > size) return fail ("corrupt");
-        const auto meta = juce::JSON::parse (juce::String::fromUTF8 ((const char*) b + 17, (int) jl));
+        const auto meta = juce::JSON::parse (safeText ((const char*) b + 17, (size_t) jl));
         if (meta.isObject()) { r.name = meta["presetName"].toString().isNotEmpty() ? meta["presetName"].toString() : r.name; r.author = meta["presetAuthor"].toString(); }
         const uint8_t* tail = b + 17 + jl; const size_t tl = size - 17 - jl;
         const uint32_t rawLen = le32 (tail);
@@ -199,7 +211,7 @@ ImportedSound importSoundBytes (const void* data, size_t size, const juce::Strin
         if (type == "FxCk" || type == "FPCh")
         {
             char nm[29] = {}; std::memcpy (nm, b + 28, 28);
-            juce::String s = juce::String::fromUTF8 (nm).trim(); if (s.isNotEmpty()) r.name = s;
+            juce::String s = safeText (nm, std::strlen (nm)).trim(); if (s.isNotEmpty()) r.name = s;
         }
         else if (size >= 156 && (type == "FxBk" || type == "FBCh")) r.programs = (int) juce::jlimit (0u, 100000u, be32 (b + 24));
         r.part = guessPart (r.name); r.fallbackId = fallbackFor (r.name, r.part); r.exact = false; r.ok = true;

@@ -204,6 +204,72 @@ static void testSampler (const FailFn& fail)
         std::cout << "sampler tests done\n";
     }
 }
+// MIDI Learn: öğrenme, yakalama (soft takeover), eşlenmemiş CC, kanal modu mesajları, durum kaydı/geri yükleme, preset ayrımı, arayüz rozeti
+static void testMidiLearn (const juce::File& outDir, const FailFn& fail)
+{
+    auto p_h = std::make_unique<HitGenProcessor>(); auto& p = *p_h; p.setRateAndBufferSizeDetails (48000.0, 256); p.prepareToPlay (48000.0, 256);
+    auto& ml = p.midiLearn; ml.clear();
+    juce::AudioBuffer<float> buf (2, 256);
+    auto send = [&] (std::initializer_list<juce::MidiMessage> msgs) { juce::MidiBuffer mb; int t = 0; for (auto& m : msgs) mb.addEvent (m, t++); buf.clear(); p.processBlock (buf, mb); };
+    auto* prm = p.apvts.getParameter ("cut_bass"); const int idx = ml.indexOf ("cut_bass");
+    if (prm == nullptr || idx < 0 || ml.numParams() < 50) { fail ("midi learn: parameter list " + juce::String (ml.numParams())); return; }
+    // öğren: kanal modu mesajı (123) öğrenmez, normal CC öğrenir
+    ml.startLearn (idx); send ({ juce::MidiMessage::controllerEvent (1, 123, 0) });
+    if (ml.learning() != idx) fail ("midi learn: channel mode message was learned");
+    send ({ juce::MidiMessage::controllerEvent (1, 21, 64) });
+    auto m = ml.mappingFor (idx); if (ml.learning() != -1 || m.cc != 21 || m.channel != 1) fail ("midi learn: CC 21 not learned (" + juce::String (m.cc) + "/" + juce::String (m.channel) + ")");
+    // yakalama: parametre 0.2; CC 127 uzakta -> değişmez; yakın değer -> yakalar; sonra izler
+    prm->setValueNotifyingHost (0.2f);
+    send ({ juce::MidiMessage::controllerEvent (1, 21, 127) }); if (std::abs (prm->getValue() - 0.2f) > 0.02f) fail ("midi learn: jumped without pickup " + juce::String (prm->getValue()));
+    send ({ juce::MidiMessage::controllerEvent (1, 21, 26) }); send ({ juce::MidiMessage::controllerEvent (1, 21, 100) });
+    if (std::abs (prm->getValue() - 100.0f / 127.0f) > 0.02f) fail ("midi learn: did not follow after pickup " + juce::String (prm->getValue()));
+    // dışarıdan değişim (otomasyon / fare): CC bırakır, değerin üzerinden geçince yeniden yakalar
+    prm->setValueNotifyingHost (0.9f);
+    send ({ juce::MidiMessage::controllerEvent (1, 21, 50) }); if (std::abs (prm->getValue() - 0.9f) > 0.02f) fail ("midi learn: overrode automation " + juce::String (prm->getValue()));
+    send ({ juce::MidiMessage::controllerEvent (1, 21, 122) }); if (std::abs (prm->getValue() - 122.0f / 127.0f) > 0.02f) fail ("midi learn: no pickup after crossing " + juce::String (prm->getValue()));
+    // eşlenmemiş CC ve başka kanal: dokunmaz
+    const float keep = prm->getValue(); send ({ juce::MidiMessage::controllerEvent (1, 22, 0), juce::MidiMessage::controllerEvent (2, 21, 0) });
+    if (std::abs (prm->getValue() - keep) > 1e-6f) fail ("midi learn: unmapped CC changed the parameter");
+    // DSP'ye ulaşır mı: ham APVTS değeri
+    if (std::abs (p.apvts.getParameter ("cut_bass")->convertFrom0to1 (prm->getValue()) - p.apvts.getRawParameterValue ("cut_bass")->load()) > 1e-3f) fail ("midi learn: raw value not updated");
+    // ikinci eşleme aynı CC'yi alırsa ilki düşer; kademeli (seçim) parametre
+    const int idx2 = ml.indexOf ("res_bass"); ml.setMapping (idx2, 1, 21); if (ml.mappingFor (idx).param != -1 || ml.mappingFor (idx2).cc != 21) fail ("midi learn: CC reassignment");
+    ml.setMapping (idx, 3, 74);
+    for (int i = 0; i < 20; ++i) ml.timerTick();   // jestleri aç/kapat
+    // durum: proje durumuna yazılır, preset ağacına girmez, geri yüklenir
+    juce::MemoryBlock mb; p.getStateInformation (mb);
+    { auto q_h = std::make_unique<HitGenProcessor>(); auto& q = *q_h; q.midiLearn.clear(); q.setStateInformation (mb.getData(), (int) mb.getSize());
+      if (q.midiLearn.mappingFor (q.midiLearn.indexOf ("cut_bass")).cc != 74 || q.midiLearn.mappingFor (q.midiLearn.indexOf ("res_bass")).cc != 21) fail ("midi learn: mappings not restored");
+      if (q.apvts.state.getChildWithName ("midimap").isValid()) fail ("midi learn: midimap leaked into the parameter tree (presets)");
+      juce::MemoryBlock again; q.getStateInformation (again); auto xml = juce::AudioProcessor::getXmlFromBinary (again.getData(), (int) again.getSize());
+      if (xml == nullptr || xml->getChildByName ("midimap") == nullptr || xml->getChildByName ("midimap")->getNumChildElements() != 2) fail ("midi learn: re-save lost mappings"); }
+    // eski proje (midimap yok): mevcut eşlemeler korunur, çökme yok; bozuk midimap
+    { auto xml = juce::AudioProcessor::getXmlFromBinary (mb.getData(), (int) mb.getSize()); xml->deleteAllChildElementsWithTagName ("midimap");
+      auto bad = std::make_unique<juce::XmlElement> ("midimap"); auto* e = bad->createNewChildElement ("map"); e->setAttribute ("param", "nope"); e->setAttribute ("ch", 99); e->setAttribute ("cc", 500);
+      juce::MemoryBlock old; juce::AudioProcessor::copyXmlToBinary (*xml, old);
+      auto q_h = std::make_unique<HitGenProcessor>(); auto& q = *q_h; q.midiLearn.clear(); q.midiLearn.setMapping (q.midiLearn.indexOf ("vol_bass"), 1, 7);
+      q.setStateInformation (old.getData(), (int) old.getSize()); if (q.midiLearn.all().size() != 1) fail ("midi learn: old project cleared mappings");
+      xml->addChildElement (bad.release()); juce::MemoryBlock bb; juce::AudioProcessor::copyXmlToBinary (*xml, bb); q.setStateInformation (bb.getData(), (int) bb.getSize());
+      if (! q.midiLearn.all().empty()) fail ("midi learn: invalid mapping accepted"); }
+    // kaldır / temizle
+    ml.removeMapping (idx); if (ml.mappingFor (idx).param != -1) fail ("midi learn: remove");
+    ml.clear(); if (! ml.all().empty()) fail ("midi learn: clear");
+    // notalar CC eşlemesinden etkilenmez
+    ml.setMapping (idx, 1, 21); send ({ juce::MidiMessage::noteOn (1, 48, (juce::uint8) 100), juce::MidiMessage::controllerEvent (1, 21, 60) });
+    // arayüz: MIDI Studio sekmesinde rozet ve öğrenme bildirimi
+    { std::unique_ptr<HitGenEditor> ed (dynamic_cast<HitGenEditor*> (p.createEditor())); ed->setTab (0); ed->refreshMidiNow();
+      juce::Component* knob = nullptr; std::function<void (juce::Component&)> find = [&] (juce::Component& c) { if (knob == nullptr && c.getProperties()["hgParam"].toString().startsWith ("cut_")) knob = &c; for (auto* ch : c.getChildren()) find (*ch); };
+      find (ed->contentComponent());
+      if (knob != nullptr) { ml.clear(); ml.setMapping (ml.indexOf (knob->getProperties()["hgParam"].toString()), 1, 21); ed->refreshMidiNow(); }
+      if (knob == nullptr) fail ("midi learn: filter knob not tagged");
+      else if (knob->getProperties()["hgCC"].toString() != "CC21") fail ("midi learn: badge missing: " + knob->getProperties()["hgCC"].toString());
+      ed->midiLearnFor ("res_bass"); ed->refreshMidiNow();
+      { auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f); auto f = outDir.getChildFile ("plugin-en-midilearn.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os); }
+      send ({ juce::MidiMessage::controllerEvent (1, 74, 10) }); ed->refreshMidiNow();
+      if (ml.mappingFor (ml.indexOf ("res_bass")).cc != 74 || ! ed->midiToastText().contains ("74")) fail ("midi learn: editor learn flow: " + ed->midiToastText()); }
+    ml.clear();
+    std::cout << "midi learn ok\n";
+}
 static void testLibrary (const FailFn& fail)
 {
     // 8) DNA kütüphanesi: kaydet, ara, favori, son kullanılan, yeniden adlandır, dışa/içe aktar, sil, bozuk dosya
@@ -502,7 +568,7 @@ int main (int argc, char** argv)
         delete e2;
         std::cout << "editor snapshots written\n";
     }
-    testReference (outDir, fail); testSampler (fail); testLibrary (fail);
+    testReference (outDir, fail); testSampler (fail); testLibrary (fail); testMidiLearn (outDir, fail);
     std::cout << (failures == 0 ? "ALL PASSED" : "FAILURES: " + std::to_string (failures)) << "\n";
     return failures == 0 ? 0 : 1;
 }

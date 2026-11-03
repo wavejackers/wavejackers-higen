@@ -7,6 +7,7 @@
 #include "Presets.h"
 #include "Import.h"
 #include "RefEngine.h"
+#include "MidiLearn.h"
 
 // Ses iş parçacığının çaldığı desen: PPQ (çeyrek nota) cinsinden olaylar
 struct SeqEvent { double ppq = 0, len = 0; int track = 0, note = 0, vel = 0; };
@@ -51,6 +52,7 @@ public:
     void suggestAlternative (int track);   // yalnızca o izin MIDI'sini başka bir fikirle değiştir
     juce::String lang = "en";
     hg::RefEngine ref;                     // referans ses: yükleme, SMART DETECT, orijinali çalma
+    hg::MidiLearn midiLearn;               // MIDI CC -> parametre (sağ tık > MIDI Learn)
     float uiScale = 1.0f; bool highContrast = false; bool animations = true;
     std::function<void()> onResultChanged;
     juce::File writeMidi (int which);

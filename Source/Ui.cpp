@@ -96,6 +96,23 @@ void LookAndFeel::drawRotarySlider (Graphics& g, int x, int y, int w, int h, flo
     g.setColour (palette.ink);
     g.drawLine (cx + (r * .3f) * std::sin (ang), cy - (r * .3f) * std::cos (ang), cx + (r - 6) * std::sin (ang), cy - (r - 6) * std::cos (ang), 2.4f);
     if (s.hasKeyboardFocus (false)) drawFocusRing (g, Rectangle<float> (cx - r - 2, cy - r - 2, 2 * r + 4, 2 * r + 4), r + 2);
+    // MIDI Learn: öğrenme halkası (kesikli vurgu) ve eşlenmiş CC rozeti
+    const auto& pr = s.getProperties();
+    if ((bool) pr.getWithDefault ("hgLearn", false))
+    {
+        Path ring; ring.addEllipse (cx - r - 1, cy - r - 1, 2 * r + 2, 2 * r + 2); Path dashed; const float dl[] = { 4.0f, 3.0f };
+        PathStrokeType (1.6f).createDashedStroke (dashed, ring, dl, 2); g.setColour (palette.accent); g.fillPath (dashed);
+    }
+    const auto cc = pr.getWithDefault ("hgCC", var()).toString();
+    if (cc.isNotEmpty())
+    {
+        const float bw = jmax (26.0f, 6.0f * (float) cc.length() + 8.0f), bh = 13.0f;
+        auto badge = Rectangle<float> (bw, bh).withCentre ({ cx, cy - r + 1 });
+        g.setColour (palette.bg); g.fillRoundedRectangle (badge.expanded (1.5f), bh * 0.5f + 1.5f);
+        g.setColour (palette.accent.withAlpha (0.22f)); g.fillRoundedRectangle (badge, bh * 0.5f);
+        g.setColour (palette.accent); g.drawRoundedRectangle (badge, bh * 0.5f, 1.0f);
+        g.setFont (font (9.5f, true)); g.drawText (cc, badge, Justification::centred, false);
+    }
 }
 
 float LookAndFeel::hover (const Component& cm, bool over)
