@@ -8,6 +8,8 @@
 #include <atomic>
 #include <memory>
 #include <vector>
+#include "DrumMachine.h"
+#include "Loudness.h"
 
 namespace hg
 {
@@ -80,12 +82,6 @@ struct Voice
     const Patch* patch = nullptr;   // ses değişince eski sesler eski yamayla doğal biter
 };
 
-struct DrumVoice
-{
-    bool active = false; int type = 0; float vel = 0; double t = 0, len = 0, ph = 0, ph2[6] {};
-    uint32_t rng = 7; float s[4][2] {}; float cfA[4] {}, cfB[4] {};
-};
-
 class Engine
 {
 public:
@@ -111,6 +107,9 @@ public:
     // Blok başında ayarlanır
     std::array<Macros, 4> macros;
     float bpm = 126, thick = .7f, pumpAmt = 1, master = 1;
+    bool loudnessOn = true;                     // -14 LUFS normalleştirme + -1 dBFS sınırlayıcı (kapalıyken eski yumuşak limiter)
+    DrumMachine drumMachine;                    // davul pedleri: analog sentez ya da kullanıcı örnekleri
+    LoudnessNormalizer loudness;
     Quality quality;
     std::atomic<float> peakOut { 0 }, cpuLoad { 0 };
     int activeVoices() const noexcept { return lastActive; }
@@ -125,10 +124,6 @@ private:
     juce::AbstractFifo trashFifo { 64 }; std::array<Patch*, 64> trash {};
     std::unique_ptr<Patch> owned[4];   // yalnızca mesaj iş parçacığı dokunur
     std::array<Voice, 64> voices;
-    std::array<DrumVoice, 24> drums;
-    struct Kit { float kf0 = 160, kf1 = 50, kpd = .04f, kd = .32f, kclick = .3f, kdrv = .5f, sf = 190, std_ = .1f, snf = 2400, snd = .16f, smix = .55f, cnf = 1400, cd = .22f,
-                 hhp = 7500, hd = .045f, hm = .25f, ohp = 6500, od = .28f, om = .3f, rf = 1800, pf = 330, pd = .15f, lp = 0, rv = .08f; int ptype = 0; };
-    Kit kit, pendingKit; std::atomic<bool> kitDirty { false };
     std::array<float, 4> pumpDepth {}, pumpRel {}, pumpG { 1, 1, 1, 1 };
     std::array<int, 4> pumpWait {};
     float pumpTarget = 1;
@@ -136,14 +131,13 @@ private:
     std::vector<float> chorusBuf[3][2]; int chorusPos[3] {}; double chorusPh[3][2] {};
     std::vector<float> dlBuf[2]; int dlPos = 0; float dlLp[2] {};
     juce::Reverb reverb; juce::dsp::Compressor<float> comp;
-    float drumLpS[2] {};
+    float drumLpS[2] {}, drumLpR[2] {};
     juce::AudioBuffer<float> partBuf, sendRv, sendDl, drumBuf;
     int lastActive = 0; double voiceClock = 0;
 
     void startVoice (Voice& v, const Patch& p, int track, int note, int vel, double durSec);
     void migrateVoice (Voice& v, const Patch& p);
     void renderVoice (Voice& v, const Patch& p, const Macros& m, float* L, float* R, int n);
-    void renderDrum (DrumVoice& d, float* L, float* R, int n);
     void applyChorus (int track, float amt, float* L, float* R, int n);
     Voice* findVoice (int track);
     void retireNow (Patch* p);

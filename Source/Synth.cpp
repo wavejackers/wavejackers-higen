@@ -148,16 +148,17 @@ void Engine::prepare (double sampleRate, int maxBlock)
     reverb.setParameters (rp); reverb.setSampleRate (sr);
     juce::dsp::ProcessSpec spec { sr, (juce::uint32) maxBlockSize, 2 };
     comp.prepare (spec); comp.setThreshold (-16); comp.setRatio (6); comp.setAttack (3); comp.setRelease (160);
+    drumMachine.prepare (sr); loudness.prepare (sr, maxBlockSize);
     reset();
 }
 
 void Engine::reset()
 {
     for (auto& v : voices) v.active = false;
-    for (auto& d : drums) d.active = false;
+    drumMachine.reset(); loudness.reset();
     for (int t = 0; t < 3; ++t) for (int c = 0; c < 2; ++c) std::fill (chorusBuf[t][c].begin(), chorusBuf[t][c].end(), 0.0f);
     for (int c = 0; c < 2; ++c) std::fill (dlBuf[c].begin(), dlBuf[c].end(), 0.0f);
-    dlLp[0] = dlLp[1] = 0; drumLpS[0] = drumLpS[1] = 0;
+    dlLp[0] = dlLp[1] = 0; drumLpS[0] = drumLpS[1] = 0; drumLpR[0] = drumLpR[1] = 0;
     reverb.reset(); comp.reset();
     pumpG = { 1, 1, 1, 1 }; pumpWait = { 0, 0, 0, 0 };
 }
@@ -171,7 +172,7 @@ void Engine::setPatch (int track, std::unique_ptr<Patch> p, bool live)
 
 void Engine::setKit (const juce::var& k)
 {
-    Kit x;
+    AnalogKit x;
     auto K = k["k"], S = k["s"], C = k["c"], H = k["h"], O = k["o"], Rr = k["r"], P = k["p"];
     x.kf0 = (float) num (K["f0"], 160); x.kf1 = (float) num (K["f1"], 50); x.kpd = (float) num (K["pd"], .04); x.kd = (float) num (K["d"], .32); x.kclick = (float) num (K["click"]); x.kdrv = (float) num (K["drv"]);
     x.sf = (float) num (S["f"], 190); x.std_ = (float) num (S["td"], .1); x.snf = (float) num (S["nf"], 2400); x.snd = (float) num (S["nd"], .16); x.smix = (float) num (S["mix"], .55);
@@ -181,7 +182,7 @@ void Engine::setKit (const juce::var& k)
     x.rf = (float) num (Rr["f"], 1800); x.pf = (float) num (P["f"], 330); x.pd = (float) num (P["d"], .15);
     auto pt = P["type"].toString(); x.ptype = pt == "triangle" ? 1 : pt == "square" ? 2 : 0;
     x.lp = (float) num (k["lp"]); x.rv = (float) num (k["rv"], .08);
-    pendingKit = x; kitDirty.store (true, std::memory_order_release);
+    drumMachine.setKit (x);
 }
 
 void Engine::retireNow (Patch* p)
@@ -193,6 +194,7 @@ void Engine::retireNow (Patch* p)
 
 void Engine::collectGarbage()
 {
+    drumMachine.collectGarbage();
     int s1, n1, s2, n2; trashFifo.prepareToRead (trashFifo.getNumReady(), s1, n1, s2, n2);
     for (int i = 0; i < n1; ++i) delete trash[(size_t) (s1 + i)];
     for (int i = 0; i < n2; ++i) delete trash[(size_t) (s2 + i)];
@@ -222,6 +224,7 @@ void Engine::noteOn (int track, int note, int vel, double durSec, int)
 
 void Engine::noteOff (int track, int note, int)
 {
+    if (track == 2) return;   // davul pedleri tek vuruşludur
     const int ti = track == 3 ? 2 : track;
     const float R = cur[(size_t) ti] ? cur[(size_t) ti]->R * std::pow (2.0f, macros[(size_t) (ti == 2 ? 3 : ti)].release * 3) : .3f;
     for (auto& v : voices) if (v.active && v.track == ti && v.gate && v.note == note && ! v.released) { v.gate = false; v.relT = v.t; v.endT = v.t + juce::jmax (.02f, R) * 2.5 + .05; }
@@ -380,88 +383,8 @@ void Engine::renderVoice (Voice& v, const Patch& p, const Macros& m, float* L, f
 
 void Engine::drumHit (int note, int vel, int)
 {
-    int type = note == 36 ? 0 : note == 38 ? 1 : note == 39 ? 2 : note == 42 ? 3 : note == 46 ? 4 : note == 37 ? 5 : 6;
-    DrumVoice* d = nullptr; double oldest = -1;
-    for (auto& x : drums) if (! x.active) { d = &x; break; }
-    if (d == nullptr) for (auto& x : drums) if (x.t > oldest) { oldest = x.t; d = &x; }
-    if (type == 4) for (auto& x : drums) if (x.active && x.type == 4) x.len = juce::jmin (x.len, x.t + .01);   // açık hat'ı yeni hat kısar
-    if (type == 3) for (auto& x : drums) if (x.active && x.type == 4) x.len = juce::jmin (x.len, x.t + .02);
-    *d = DrumVoice(); d->active = true; d->type = type; d->vel = vel / 127.0f; d->rng = 0x1234567u + (uint32_t) note * 977u + (uint32_t) voiceClock++;
-    const auto& K = kit;
-    switch (type)
-    {
-        case 0: d->len = K.kd * 1.6 + .1; svfCoef (d->cfA, 1800, .7, sr); break;
-        case 1: d->len = juce::jmax (K.std_, K.snd) * 1.6 + .05; svfCoef (d->cfA, K.snf, .8, sr); break;
-        case 2: d->len = K.cd * 1.6 + .05; svfCoef (d->cfA, K.cnf, 1.3, sr); break;
-        case 3: d->len = K.hd * 1.8 + .02; svfCoef (d->cfA, K.hhp, .707, sr); break;
-        case 4: d->len = K.od * 1.8 + .02; svfCoef (d->cfA, K.ohp, .707, sr); break;
-        case 5: d->len = .08; svfCoef (d->cfA, 3400, 1, sr); break;
-        default: d->len = K.pd * 1.6 + .05; svfCoef (d->cfA, K.pf * 3, 1.2, sr); break;
-    }
-    if (type == 0) { for (int t = 0; t < 4; ++t) if (pumpDepth[(size_t) t] > 0) { pumpG[(size_t) t] = 1 - juce::jmin (.95f, pumpDepth[(size_t) t] * pumpAmt); pumpWait[(size_t) t] = (int) (sr * .012); } }
-}
-
-void Engine::renderDrum (DrumVoice& d, float* L, float* R, int n)
-{
-    const auto& K = kit; const double dt = 1.0 / sr; const float v = d.vel;
-    auto expd = [] (double t, double tau) { return (float) std::exp (-t / juce::jmax (1e-4, tau)); };
-    static const float metal[6] = { 263, 400, 421, 474, 587, 845 };
-    for (int i = 0; i < n; ++i)
-    {
-        const double t = d.t; float s = 0;
-        switch (d.type)
-        {
-            case 0:
-            {
-                const double f = K.kf1 + (K.kf0 - K.kf1) * std::exp (-t / K.kpd);
-                d.ph += f * dt; d.ph -= std::floor (d.ph);
-                const float amp = t < K.kd * .15 ? v * .95f : v * .95f * expd (t - K.kd * .15, K.kd / 4);
-                s = (float) std::sin (kTwoPi * d.ph) * amp;
-                if (K.kdrv > 0) s = sat (s, K.kdrv);
-                if (K.kclick > 0 && t < .05) s += svf (frand (d.rng), d.cfA, d.s[0]).hp * v * K.kclick * .5f * expd (t, .005);
-                break;
-            }
-            case 1:
-            {
-                const double f = K.sf + (K.sf * .4) * std::exp (-t / .02); d.ph += f * dt; d.ph -= std::floor (d.ph);
-                const float tri = (float) (d.ph < .5 ? 4 * d.ph - 1 : 3 - 4 * d.ph);
-                s = tri * v * (1 - K.smix) * .8f * expd (t, K.std_ / 4) + svf (frand (d.rng), d.cfA, d.s[0]).bp * v * K.smix * 1.1f * expd (t, K.snd / 4);
-                break;
-            }
-            case 2:
-            {
-                const float nz = svf (frand (d.rng), d.cfA, d.s[0]).bp;
-                float e = 0; const double offs[3] = { 0, .011, .022 };
-                for (int b = 0; b < 3; ++b) if (t >= offs[b]) e += expd (t - offs[b], (b < 2 ? .02 : K.cd) / 4);
-                s = nz * v * .55f * e;
-                break;
-            }
-            case 3: case 4:
-            {
-                const float m = d.type == 3 ? K.hm : K.om, dd = d.type == 3 ? K.hd : K.od;
-                float x = frand (d.rng) * (1 - m * .6f);
-                if (m > 0) { float sq = 0; for (int k = 0; k < 6; ++k) { d.ph2[k] += metal[k] * 1.7 * dt; d.ph2[k] -= std::floor (d.ph2[k]); sq += d.ph2[k] < .5 ? 1.0f : -1.0f; } x += sq * m * .18f; }
-                s = svf (x, d.cfA, d.s[0]).hp * v * .42f * expd (t, dd / 4);
-                break;
-            }
-            case 5:
-            {
-                d.ph += K.rf * dt; d.ph -= std::floor (d.ph);
-                s = (float) std::sin (kTwoPi * d.ph) * v * .5f * expd (t, .008) + svf (frand (d.rng), d.cfA, d.s[0]).bp * v * .3f * expd (t, .03 / 4);
-                break;
-            }
-            default:
-            {
-                const double f = K.pf + K.pf * .25 * std::exp (-t / .02); d.ph += f * dt; d.ph -= std::floor (d.ph);
-                float w = K.ptype == 1 ? (float) (d.ph < .5 ? 4 * d.ph - 1 : 3 - 4 * d.ph) : K.ptype == 2 ? (d.ph < .5 ? 1.0f : -1.0f) : (float) std::sin (kTwoPi * d.ph);
-                s = w * v * .7f * expd (t, K.pd / 4) + svf (frand (d.rng), d.cfA, d.s[0]).bp * v * .25f * expd (t, .03 / 4);
-                break;
-            }
-        }
-        L[i] += s; R[i] += s;
-        d.t += dt;
-        if (d.t > d.len) { d.active = false; break; }
-    }
+    if (drumMachine.hit (note, vel) == kPadKick)   // kick sidechain pompasını tetikler
+        for (int t = 0; t < 4; ++t) if (pumpDepth[(size_t) t] > 0) { pumpG[(size_t) t] = 1 - juce::jmin (.95f, pumpDepth[(size_t) t] * pumpAmt); pumpWait[(size_t) t] = (int) (sr * .012); }
 }
 
 void Engine::applyChorus (int track, float amt, float* L, float* R, int n)
@@ -513,7 +436,6 @@ void Engine::render (juce::AudioBuffer<float>& out, int start, int num)
             }
             cur[t] = p;
         }
-    if (kitDirty.exchange (false, std::memory_order_acquire)) kit = pendingKit;
     for (auto& r : retiring)   // artık hiçbir sesin kullanmadığı eski yamaları çöpe gönder
         if (r != nullptr) { bool used = false; for (auto& v : voices) if (v.active && v.patch == r) { used = true; break; } if (! used) { retireNow (r); r = nullptr; } }
 
@@ -530,7 +452,7 @@ void Engine::render (juce::AudioBuffer<float>& out, int start, int num)
                 const int mi = v.track == 2 ? 3 : v.track;
                 renderVoice (v, *v.patch, macros[(size_t) mi], partBuf.getWritePointer (v.track * 2, 0), partBuf.getWritePointer (v.track * 2 + 1, 0), n);
             }
-        for (auto& d : drums) if (d.active) { ++active; renderDrum (d, drumBuf.getWritePointer (0), drumBuf.getWritePointer (1), n); }
+        drumMachine.render (drumBuf.getWritePointer (0), drumBuf.getWritePointer (1), n);
         lastActive = active;
 
         float* oL = out.getWritePointer (0, start + done); float* oR = out.getNumChannels() > 1 ? out.getWritePointer (1, start + done) : nullptr;
@@ -564,11 +486,16 @@ void Engine::render (juce::AudioBuffer<float>& out, int start, int num)
         {
             const Macros& m = macros[2]; const float bus = m.mute ? 0.0f : m.volume;
             float* L = drumBuf.getWritePointer (0); float* R = drumBuf.getWritePointer (1);
-            float lpC[4] {}; const bool lp = kit.lp > 0; if (lp) svfCoef (lpC, kit.lp, .707, sr);
+            const float kitLp = drumMachine.kit().lp;
+            float lpC[4] {}; const bool lp = kitLp > 0; if (lp) svfCoef (lpC, kitLp, .707, sr);
             for (int i = 0; i < n; ++i)
             {
                 float a = L[i], b = R[i];
-                if (lp) { float st[2] = { drumLpS[0], drumLpS[1] }; a = b = svf (a, lpC, st).lp; drumLpS[0] = st[0]; drumLpS[1] = st[1]; }
+                if (lp)
+                {
+                    float st[2] = { drumLpS[0], drumLpS[1] }; a = svf (a, lpC, st).lp; drumLpS[0] = st[0]; drumLpS[1] = st[1];
+                    float st2[2] = { drumLpR[0], drumLpR[1] }; b = svf (b, lpC, st2).lp; drumLpR[0] = st2[0]; drumLpR[1] = st2[1];
+                }
                 a *= bus; b *= bus;
                 oL[i] += a; if (oR) oR[i] += b; /* davulda reverb yok */
             }
@@ -601,6 +528,15 @@ void Engine::render (juce::AudioBuffer<float>& out, int start, int num)
         }
         float pk = 0; bool bad = false;
         const float preG = juce::jmax (1.0f, master), postG = juce::jmin (1.0f, master);
+        if (loudnessOn)
+        {
+            // -14 LUFS: K-ağırlıklı kayan ölçüm, yavaş otomatik kazanç, -1 dBFS ileri bakışlı sınırlayıcı
+            juce::FloatVectorOperations::multiply (oL, 1.5f, n); if (oR) juce::FloatVectorOperations::multiply (oR, 1.5f, n);
+            for (int i = 0; i < n; ++i) { if (! std::isfinite (oL[i]) || (oR && ! std::isfinite (oR[i]))) { bad = true; break; } }
+            if (bad) { juce::FloatVectorOperations::clear (oL, n); if (oR) juce::FloatVectorOperations::clear (oR, n); }
+            else pk = loudness.process (oL, oR, n, preG, postG);
+        }
+        else
         for (int c = 0; c < (oR ? 2 : 1); ++c)
         {
             float* x = c == 0 ? oL : oR;

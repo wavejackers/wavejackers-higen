@@ -60,3 +60,75 @@
   MB.SOUNDS.forEach(s => { MB.byId[s.id] = s; });
   Object.assign(HG.EN, EN);
 })();
+
+// ---- Club Bank (2.7): kulüp odaklı elektronik melodi sesleri, analog davul kitleri ve kulüp stilleri.
+// Özgün sentez (FM, analog benzeri filtre ve zarflar); hiçbir ticari preset ya da örnek kullanılmaz.
+(function () {
+  const add = MB.add, S = HG.STYLE, EN = {};
+  const v = (id, tr, en, cat, role, g, p) => { add(id, tr, cat, role, g, p); EN[id] = en; };
+  // --- Melodi / hook sesleri (kısa, perküsif, elektronik)
+  v('cl-fm-marimba', 'Elektro Marimba', 'Electro Marimba', 'Pluck', 'm', 'afro house', { fm: [4, 2.4, .05, 0, .55], o: [['s', 0, 0, .55], ['t', 0, 1, .08]], f: ['lowpass', 6500, .7, .6, 0, .12], a: [.001, .32, 0, .22], dl: .22, rv: .22, vol: .23 });
+  v('cl-bell-pluck', 'Elektro Çan Pluck', 'Electro Bell Pluck', 'Pluck', 'm', 'afro deep house', { fm: [3.5, 1.4, .22, .04, .6], o: [['s', 0, 0, .4], ['t', 0, 1, .12]], f: ['lowpass', 7000, .7, 0, 0, .3], a: [.001, .8, 0, .55], ch: .2, dl: .32, rv: .35, vol: .21 });
+  v('cl-analog-pluck', 'Analog Pluck', 'Analog Pluck', 'Pluck', 'm', 'house deep techno', { u: [3, 9], o: [['w', 0, 0, .55], ['q', -6, 0, .3]], f: ['lowpass', 700, 4.5, 5.5, 0, .16, 1], a: [.001, .26, 0, .16], ch: .2, dl: .3, rv: .2, vol: .22 });
+  v('cl-rubber-lead', 'Lastik Hook', 'Rubber Hook', 'Lead', 'm', 'house techno', { o: [['q', 0, 0, .6], ['s', 0, -1, .5]], f: ['lowpass', 620, 7, 4, 0, .11, 1], a: [.001, .16, .15, .07], fd: .45, dr: .25, dl: .2, vol: .22 });
+  v('cl-organ-hook', 'Kulüp Org Hook', 'Club Organ Hook', 'Keys', 'm', 'house', { o: [['s', 0, 0, .75], ['s', 0, 1, .45], ['s', 0, 1.585, .28], ['q', 0, 0, .1]], f: ['lowpass', 4500, .8, .5, 0, .12], a: [.002, .14, .25, .08], dr: .15, dl: .25, rv: .12, vol: .21 });
+  v('cl-acid-hook', 'Acid Hook', 'Acid Hook', 'Lead', 'm', 'techno house', { o: [['w', 0, 0, .9]], f: ['lowpass', 520, 11, 5.5, 0, .13, 1], a: [.001, .16, .3, .06], fd: .55, dr: .3, dl: .28, rv: .1, vol: .18 });
+  v('cl-indie-lead', 'Indie Dance Lead', 'Indie Dance Lead', 'Lead', 'm', 'house techno', { u: [3, 12], o: [['w', 0, 0, .5], ['q', 0, 0, .25], ['t', 0, 1, .1]], f: ['lowpass', 1900, 3, 2.2, 0, .2, 1], a: [.003, .3, .35, .2], l: [[.5, .12, 'cut', 'sine', 1]], ch: .35, dr: .15, dl: .33, rv: .22, vol: .2 });
+  v('cl-mallet-hook', 'Afro Mallet', 'Afro Mallet', 'Pluck', 'm', 'afro deep', { fm: [2.01, 1.1, .1, 0, .5], o: [['s', 0, 0, .6], ['t', 0, 1, .1]], noi: .04, f: ['lowpass', 4200, .7, .8, 0, .1], a: [.001, .45, 0, .3], dl: .3, rv: .3, vol: .23 });
+  v('cl-oriental-pluck', 'Oryantal Pluck', 'Oriental Pluck', 'Pluck', 'm', 'deep afro house', { fm: [2, .9, .15, .05, .45], o: [['t', 0, 0, .45], ['w', 0, 0, .15]], pe: [-.6, .04], f: ['lowpass', 3600, 1.5, 1.6, 0, .18], a: [.002, .5, .05, .3], vib: [5.2, 10, .25], dl: .35, rv: .3, vol: .22 });
+  // --- Akor, bas
+  v('cl-deep-chord-stab', 'Deep Kulüp Stab', 'Deep Club Stab', 'Stab', 'c', 'house deep techno', { u: [3, 8], o: [['w', 0, 0, .45], ['q', 0, 0, .3], ['t', 0, -1, .25]], f: ['lowpass', 1100, 3, 2.8, 0, .18, 1], a: [.002, .35, .1, .25], ch: .35, dl: .25, rv: .25, vol: .21 });
+  v('cl-rhodes-fm', 'Kulüp Rhodes', 'Club Rhodes', 'Keys', 'c', 'afro deep house', { fm: [1, 1.9, .9, .12, .7], o: [['s', 0, 0, .35], ['t', 0, 1, .08]], f: ['lowpass', 2600, .7, .6, 0, .5], a: [.002, 1.2, .25, .55], l: [[4.8, .2, 'amp', 'sine']], ch: .3, rv: .35, vol: .22 });
+  v('cl-tribal-chord', 'Tribal Akor', 'Tribal Chord', 'Keys', 'c', 'afro deep', { u: [3, 10], fm: [1, .6, .5, .2, .35], o: [['t', 0, 0, .45], ['w', 0, -1, .25]], f: ['lowpass', 1500, 1.2, 1.5, 0, .5], a: [.01, .9, .3, .6], l: [[.25, .2, 'cut', 'sine', 1]], ch: .4, dl: .2, rv: .45, vol: .2 });
+  v('cl-indie-bass', 'Indie Dance Bas', 'Indie Dance Bass', 'Bas', 'b', 'house techno', { o: [['w', 0, 0, .55], ['s', 0, -1, .95]], sub: .25, f: ['lowpass', 300, 4, 3.4, 0, .12, 1], a: [.002, .16, .55, .08], fd: .3, dr: .22, vol: .21 });
+  v('cl-tribal-sub', 'Tribal Sub', 'Tribal Sub', 'Bas', 'b', 'afro deep', { o: [['s', 0, -1, 1], ['t', 0, 0, .3]], f: ['lowpass', 380, 1.5, 1.8, 0, .2, 1], a: [.003, .3, .45, .14], dr: .12, vol: .2 });
+  // --- Analog davul kitleri (davul makinesinin varsayılanları)
+  MB.KITS.latin = { id: 'latin', n: 'Latin Tech', g: ['afro', 'house'], k: { f0: 170, f1: 48, pd: .035, d: .34, click: .35, drv: .7 }, s: { f: 200, td: .08, nf: 2600, nd: .13, mix: .6 }, c: { nf: 1500, d: .2 }, h: { hp: 9000, d: .035, m: .15 }, o: { hp: 7800, d: .22, m: .2 }, r: { f: 1900 }, p: { f: 260, d: .2 }, rv: .08 };
+  MB.KITS.club = { id: 'club', n: 'Club Analog', g: ['house', 'techno'], k: { f0: 180, f1: 46, pd: .03, d: .36, click: .45, drv: .9 }, s: { f: 205, td: .09, nf: 2700, nd: .14, mix: .6 }, c: { nf: 1350, d: .22 }, h: { hp: 8800, d: .03, m: .3 }, o: { hp: 7200, d: .24, m: .35 }, r: { f: 2100 }, p: { f: 380, d: .12, type: 'triangle' }, rv: .07 };
+  MB.KITS.indie = { id: 'indie', n: 'Indie Dance', g: ['house', 'techno'], k: { f0: 150, f1: 44, pd: .045, d: .42, click: .25, drv: 1.1 }, s: { f: 190, td: .12, nf: 2200, nd: .17, mix: .55 }, c: { nf: 1250, d: .26 }, h: { hp: 8000, d: .045, m: .45 }, o: { hp: 6800, d: .3, m: .45 }, r: { f: 1700 }, p: { f: 320, d: .16 }, rv: .1 };
+  MB.KITS.tribal = { id: 'tribal', n: 'Tribal Afro', g: ['afro', 'deep'], k: { f0: 125, f1: 44, pd: .055, d: .4, click: .12, drv: .45 }, s: { f: 190, td: .1, nf: 2000, nd: .12, mix: .4 }, c: { nf: 1200, d: .24 }, h: { hp: 7000, d: .05, m: 0 }, o: { hp: 6200, d: .22, m: 0 }, r: { f: 1500 }, p: { f: 210, d: .26 }, lp: 11000, rv: .12 };
+  MB.KITS_LIST = Object.keys(MB.KITS).map(k => MB.KITS[k]);
+  // --- Kulüp stilleri: uzun melodi yerine kısa hook (motif), kilitli bas ve perküsyon
+  const W = S.wavejackers;
+  Object.assign(W, { tag: 'Indie dance / club', bpm: [124, 128], bpmDef: 126, scales: ['minor', 'dorian'], swing: 6,
+    chord: { mode: 'stab', pats: ['sparse', 'house'] }, bass: { pats: ['deepSync'], oct: 36 },
+    drums: { kick: K4, clap: C24, chat: H8O, ohat: OFF, rim: '...x.......x....', perc: '......x.......x.', fill: 'clap' },
+    mel: { mode: 'motif', dens: .4, oct: 72 },
+    sound: { chords: 'cl-deep-chord-stab', bass: 'cl-indie-bass', melody: 'cl-indie-lead', drums: 'indie' },
+    pump: { chords: [.5, .22], bass: [.5, .18], melody: [.25, .2] },
+    arr: [['Intro', 16], ['Groove', 32], ['Break', 16], ['Build', 8], ['Drop', 32], ['Outro', 16]],
+    var: [
+      { n: 'Kulüp', prog: [0, 5, 2, 6], note: 'Kısa hook, sub ağırlıklı bas, kilitli groove.' },
+      { n: 'Gece', scale: 'dorian', prog: [0, 3, 0, 6], md: .7, note: 'Dorian rengi, daha seyrek hook.' },
+      { n: 'Breakdown', prog: [0, 6, 5, 6], cm: 'sustain', cp: 'long', md: .6, note: 'Uzun akorlar üstünde kısa motif.' },
+      { n: 'Acid', scale: 'phrygian', prog: [0, 0, 1, 0], bp: 'acid', mm: 'riff', md: .4, note: 'Phrygian gerilim, acid bas.' }
+    ] });
+  const H = S.hugel;
+  Object.assign(H, { bpm: [124, 128], bpmDef: 126, scales: ['minor', 'dorian', 'harmonic'], swing: 6,
+    chord: { mode: 'stab', pats: ['montuno', 'tres'] }, bass: { pats: ['tumbao'], oct: 36 },
+    drums: { kick: K4, clap: C24, chat: H16, ohat: OFF, rim: 'x..x..x...x.x...', perc: '..x..x.x..x..xx.', fill: 'snare' },
+    mel: { mode: 'motif', dens: .45, oct: 72 },
+    pump: { chords: [.45, .2], bass: [.45, .18], melody: [.25, .2] },
+    var: [{ prog: [0, 6, 5, 6] }, { scale: 'harmonic', prog: [0, 3, 5, 4] }, { prog: [0, 0, 5, 6], mm: 'chop', md: .8 }, { scale: 'dorian', prog: [0, 3, 0, 3], bp: 'funk', md: 1.1 }] });
+  H.sound.melody = 'cl-fm-marimba'; H.sound.drums = 'latin';
+  S.blackcoffee.mel = { mode: 'motif', dens: .3, oct: 72 }; S.blackcoffee.sound.melody = 'cl-bell-pluck';
+  S.solomun.mel = { mode: 'motif', dens: .4, oct: 72 }; S.solomun.sound.melody = 'cl-analog-pluck'; S.solomun.sound.drums = 'club';
+  S.solomun.chord = { mode: 'stab', pats: ['house', 'push'] }; S.solomun.sound.chords = 'cl-deep-chord-stab';
+  S.solomun.var[2] = { prog: [0, 6, 5, 4], cm: 'sustain', cp: 'long', md: .7 };
+  S.monique.mel = { mode: 'motif', dens: .45, oct: 72 }; S.monique.sound.melody = 'cl-analog-pluck'; S.monique.sound.drums = 'club';
+  S.orhan.mel = { mode: 'motif', dens: .45, oct: 72 }; S.orhan.sound.melody = 'cl-oriental-pluck';
+  ['maup', 'domdolla', 'fisher'].forEach(id => { S[id].sound.drums = 'club'; });
+  // --- MoBlack (Afro house): Afrika davulları ve elektronik sesler
+  const mb = { id: 'moblack', artist: 'MoBlack', grp: 'afro', accent: '#d9a441', bpm: [120, 124], bpmDef: 122, key: 2, scales: ['minor', 'phrygian', 'dorian'], swing: 10,
+    chord: { mode: 'stab', pats: ['afroStab', 'sparse'] }, bass: { pats: ['afroSub'], oct: 36 },
+    drums: { kick: K4, clap: '........x.......', chat: H8O, ohat: OFF, rim: '..x..x....x..x..', perc: 'x..x.xx...x.x.x.', fill: 'none' },
+    mel: { mode: 'motif', dens: .35, oct: 72 },
+    sound: { chords: 'cl-tribal-chord', bass: 'cl-tribal-sub', melody: 'cl-mallet-hook', drums: 'tribal' },
+    pump: { chords: [.35, .25], bass: [.35, .2], melody: [.15, .2] },
+    arr: [['Intro', 32], ['Groove', 32], ['Break', 16], ['Groove', 32], ['Outro', 32]],
+    var: [{ prog: [0, 0, 6, 0] }, { scale: 'phrygian', prog: [0, 1, 0, 6] }, { prog: [0, 3, 0, 6], cm: 'sustain', cp: 'long', md: .7 }, { scale: 'dorian', prog: [0, 3, 0, 3], mm: 'chop', md: .6 }] };
+  HG.STYLES.push(mb); S.moblack = mb;
+  HG.SIG = /^(wj|gt|ar|dd|mp|dv|cw|cc|mg|an|al|tt|fa|fi|ip|sl|so|mm|mo|hu|bc|gu|ti|um|mq|cl)-/;
+  MB.SOUNDS.forEach(s => { MB.byId[s.id] = s; });
+  Object.assign(HG.EN, EN);
+})();

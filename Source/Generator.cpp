@@ -345,6 +345,30 @@ Result generate (const Data& data, const GenParams& P)
             }
         }
     }
+    else if (mmode == "motif")
+    {
+        // kulüp hook'u (JS ile aynı): 2-5 notalık tek ölçülük motif, çift ölçüde cevap (son nota boş), 4. ölçüde dönüş
+        const std::vector<int> cand { 0, 3, 6, 8, 10, 11, 14 };
+        const int cnt = clampT ((int) jsRound (2 + dens * 4), 2, 5);
+        auto pool = cand; std::vector<int> hits;
+        while ((int) hits.size() < cnt && ! pool.empty()) { size_t i = (size_t) std::floor (rm() * (double) pool.size()); hits.push_back (pool[i]); pool.erase (pool.begin() + (long) i); }
+        std::stable_sort (hits.begin(), hits.end());
+        std::vector<int> shape, lens;
+        for (size_t j = 0; j < hits.size(); ++j) shape.push_back (pickFrom (rm, std::vector<int> { 0, 0, 2, 4, 7, -1 }));
+        for (size_t j = 0; j < hits.size(); ++j) lens.push_back (rm() < .7 ? 1 : 2);
+        const int resp = pickFrom (rm, std::vector<int> { 2, -1, 4 });
+        for (int b = 0; b < bars; ++b)
+        {
+            const auto& c = R.chords[(size_t) b];
+            const int n = (b % 2 == 1 && hits.size() > 2) ? (int) hits.size() - 1 : (int) hits.size();
+            for (int j = 0; j < n; ++j)
+            {
+                const int s = hits[(size_t) j]; const double nx = j + 1 < n ? hits[(size_t) j + 1] : 16;
+                const int dg = c.d + shape[(size_t) j] + ((b % 4 == 3 && j == n - 1) ? resp : 0);
+                addM (b, s, std::min ((double) lens[(size_t) j], nx - s), mbase + deg (dg), s % 4 == 0 ? 104 : 90);
+            }
+        }
+    }
     else // chop
     {
         const std::vector<int> cand { 0, 2, 3, 5, 6, 7, 10, 11, 14 };

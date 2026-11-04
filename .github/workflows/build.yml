@@ -87,7 +87,7 @@ jobs:
           art=$(find build -type d -name "WavejackersHitGen_artefacts" | head -1)
           cp -R "$art"/Release/* dist/ 2>/dev/null || cp -R "$art"/* dist/
           rm -f dist/*.a dist/*.lib
-          cp README.md dist/
+          cp README.txt dist/
           cp -R shots dist/screenshots
 
       - uses: actions/upload-artifact@v4
@@ -114,4 +114,4 @@ jobs:
           done
           tag="build-${{ github.run_number }}"
           ver=$(sed -n 's/^project(WavejackersHitGen VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt | cut -d. -f1,2)
-          gh release create "$tag" out/*.zip --repo "${{ github.repository }}" --title "Wavejackers HitGen ${ver} — indirilebilir sürüm ($tag)" --notes "Windows, macOS ve Linux için hazır dosyalar. Kurulum: README.md" --latest
+          gh release create "$tag" out/*.zip --repo "${{ github.repository }}" --title "Wavejackers HitGen ${ver} — indirilebilir sürüm ($tag)" --notes "Windows, macOS ve Linux için hazır dosyalar. Kurulum: README.txt" --latest

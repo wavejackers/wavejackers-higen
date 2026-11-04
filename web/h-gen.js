@@ -168,6 +168,22 @@ HG.generate = function (P) {
       const rootM = (S.mel.oct || 60) + ((c.pc - ((S.mel.oct || 60) % 12) + 12) % 12);
       riff.forEach(([s, o], j) => { const nx = j + 1 < riff.length ? riff[j + 1][0] : 16; addM(b, s, Math.min(nx - s, rm() < .3 ? 2 : 1), rootM + o, s % 4 === 0 ? 102 : 84); });
     }
+  } else if (mmode === 'motif') {
+    // kulüp hook'u: 2-5 notalık tek ölçülük kısa motif; her ölçü tekrar edilir, çift ölçüler "cevap" olarak son notayı boş bırakır,
+    // 4. ölçü son notayı küçük bir adımla döndürür. Notalar akorun derecesini izler (uzun melodi yerine akılda kalan kısa bir motif).
+    const cand = [0, 3, 6, 8, 10, 11, 14], cnt = clamp(Math.round(2 + dens * 4), 2, 5);
+    const pool = cand.slice(), hits = [];
+    while (hits.length < cnt && pool.length) hits.push(pool.splice(Math.floor(rm() * pool.length), 1)[0]);
+    hits.sort((a, z) => a - z);
+    const shape = hits.map(() => pick(rm, [0, 0, 2, 4, 7, -1])), lens = hits.map(() => rm() < .7 ? 1 : 2), resp = pick(rm, [2, -1, 4]);
+    for (let b = 0; b < bars; b++) {
+      const c = chords[b], n = (b % 2 === 1 && hits.length > 2) ? hits.length - 1 : hits.length;
+      for (let j = 0; j < n; j++) {
+        const s = hits[j], nx = j + 1 < n ? hits[j + 1] : 16;
+        const dg = c.d + shape[j] + ((b % 4 === 3 && j === n - 1) ? resp : 0);
+        addM(b, s, Math.min(lens[j], nx - s), mbase + deg(dg), s % 4 === 0 ? 104 : 90);
+      }
+    }
   } else { // chop
     const cand = [0, 2, 3, 5, 6, 7, 10, 11, 14], cnt = Math.round(3 + dens * 6);
     const mk = () => { const p = cand.slice(), out = []; while (out.length < cnt && p.length) out.push(p.splice(Math.floor(rm() * p.length), 1)[0]); return out.sort((a, z) => a - z); };

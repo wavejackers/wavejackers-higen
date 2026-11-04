@@ -56,6 +56,22 @@ juce::AudioProcessorValueTreeState::ParameterLayout HitGenProcessor::createLayou
         L.add (std::make_unique<AudioParameterFloat> (pid ("rev_" + n), "Reverb " + n, NormalisableRange<float> (-1, 1, .01f), 0, sgn));
         L.add (std::make_unique<AudioParameterFloat> (pid ("dly_" + n), "Delay " + n, NormalisableRange<float> (-1, 1, .01f), 0, sgn));
     }
+    // ---- 2.7: ses yüksekliği ve davul makinesi
+    L.add (std::make_unique<AudioParameterChoice> (pid ("loudness"), "Loudness -14 LUFS", StringArray { "Off", "On" }, 1));
+    L.add (std::make_unique<AudioParameterChoice> (pid ("drumCreative"), "Drum creative mode", StringArray { "Off", "On" }, 0));
+    auto st = AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { const int x = roundToInt (v * 10); return (x > 0 ? "+" : "") + String (x / 10.0, 1) + " st"; });
+    auto db = AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return (v > 0.05f ? "+" : "") + String (v, 1) + " dB"; });
+    for (int pad = 0; pad < hg::kNumPads; ++pad)
+    {
+        const String n (hg::kPadIds[pad]), N = n.substring (0, 1).toUpperCase() + n.substring (1);
+        L.add (std::make_unique<AudioParameterFloat> (pid ("dm_" + n + "_level"), "Drum " + N + " level", NormalisableRange<float> (0, 150, 1), 100, pct));
+        L.add (std::make_unique<AudioParameterFloat> (pid ("dm_" + n + "_tune"), "Drum " + N + " tune", NormalisableRange<float> (-12, 12, .1f), 0, st));
+        L.add (std::make_unique<AudioParameterFloat> (pid ("dm_" + n + "_decay"), "Drum " + N + " decay", NormalisableRange<float> (25, 200, 1), 100, pct));
+        L.add (std::make_unique<AudioParameterFloat> (pid ("dm_" + n + "_punch"), "Drum " + N + " punch", NormalisableRange<float> (0, 100, 1), 50, pct));
+        L.add (std::make_unique<AudioParameterFloat> (pid ("dm_" + n + "_soft"), "Drum " + N + " soft", NormalisableRange<float> (0, 100, 1), 0, pct));
+        L.add (std::make_unique<AudioParameterFloat> (pid ("dm_" + n + "_mid"), "Drum " + N + " mid", NormalisableRange<float> (-12, 12, .1f), 0, db));
+        L.add (std::make_unique<AudioParameterFloat> (pid ("dm_" + n + "_high"), "Drum " + N + " high", NormalisableRange<float> (-12, 12, .1f), 0, db));
+    }
     hg::addSoundParams (L);
     return L;
 }
@@ -81,6 +97,9 @@ HitGenProcessor::HitGenProcessor()
         q.cut = apvts.getRawParameterValue ("cut_" + n); q.res = apvts.getRawParameterValue ("res_" + n); q.atk = apvts.getRawParameterValue ("atk_" + n);
         q.rel = apvts.getRawParameterValue ("rel_" + n); q.drv = apvts.getRawParameterValue ("drv_" + n); q.rev = apvts.getRawParameterValue ("rev_" + n); q.dly = apvts.getRawParameterValue ("dly_" + n);
     }
+    for (int pad = 0; pad < hg::kNumPads; ++pad)
+        for (int k = 0; k < kDmCtl; ++k) dmPtr[(size_t) pad][(size_t) k] = apvts.getRawParameterValue (dmParamId (pad, k));
+    pLoud = p ("loudness"); pCreative = p ("drumCreative");
     pQuality = p ("quality"); pThick = p ("thick"); pPump = p ("pump"); pMaster = p ("master"); pBpm = p ("bpm"); pPattern = p ("pattern"); pMidiOut = p ("midiOut"); pKeysTo = p ("keysTo");
     auto ul = juce::SystemStats::getUserLanguage().substring (0, 2).toLowerCase();
     lang = data.langCodes.contains (ul) ? ul : "en";
@@ -382,6 +401,16 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     const int q = (int) pQuality->load();
     engine.quality = q == 0 ? hg::Quality { 2, 32, false } : q == 2 ? hg::Quality { 7, 8, true } : hg::Quality { 4, 16, true };
     engine.thick = pThick->load() / 100.0f; engine.pumpAmt = pPump->load() / 100.0f; engine.master = pMaster->load();
+    engine.loudnessOn = pLoud->load() > .5f;
+    {
+        auto& dm = engine.drumMachine; dm.creative = pCreative->load() > .5f;
+        for (int pad = 0; pad < hg::kNumPads; ++pad)
+        {
+            const auto& dp = dmPtr[(size_t) pad]; auto& c = dm.ctl[(size_t) pad];
+            c.level = dp[0]->load() / 100.0f; c.tune = dp[1]->load(); c.decay = dp[2]->load() / 100.0f; c.punch = dp[3]->load() / 100.0f;
+            c.soft = dp[4]->load() / 100.0f; c.mid = dp[5]->load(); c.high = dp[6]->load();
+        }
+    }
 
     // taşıma
     bool hostPlay = false; double ppq = 0, bpm = pBpm->load(); bool hasHostBpm = false;
@@ -399,7 +428,7 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     const bool run = pPattern->load() > .5f && (hostPlay || preview) && livePattern != nullptr;
     const bool mOut = pMidiOut->load() > .5f;
     const int keysSel = (int) pKeysTo->load(), aud = auditionPart.load();
-    const int keysTrack = aud >= 0 ? trackOfPart (aud) : keysSel == 0 ? hg::kChords : keysSel == 1 ? hg::kBass : hg::kMelody;
+    const int keysTrack = aud == 3 ? hg::kDrums : aud >= 0 ? trackOfPart (aud) : keysSel == 0 ? hg::kChords : keysSel == 1 ? hg::kBass : hg::kMelody;   // 3: davul makinesi açık
 
     const bool sampOn = ref.sampler.enabled.load();
     numBlockEv = 0;
@@ -467,8 +496,8 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 offs[(size_t) numOffs++] = { sampleClock + e.off + lenS, ch, e.note };
             }
         }
-        else if (e.kind == 1) { if (sampOn) ref.samplerNoteOn (e.note, e.vel, e.off); else engine.noteOn (e.track, e.note, e.vel, -1, 0); }
-        else { if (sampOn) ref.samplerNoteOff (e.note); else engine.noteOff (e.track, e.note, 0); }
+        else if (e.kind == 1) { if (sampOn && e.track != hg::kDrums) ref.samplerNoteOn (e.note, e.vel, e.off); else engine.noteOn (e.track, e.note, e.vel, -1, 0); }
+        else { if (sampOn && e.track != hg::kDrums) ref.samplerNoteOff (e.note); else engine.noteOff (e.track, e.note, 0); }
     }
     if (pos < n) engine.render (buffer, pos, n - pos);
     if (sampOn || wasSamp) ref.renderSampler (buffer, getSampleRate());
@@ -528,6 +557,7 @@ juce::ValueTree HitGenProcessor::stateTree()
     extra.setProperty ("sdv", 1, nullptr);   // ses tasarımı parametreleri geçerli (2.2+)
     extra.setProperty ("userArtist", userArtist, nullptr); extra.setProperty ("userPreset", userPreset, nullptr);
     if (ref.hasPath() || ref.sampler.enabled.load() || ref.sampler.enabled.load()) extra.setProperty ("ref", juce::JSON::toString (ref.stateToVar(), true), nullptr);
+    for (int pad = 0; pad < hg::kNumPads; ++pad) { const auto sp = drumSamplePath (pad); if (sp.isNotEmpty()) extra.setProperty (juce::String ("dmSample_") + hg::kPadIds[pad], sp, nullptr); }
     state.removeChild (state.getChildWithName ("extra"), nullptr);
     state.removeChild (state.getChildWithName ("midimap"), nullptr);     // MIDI eşlemeleri preset'e girmez
     state.appendChild (extra, nullptr);
@@ -571,6 +601,14 @@ void HitGenProcessor::restoreFromTree (const juce::ValueTree& source, bool inclu
             manual[(size_t) t] = (bool) extra.getProperty (juce::String ("manual_") + kPartIds[t]);
         }
         sdValid = (int) extra.getProperty ("sdv", 0) >= 1;
+        missingSamples.clear();
+        for (int pad = 0; pad < hg::kNumPads; ++pad)
+        {
+            const auto path = extra.getProperty (juce::String ("dmSample_") + hg::kPadIds[pad]).toString();
+            juce::String err;
+            if (path.isEmpty()) { if (drumSamplePath (pad).isNotEmpty()) clearDrumSample (pad); }
+            else if (path != drumSamplePath (pad) && ! loadDrumSample (pad, juce::File (path), err, false)) { missingSamples.add (juce::File (path).getFileName()); clearDrumSample (pad); }
+        }
         userArtist = extra.getProperty ("userArtist").toString().substring (0, 80);
         userPreset = extra.getProperty ("userPreset").toString().substring (0, 80);
         if (includeUi)
@@ -608,6 +646,113 @@ bool HitGenProcessor::loadPreset (const juce::File& f)
     restoreFromTree (tree, false);
     userArtist = info.artist; userPreset = info.name;
     return true;
+}
+
+// ---------------------------------------------------------------- davul makinesi: örnekler ve kitler
+juce::String HitGenProcessor::dmParamId (int pad, int k)
+{
+    static const char* const s[kDmCtl] = { "level", "tune", "decay", "punch", "soft", "mid", "high" };
+    return juce::String ("dm_") + hg::kPadIds[juce::jlimit (0, hg::kNumPads - 1, pad)] + "_" + s[juce::jlimit (0, kDmCtl - 1, k)];
+}
+
+bool HitGenProcessor::isDrumSampleFile (const juce::File& f)
+{
+    for (auto* e : { ".wav", ".aif", ".aiff", ".flac", ".mp3", ".ogg" }) if (f.hasFileExtension (e)) return true;
+    return false;
+}
+
+bool HitGenProcessor::loadDrumSample (int pad, const juce::File& f, juce::String& err, bool enableCreative)
+{
+    if (pad < 0 || pad >= hg::kNumPads) return false;
+    if (! f.existsAsFile()) { err = "dmNoFile"; return false; }
+    juce::AudioFormatManager fm; fm.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (f));
+    if (r == nullptr || r->sampleRate < 8000 || r->lengthInSamples < 16) { err = "dmBadFile"; return false; }
+    const int len = (int) std::min<juce::int64> (r->lengthInSamples, (juce::int64) (r->sampleRate * 12.0));   // en çok 12 sn
+    auto s = std::make_unique<hg::DrumSample>();
+    const int ch = juce::jlimit (1, 2, (int) r->numChannels);
+    s->buf.setSize (ch, len); s->buf.clear();
+    if (! r->read (&s->buf, 0, len, 0, true, ch > 1)) { err = "dmBadFile"; return false; }
+    // baştaki sessizliği kırp (ped hemen vursun) ve tepeyi 0.95'e getir
+    int start = 0; const float thr = s->buf.getMagnitude (0, len) * 0.02f;
+    while (start < len - 16) { bool loud = false; for (int c = 0; c < ch; ++c) if (std::abs (s->buf.getSample (c, start)) > thr) loud = true; if (loud) break; ++start; }
+    if (start > 0) { juce::AudioBuffer<float> t (ch, len - start); for (int c = 0; c < ch; ++c) t.copyFrom (c, 0, s->buf, c, start, len - start); s->buf = std::move (t); }
+    const float pk = s->buf.getMagnitude (0, s->buf.getNumSamples());
+    if (pk < 1e-5f) { err = "dmSilent"; return false; }
+    s->buf.applyGain (0.95f / pk);
+    s->rate = r->sampleRate; s->path = f.getFullPathName(); s->name = f.getFileNameWithoutExtension();
+    engine.drumMachine.setSample (pad, std::move (s));
+    { const juce::ScopedLock sl (drumLock); drumSamples[(size_t) pad] = f.getFullPathName(); }
+    if (enableCreative) if (auto* pr = apvts.getParameter ("drumCreative")) if (pr->getValue() < .5f) { pr->beginChangeGesture(); pr->setValueNotifyingHost (1.0f); pr->endChangeGesture(); }
+    return true;
+}
+
+void HitGenProcessor::clearDrumSample (int pad)
+{
+    if (pad < 0 || pad >= hg::kNumPads) return;
+    engine.drumMachine.setSample (pad, nullptr); const juce::ScopedLock sl (drumLock); drumSamples[(size_t) pad].clear();
+}
+
+juce::File HitGenProcessor::drumKitFolder()
+{
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("Wavejackers").getChildFile ("HitGen").getChildFile ("Kits");
+}
+
+juce::Array<juce::File> HitGenProcessor::drumKitFiles()
+{
+    auto d = drumKitFolder(); juce::Array<juce::File> out;
+    if (d.isDirectory()) out = d.findChildFiles (juce::File::findFiles, false, "*.hgkit");
+    out.sort(); return out;
+}
+
+bool HitGenProcessor::saveDrumKit (const juce::String& name, juce::File& written)
+{
+    const auto nm = juce::File::createLegalFileName (name.trim().substring (0, 60)).trim(); if (nm.isEmpty()) return false;
+    auto* root = new juce::DynamicObject(); root->setProperty ("hgkit", 1); root->setProperty ("name", name.trim().substring (0, 60));
+    auto* pads = new juce::DynamicObject();
+    for (int pad = 0; pad < hg::kNumPads; ++pad)
+    {
+        auto* o = new juce::DynamicObject();
+        for (int k = 0; k < kDmCtl; ++k) o->setProperty (dmParamId (pad, k).fromLastOccurrenceOf ("_", false, false), dmPtr[(size_t) pad][(size_t) k]->load());
+        if (drumSamplePath (pad).isNotEmpty()) o->setProperty ("sample", drumSamplePath (pad));
+        pads->setProperty (hg::kPadIds[pad], juce::var (o));
+    }
+    root->setProperty ("pads", juce::var (pads));
+    auto d = drumKitFolder(); d.createDirectory();
+    written = d.getChildFile (nm + ".hgkit");
+    return written.replaceWithText (juce::JSON::toString (juce::var (root), false));
+}
+
+bool HitGenProcessor::loadDrumKit (const juce::File& f, juce::StringArray& missing)
+{
+    if (f.getSize() > 200000) return false;
+    const auto v = juce::JSON::parse (f.loadFileAsString());
+    if (! v.isObject() || (int) v["hgkit"] < 1) return false;
+    const auto pads = v["pads"];
+    for (int pad = 0; pad < hg::kNumPads; ++pad)
+    {
+        const auto o = pads[juce::Identifier (hg::kPadIds[pad])];
+        for (int k = 0; k < kDmCtl; ++k)
+        {
+            const auto key = dmParamId (pad, k).fromLastOccurrenceOf ("_", false, false);
+            auto* pr = apvts.getParameter (dmParamId (pad, k)); if (pr == nullptr) continue;
+            const auto& rg = apvts.getParameterRange (dmParamId (pad, k));
+            const float plain = o.hasProperty (juce::Identifier (key)) ? (float) (double) o[juce::Identifier (key)] : rg.convertFrom0to1 (pr->getDefaultValue());
+            pr->beginChangeGesture(); pr->setValueNotifyingHost (rg.convertTo0to1 (rg.snapToLegalValue (plain))); pr->endChangeGesture();
+        }
+        const auto path = o["sample"].toString(); juce::String err;
+        if (path.isEmpty()) clearDrumSample (pad);
+        else if (! loadDrumSample (pad, juce::File (path), err, false)) { missing.add (juce::File (path).getFileName()); clearDrumSample (pad); }
+    }
+    if (auto* pr = apvts.getParameter ("drumCreative")) { pr->beginChangeGesture(); pr->setValueNotifyingHost (1.0f); pr->endChangeGesture(); }
+    return true;
+}
+
+void HitGenProcessor::resetDrumPad (int pad)
+{
+    for (int k = 0; k < kDmCtl; ++k)
+        if (auto* pr = apvts.getParameter (dmParamId (pad, k))) { pr->beginChangeGesture(); pr->setValueNotifyingHost (pr->getDefaultValue()); pr->endChangeGesture(); }
+    clearDrumSample (pad);
 }
 
 juce::AudioProcessorEditor* HitGenProcessor::createEditor() { return new HitGenEditor (*this); }

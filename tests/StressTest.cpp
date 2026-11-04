@@ -8,6 +8,8 @@
 #include "../Source/SoundParams.h"
 #include "../Source/DnaLibrary.h"
 #include "../Source/Assist.h"
+#include "../Source/DrumMachine.h"
+#include "../Source/Loudness.h"
 #include <iostream>
 #include <functional>
 #include <memory>
@@ -320,6 +322,204 @@ static void testLibrary (const FailFn& fail)
     }
 }
 
+
+static void snapPng (juce::Component& c, const juce::File& f)
+{
+    auto img = c.createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f);
+    f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os);
+}
+
+// -14 LUFS: oynatma sırasında kayan entegre ses yüksekliği hedefe oturmalı, tepe -1 dBFS altında kalmalı
+static void testLoudness (const juce::File& outDir, const FailFn& fail, bool quick)
+{
+    for (auto* id : { "hugel", "wavejackers", "guetta", "landry", "blackcoffee", "moblack", "solomun", "monique", "orhan" })
+    {
+        auto p_h = std::make_unique<HitGenProcessor>(); auto& p = *p_h; FakeHead head; p.setPlayHead (&head);
+        p.setPlayConfigDetails (0, 2, 48000, 512); p.prepareToPlay (48000, 512);
+        setP (p, "style", (float) p.data.styleIndex (id)); p.applyStyleDefaults(); p.regenerateNow(); head.bpm = (double) p.data.style (p.data.styleIndex (id))["bpmDef"];
+        const double secs = quick ? 24.0 : 40.0, measure = quick ? 10.0 : 20.0; const int total = (int) (48000 * secs) / 512 * 512, mstart = (int) (48000 * (secs - measure)) / 512 * 512;
+        juce::AudioBuffer<float> buf (2, 512), rec (2, total - mstart); rec.clear(); juce::MidiBuffer midi; float pk = 0; bool nan = false;
+        for (int pos = 0; pos < total; pos += 512)
+        {
+            buf.clear(); midi.clear(); p.processBlock (buf, midi); head.ppq += 512 * head.bpm / 60.0 / 48000.0;
+            for (int c = 0; c < 2; ++c) for (int i = 0; i < 512; ++i) { const float x = buf.getSample (c, i); if (! std::isfinite (x)) nan = true; }
+            if (pos >= mstart) { const int n = juce::jmin (512, total - pos); for (int c = 0; c < 2; ++c) rec.copyFrom (c, pos - mstart, buf, c, 0, n); pk = juce::jmax (pk, buf.getMagnitude (0, 512)); }
+        }
+        hg::LoudnessMeter m; m.prepare (48000); m.add (rec.getReadPointer (0), rec.getReadPointer (1), rec.getNumSamples());
+        std::cout << "loudness " << id << " " << juce::String (m.integrated(), 2) << " LUFS (last " << measure << " s), peak " << juce::String (juce::Decibels::gainToDecibels (pk), 2) << " dBFS, gain " << juce::String (p.engine.loudness.gainDb.load(), 1) << " dB\n";
+        if (nan) fail ("loudness NaN " + juce::String (id));
+        if (std::abs (m.integrated() + 14.0f) > 1.0f) fail ("loudness off target " + juce::String (id) + ": " + juce::String (m.integrated(), 2));
+        if (pk > .8914f) fail ("loudness peak above -1 dBFS " + juce::String (id));
+        const bool demo = juce::SystemStats::getEnvironmentVariable ("HITGEN_DEMO", {}).isNotEmpty();   // dinleme için WAV (CI'da yazılmaz)
+        if (demo)
+        {
+            auto f = outDir.getChildFile ("demo-" + juce::String (id) + ".wav"); f.deleteFile();
+            if (auto os = std::unique_ptr<juce::FileOutputStream> (f.createOutputStream()))
+            {
+                juce::WavAudioFormat wav;
+                if (auto w = std::unique_ptr<juce::AudioFormatWriter> (wav.createWriterFor (os.get(), 48000, 2, 24, {}, 0))) { os.release(); w->writeFromAudioSampleBuffer (rec, 0, rec.getNumSamples()); }
+            }
+        }
+        if (juce::String (id) == "hugel")
+        {
+            // master %50: normalleştirmeden sonra uygulanır (yaklaşık -20 LUFS)
+            setP (p, "master", .5f); const int t2 = 48000 * 8 / 512 * 512; juce::AudioBuffer<float> r2 (2, t2); r2.clear();
+            for (int pos = 0; pos < t2; pos += 512) { buf.clear(); midi.clear(); p.processBlock (buf, midi); head.ppq += 512 * head.bpm / 60.0 / 48000.0; for (int c = 0; c < 2; ++c) r2.copyFrom (c, pos, buf, c, 0, juce::jmin (512, t2 - pos)); }
+            hg::LoudnessMeter m2; m2.prepare (48000); m2.add (r2.getReadPointer (0), r2.getReadPointer (1), t2);
+            if (std::abs (m2.integrated() + 20.0f) > 1.5f) fail ("loudness with master 50%: " + juce::String (m2.integrated(), 2));
+            std::cout << "loudness hugel master 50%: " << juce::String (m2.integrated(), 2) << " LUFS\n";
+        }
+    }
+    // ölçer doğrulaması: 997 Hz, -20 dBFS tepe sinüs (stereo) = -23.0 LUFS civarı (BS.1770 kalibrasyonu: 1 kHz 0 dBFS mono -3.01)
+    {
+        hg::LoudnessMeter m; m.prepare (48000); juce::AudioBuffer<float> b (2, 48000 * 6);
+        for (int i = 0; i < b.getNumSamples(); ++i) { const float x = 0.1f * (float) std::sin (2 * juce::MathConstants<double>::pi * 997.0 * i / 48000.0); b.setSample (0, i, x); b.setSample (1, i, x); }
+        m.add (b.getReadPointer (0), b.getReadPointer (1), b.getNumSamples());
+        std::cout << "meter check: 997 Hz -20 dBFS stereo sine = " << juce::String (m.integrated(), 2) << " LUFS (expected -20.0 +/- 0.2)\n";
+        if (std::abs (m.integrated() + 20.0f) > 0.2f) fail ("loudness meter calibration " + juce::String (m.integrated(), 2));
+    }
+}
+
+static double zcrOf (const juce::AudioBuffer<float>& b, int from, int n, double sr)
+{
+    int z = 0; for (int i = from + 1; i < from + n; ++i) if ((b.getSample (0, i - 1) < 0) != (b.getSample (0, i) < 0)) ++z;
+    return z / 2.0 / (n / sr);
+}
+
+static void testDrumMachine (const juce::File& outDir, const FailFn& fail)
+{
+    // 1) DSP birimi: her ped sesli ve sonlu; Punch / Soft / Mid / High gerçekten etkili
+    {
+        hg::DrumMachine dm; dm.prepare (48000); dm.setKit (hg::AnalogKit {});
+        auto renderPad = [&dm] (int pad, const hg::PadControls& c, juce::AudioBuffer<float>& out)
+        {
+            dm.reset(); dm.creative = true; dm.ctl[(size_t) pad] = c; out.setSize (2, 48000 / 2); out.clear();
+            dm.hit (hg::kPadNotes[pad], 110); dm.render (out.getWritePointer (0), out.getWritePointer (1), out.getNumSamples());
+        };
+        auto hfRatio = [] (const juce::AudioBuffer<float>& b, int len = 0) { double e = 0, d = 0; for (int i = 1; i < (len > 0 ? len : b.getNumSamples()); ++i) { const float x = b.getSample (0, i), y = x - b.getSample (0, i - 1); e += x * x; d += y * y; } return e > 0 ? d / e : 0.0; };
+        auto energy = [] (const juce::AudioBuffer<float>& b, int a, int n) { double e = 0; for (int i = a; i < a + n && i < b.getNumSamples(); ++i) e += b.getSample (0, i) * b.getSample (0, i); return e; };
+        juce::AudioBuffer<float> base, other;
+        for (int pad = 0; pad < hg::kNumPads; ++pad)
+        {
+            renderPad (pad, {}, base); bool finite = true; for (int i = 0; i < base.getNumSamples(); ++i) if (! std::isfinite (base.getSample (0, i))) finite = false;
+            if (! finite || base.getMagnitude (0, base.getNumSamples()) < 0.02f) fail ("drum pad silent or NaN: " + juce::String (hg::kPadIds[pad]));
+            hg::PadControls c; c.punch = 1.0f; renderPad (pad, c, other);
+            if (energy (other, 0, 480) <= energy (base, 0, 480) * 1.15) fail ("punch has no effect on " + juce::String (hg::kPadIds[pad]));
+            c = {}; c.soft = 1.0f; renderPad (pad, c, other);
+            if (hfRatio (other, 960) >= hfRatio (base, 960) * 0.9) fail ("soft does not soften the attack of " + juce::String (hg::kPadIds[pad]));   // ilk 20 ms: vuruş anı
+            c = {}; c.high = 12.0f; renderPad (pad, c, other);
+            if (hfRatio (other) <= hfRatio (base) * 1.05) fail ("high EQ has no effect on " + juce::String (hg::kPadIds[pad]));
+            c = {}; c.mid = -12.0f; renderPad (pad, c, other);
+            if (std::abs (energy (other, 0, 24000) - energy (base, 0, 24000)) < energy (base, 0, 24000) * 0.02) fail ("mid EQ has no effect on " + juce::String (hg::kPadIds[pad]));
+            c = {}; c.decay = 0.3f; renderPad (pad, c, other);
+            if (energy (other, 4800, 19000) >= energy (base, 4800, 19000) && energy (base, 4800, 19000) > 1e-6) fail ("decay has no effect on " + juce::String (hg::kPadIds[pad]));
+        }
+        // kick tonu: +12 yarım ses gövde frekansını ikiye katlar
+        { hg::PadControls c; renderPad (hg::kPadKick, c, base); c.tune = 12; renderPad (hg::kPadKick, c, other);
+          const double z0 = zcrOf (base, 4800, 4800, 48000), z1 = zcrOf (other, 4800, 4800, 48000);
+          if (z1 < z0 * 1.6) fail ("kick tune: " + juce::String (z0) + " -> " + juce::String (z1)); }
+        // kapalı mod: kontroller yok sayılır
+        { hg::PadControls c; c.level = 0.0f; dm.reset(); dm.creative = false; dm.ctl[0] = c; base.setSize (2, 4800); base.clear(); dm.hit (36, 110); dm.render (base.getWritePointer (0), base.getWritePointer (1), 4800);
+          if (base.getMagnitude (0, 4800) < 0.05f) fail ("creative off should ignore pad controls"); }
+        std::cout << "drum machine DSP ok (7 pads: punch, soft, mid, high, decay, tune)\n";
+    }
+    // 2) örnek yükleme, ton, durum, kit dosyaları, sıfırlama
+    auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("hitgen-drum-test"); tmp.deleteRecursively(); tmp.createDirectory();
+    auto wavFile = tmp.getChildFile ("my kick.wav");
+    {
+        juce::AudioBuffer<float> s (2, 44100 * 3 / 10);
+        for (int i = 0; i < s.getNumSamples(); ++i) { const float x = (i < 200 ? 0.0f : 0.6f) * (float) std::sin (2 * juce::MathConstants<double>::pi * 1000.0 * i / 44100.0) * std::exp (-i / 9000.0f); s.setSample (0, i, x); s.setSample (1, i, x); }
+        juce::WavAudioFormat wav; auto os = std::unique_ptr<juce::FileOutputStream> (wavFile.createOutputStream());
+        if (auto w = std::unique_ptr<juce::AudioFormatWriter> (wav.createWriterFor (os.get(), 44100, 2, 16, {}, 0))) { os.release(); w->writeFromAudioSampleBuffer (s, 0, s.getNumSamples()); }
+    }
+    auto p_h = std::make_unique<HitGenProcessor>(); auto& p = *p_h; FakeHead head; head.playing = false; p.setPlayHead (&head);
+    p.setPlayConfigDetails (0, 2, 48000, 512); p.prepareToPlay (48000, 512);
+    setP (p, "loudness", 0); setP (p, "pattern", 0); setP (p, "vol_drums", .5f);
+    auto hear = [&p] (int pad, double secs) { juce::AudioBuffer<float> out (2, (int) (48000 * secs)), b (2, 512); juce::MidiBuffer mb; p.engine.drumMachine.audition (pad, 110);
+        for (int pos = 0; pos < out.getNumSamples(); pos += 512) { b.clear(); mb.clear(); p.processBlock (b, mb); for (int c = 0; c < 2; ++c) out.copyFrom (c, pos, b, c, 0, juce::jmin (512, out.getNumSamples() - pos)); }
+        return out; };
+    juce::String err;
+    if (p.loadDrumSample (hg::kPadKick, tmp.getChildFile ("missing.wav"), err) || err != "dmNoFile") fail ("missing sample accepted");
+    { auto junk = tmp.getChildFile ("junk.wav"); junk.replaceWithText ("not audio"); if (p.loadDrumSample (hg::kPadKick, junk, err)) fail ("junk sample accepted"); }
+    if (! p.loadDrumSample (hg::kPadKick, wavFile, err)) fail ("sample load: " + err);
+    if (p.apvts.getRawParameterValue ("drumCreative")->load() < .5f) fail ("loading a sample should turn creative mode on");
+    { auto out = hear (hg::kPadKick, 0.25); const double z = zcrOf (out, 1000, 6000, 48000); if (z < 850 || z > 1150) fail ("sample pad pitch: " + juce::String (z) + " Hz");
+      setP (p, "dm_kick_tune", 12); auto o2 = hear (hg::kPadKick, 0.25); const double z2 = zcrOf (o2, 1000, 4000, 48000); if (z2 < 1800 || z2 > 2200) fail ("sample tune +12: " + juce::String (z2) + " Hz");
+      setP (p, "dm_kick_tune", 0); std::cout << "sample pad: " << juce::String (z, 0) << " Hz, +12 st " << juce::String (z2, 0) << " Hz\n"; }
+    // klavye: davul sayfası açıkken MIDI notaları pedleri çalar
+    { p.auditionPart.store (3); p.engine.drumMachine.lastHit.store (-1); juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer mb; mb.addEvent (juce::MidiMessage::noteOn (1, 38, (juce::uint8) 100), 0); p.processBlock (b, mb);
+      if (p.engine.drumMachine.lastHit.load() != hg::kPadSnare) fail ("MIDI note 38 did not play the snare pad"); p.auditionPart.store (-1); }
+    // durum: örnek yolu projeyle kaydedilir; dosya yoksa bildirilir
+    setP (p, "dm_snare_punch", 80); setP (p, "dm_hat_high", 6);
+    juce::MemoryBlock mb; p.getStateInformation (mb);
+    { auto q_h = std::make_unique<HitGenProcessor>(); auto& q = *q_h; q.setStateInformation (mb.getData(), (int) mb.getSize());
+      if (q.drumSamplePath (hg::kPadKick) != wavFile.getFullPathName()) fail ("sample path not restored");
+      if (std::abs (q.apvts.getRawParameterValue ("dm_snare_punch")->load() - 80) > .5f || std::abs (q.apvts.getRawParameterValue ("dm_hat_high")->load() - 6) > .05f) fail ("pad controls not restored"); }
+    { auto moved = tmp.getChildFile ("moved.wav"); wavFile.copyFileTo (moved); juce::String e2; p.loadDrumSample (hg::kPadPerc, moved, e2); juce::MemoryBlock m2; p.getStateInformation (m2); moved.deleteFile();
+      auto q_h = std::make_unique<HitGenProcessor>(); auto& q = *q_h; q.setStateInformation (m2.getData(), (int) m2.getSize());
+      if (! q.missingSamples.contains ("moved.wav") || q.drumSamplePath (hg::kPadPerc).isNotEmpty()) fail ("missing sample not reported"); p.clearDrumSample (hg::kPadPerc); }
+    // kit kaydet / yükle
+    juce::File kitFile;
+    if (! p.saveDrumKit ("Test Kit 27", kitFile) || ! kitFile.existsAsFile()) fail ("kit save");
+    else
+    {
+        setP (p, "dm_snare_punch", 10); p.clearDrumSample (hg::kPadKick); setP (p, "drumCreative", 0);
+        juce::StringArray missing;
+        if (! p.loadDrumKit (kitFile, missing) || ! missing.isEmpty()) fail ("kit load");
+        if (std::abs (p.apvts.getRawParameterValue ("dm_snare_punch")->load() - 80) > .5f || p.drumSamplePath (hg::kPadKick) != wavFile.getFullPathName() || p.apvts.getRawParameterValue ("drumCreative")->load() < .5f) fail ("kit contents");
+        auto junk = tmp.getChildFile ("bad.hgkit"); junk.replaceWithText ("{\"nope\":1}"); if (p.loadDrumKit (junk, missing)) fail ("junk kit accepted");
+        kitFile.deleteFile();
+    }
+    p.resetDrumPad (hg::kPadSnare); if (std::abs (p.apvts.getRawParameterValue ("dm_snare_punch")->load() - 50) > .5f) fail ("pad reset");
+    // tüm stiller davul makinesi ile sesli
+    std::cout << "drum samples, state and kits ok\n";
+    // 3) arayüz: davul sayfası (kapalı / açık + örnek), sağdan sola
+    {
+        std::unique_ptr<HitGenEditor> ed (dynamic_cast<HitGenEditor*> (p.createEditor()));
+        setP (p, "drumCreative", 0); ed->setLanguage ("en"); ed->setTab (4); ed->drums().tick();
+        snapPng (ed->contentComponent(), outDir.getChildFile ("plugin-en-drums.png"));
+        setP (p, "drumCreative", 1); ed->setLanguage ("tr"); ed->drums().loadSampleFile (hg::kPadClap, wavFile); ed->drums().tick();
+        setP (p, "dm_kick_punch", 85); setP (p, "dm_kick_soft", 20); setP (p, "dm_hat_high", 6);
+        snapPng (ed->contentComponent(), outDir.getChildFile ("plugin-tr-drums.png"));
+        ed->setLanguage ("ar"); ed->drums().tick(); snapPng (ed->contentComponent(), outDir.getChildFile ("plugin-ar-drums.png"));
+        if (p.drumSamplePath (hg::kPadClap).isEmpty()) fail ("drop on pad did not load");
+        ed->setLanguage ("en");
+    }
+    for (int i = 0; i < hg::kNumPads; ++i) p.clearDrumSample (i);
+    tmp.deleteRecursively();
+    std::cout << "drum machine ui ok\n";
+}
+
+static void testGuideAndAssistant (const juce::File& outDir, const FailFn& fail)
+{
+    auto p_h = std::make_unique<HitGenProcessor>(); auto& p = *p_h; p.regenerateNow();
+    std::unique_ptr<HitGenEditor> ed (dynamic_cast<HitGenEditor*> (p.createEditor()));
+    // çeviriler: yeni anahtarlar tüm dillerde
+    for (auto l : p.data.langCodes)
+        for (auto* k : { "navDrums", "dmTitle", "dmCreative", "dmHintOn", "dmPunch", "dmSoftHint", "pLoud", "asName", "as_hook", "gd1", "gd12_t", "gdStep" })
+            if (p.data.tr (l, k) == k || p.data.tr (l, k).isEmpty()) fail ("missing translation " + l + ":" + k);
+    for (auto l : { "tr", "ar" })
+    {
+        ed->setLanguage (l); ed->startGuide();
+        auto& g = ed->guideOverlay();
+        if (! g.isVisible() || g.count() != 12) fail ("guide steps " + juce::String (g.count()));
+        for (int s : { 0, 1, 6, 7, 10 }) { g.go (s); snapPng (ed->contentComponent(), outDir.getChildFile ("plugin-" + juce::String (l) + "-guide-" + juce::String (s + 1) + ".png")); }
+        g.go (g.count() - 1);
+        juce::KeyPress esc (juce::KeyPress::escapeKey); g.keyPressed (esc);
+        if (g.isVisible()) fail ("guide did not close");
+    }
+    ed->setLanguage ("tr"); ed->setTab (0);
+    ed->openAssistant();
+    if (! ed->assistantBubble().isVisible() || ed->assistantCount() < 3) fail ("assistant suggestions " + juce::String (ed->assistantCount()));
+    if (! ed->assistantText().contains (p.data.tr ("tr", "as_play").substring (0, 12))) fail ("assistant first suggestion: " + ed->assistantText());
+    snapPng (ed->contentComponent(), outDir.getChildFile ("plugin-tr-assistant.png"));
+    // apply: "kısa hook" önerisi uzun melodili varyasyonda çıkar ve kısa motifli varyasyona geçer
+    setP (p, "style", (float) p.data.styleIndex ("guetta")); p.applyStyleDefaults(); setP (p, "variation", 0); ed->openAssistant();
+    bool hasHook = false; for (int i = 0; i < ed->assistantCount(); ++i) { ed->assistantBubble().nextBtn.triggerClick(); if (ed->assistantText() == p.data.tr ("tr", "as_hook")) { hasHook = true; break; } }
+    if (! hasHook) fail ("hook suggestion missing for a long-melody style");
+    std::cout << "guide and assistant ok\n";
+}
+
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI gui;
@@ -327,6 +527,7 @@ int main (int argc, char** argv)
     int failures = 0;
     const bool quick = juce::SystemStats::getEnvironmentVariable ("HITGEN_QUICK", {}).isNotEmpty();   // valgrind/sanitizer için kısa tur
     auto fail = [&] (const juce::String& m) { std::cout << "FAIL " << m << "\n"; ++failures; };
+    if (juce::SystemStats::getEnvironmentVariable ("HITGEN_DEMO", {}).isNotEmpty()) { testLoudness (outDir, fail, false); return failures == 0 ? 0 : 1; }   // yalnızca dinleme demoları
 
     // 1) stiller x kalite
     {
@@ -569,6 +770,7 @@ int main (int argc, char** argv)
         std::cout << "editor snapshots written\n";
     }
     testReference (outDir, fail); testSampler (fail); testLibrary (fail); testMidiLearn (outDir, fail);
+    testLoudness (outDir, fail, quick); testDrumMachine (outDir, fail); testGuideAndAssistant (outDir, fail);
     std::cout << (failures == 0 ? "ALL PASSED" : "FAILURES: " + std::to_string (failures)) << "\n";
     return failures == 0 ? 0 : 1;
 }
