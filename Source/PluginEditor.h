@@ -5,6 +5,8 @@
 #include "SoundPage.h"
 #include "PresetPage.h"
 #include "ReferencePage.h"
+#include "DrumPage.h"
+#include "Assistant.h"
 
 class HitGenEditor : public juce::AudioProcessorEditor, public juce::FileDragAndDropTarget, private juce::Timer
 {
@@ -24,10 +26,18 @@ public:
     void setLanguage (const juce::String& l);
     void setTab (int t);
     void setWorkspace (int w);   // 0 Reference, 1 Smart Detect, 2 DNA Engine, 3 Generate
+    static bool autoGuide;       // ilk açılışta kılavuzu göster (testlerde kapalı)
     int currentWorkspace() const noexcept { return ws; }   // 0 üret, 1 ses tasarımı, 2 presetler, 3 referans
     int currentTab() const noexcept { return tab; }
     SoundPage& sounds() { return *soundPage; }
     ReferencePage& reference() { return *refPage; }
+    DrumPage& drums() { return *drumPage; }
+    hgui::GuideOverlay& guideOverlay() { return guide; }
+    hgui::AssistantBubble& assistantBubble() { return bubble; }
+    void startGuide();
+    void openAssistant();
+    juce::String assistantText() const { return sugg.empty() ? juce::String() : sugg[(size_t) juce::jlimit (0, (int) sugg.size() - 1, suggIdx)].text; }
+    int assistantCount() const { return (int) sugg.size(); }
 
 private:
     using SA = juce::AudioProcessorValueTreeState::SliderAttachment;
@@ -58,7 +68,7 @@ private:
     juce::ToggleButton contrastBtn, motionBtn, seventhsBtn, patternBtn, midiOutBtn;
     std::array<juce::TextButton, 4> altBtns;
     float phase = 0.0f, meter = 0.0f, meterHold = 0.0f; int frame = 0;
-    std::array<juce::TextButton, 8> groupBtns; std::array<juce::TextButton, 7> tabBtns; int tab = 3; int ws = 0;   // tabBtns 0-3: çalışma alanları (Reference, Smart Detect, DNA Engine, Generate); 4-6: MIDI Studio, Sound Design, Presets
+    std::array<juce::TextButton, 8> groupBtns; std::array<juce::TextButton, 8> tabBtns; int tab = 0; int ws = 0;   // tabBtns 0-3: çalışma alanları (Reference, Smart Detect, DNA Engine, Generate); 4-6: MIDI Studio, Sound Design, Presets; 7: Drum machine (tab 4)
     juce::TextButton presetBtn, saveBtn, settingsBtn, helpBtn; bool settingsOpen = false;
     struct Backdrop : public juce::Component { HitGenEditor* o = nullptr; void paint (juce::Graphics&) override; } settingsPanel;
     void toggleSettings (bool on); void showHelp(); void showSaveDialog(); void showPresetMenu();
@@ -81,7 +91,20 @@ private:
     std::array<hgui::Knob, 8> partKnobs;
     hgui::DragTile loopTile, fullTile;
 
-    std::unique_ptr<SoundPage> soundPage; std::unique_ptr<PresetPage> presetPage; std::unique_ptr<ReferencePage> refPage;
+    std::unique_ptr<SoundPage> soundPage; std::unique_ptr<PresetPage> presetPage; std::unique_ptr<ReferencePage> refPage; std::unique_ptr<DrumPage> drumPage;
+    // kılavuz ve asistan (2.7)
+    hgui::AssistantOrb orb { lnf }; hgui::AssistantBubble bubble { lnf }; hgui::GuideOverlay guide { lnf };
+    juce::ToggleButton loudBtn;
+    struct ToastView : public juce::Component { HitGenEditor* owner = nullptr; void paint (juce::Graphics&) override; } toastView;   // bildirim hapı her sayfanın üstünde
+    juce::String toastShown;
+    struct Suggestion { juce::String id, title, text, applyText; std::function<void()> apply; };
+    std::vector<Suggestion> sugg; int suggIdx = 0; juce::StringArray seenSugg; int suggTick = 0; bool everPlayed = false;
+    std::vector<Suggestion> collectSuggestions();
+    void showSuggestion (int i);
+    void showHelpMenu();
+    static juce::File uiSettingsFile();
+    static bool guideDone();
+    static void setGuideDone();
     std::vector<juce::Component*> genComps;
     bool isMine() const noexcept { return group == 7; }
     std::vector<std::unique_ptr<SA>> sa; std::vector<std::unique_ptr<CA>> ca; std::vector<std::unique_ptr<BA>> ba;

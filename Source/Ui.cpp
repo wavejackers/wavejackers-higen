@@ -166,7 +166,7 @@ void LookAndFeel::drawButtonText (Graphics& g, TextButton& b, bool, bool)
     const bool primary = b.getComponentID() == "primary";
     g.setFont (font (jmin (15.0f, b.getHeight() * .45f), true));
     g.setColour (b.getToggleState() || primary ? palette.accentInk : (b.isEnabled() ? palette.ink : palette.mute.withAlpha (0.6f)));
-    g.drawFittedText (b.getButtonText(), b.getLocalBounds().reduced (8, 2), Justification::centred, 2, .85f);
+    g.drawFittedText (b.getButtonText(), b.getLocalBounds().reduced (b.getWidth() < 44 ? 2 : 8, 2), Justification::centred, 2, .85f);   // dar düğmelerde (+, -, x) kenar payı küçük
 }
 
 void LookAndFeel::drawToggleButton (Graphics& g, ToggleButton& b, bool over, bool)

@@ -6,7 +6,8 @@ namespace
 {
 const char* const kPart[4] = { "chords", "bass", "drums", "melody" };
 const char* const kGroupKeys[8] = { "gAll", "gTechno", "gHouse", "gMain", "gTrance", "gHard", "gAfro", "gMine" };
-const char* const kTabKeys[7] = { "navRef", "navDetect", "navDna", "navGen", "navMidi", "tabSound", "tabPresets" };
+const char* const kTabKeys[8] = { "navRef", "navDetect", "navDna", "navGen", "navMidi", "tabSound", "tabPresets", "navDrums" };
+inline int tabIndexOf (int i) { return i < 4 ? -1 : i == 7 ? 4 : i - 4; }   // gezinme düğmesi -> sayfa (MIDI Studio 0, Ses 1, Preset 2, Davul 4)
 const char* const kAwardKeys[][2] = { { "house", "awHouse" }, { "techno", "awTechno" }, { "trance", "awTrance" }, { "psy", "awPsy" }, { "hard", "awHard" }, { "group", "awGroup" } };
 String fill (String s, const String& k, const String& v) { return s.replace ("{" + k + "}", v); }
 String stripTags (String s) { while (s.contains ("<")) { auto a = s.indexOf ("<"), b = s.indexOf (a, ">"); if (b < 0) break; s = s.substring (0, a) + s.substring (b + 1); } return s; }
@@ -41,16 +42,17 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
     addC (contrastBtn); contrastBtn.onClick = [this] { proc.highContrast = contrastBtn.getToggleState(); applyPalette(); };
     addC (motionBtn); motionBtn.setToggleState (proc.animations, dontSendNotification); motionBtn.onClick = [this] { proc.animations = motionBtn.getToggleState(); content.repaint(); };
 
-    for (int i = 0; i < 7; ++i)
+    for (int i = 0; i < 8; ++i)
     {
         auto& b = tabBtns[(size_t) i]; addC (b); b.setClickingTogglesState (true); b.setRadioGroupId (100); b.setComponentID ("nav");
-        b.onClick = [this, i] { if (! tabBtns[(size_t) i].getToggleState()) return; if (i < 4) { if (tab != 3 || ws != i) setWorkspace (i); } else if (tab != i - 4) setTab (i - 4); };
+        b.onClick = [this, i] { if (! tabBtns[(size_t) i].getToggleState()) return; if (i < 4) { if (tab != 3 || ws != i) setWorkspace (i); } else if (tab != tabIndexOf (i)) setTab (tabIndexOf (i)); };
     }
     tabBtns[0].setToggleState (true, dontSendNotification);
     settingsPanel.o = this; content.addChildComponent (settingsPanel);
     for (auto* b : { &presetBtn, &saveBtn, &settingsBtn, &helpBtn }) addC (*b);
     presetBtn.onClick = [this] { showPresetMenu(); }; saveBtn.onClick = [this] { showSaveDialog(); };
-    settingsBtn.setClickingTogglesState (false); settingsBtn.onClick = [this] { toggleSettings (! settingsOpen); }; helpBtn.onClick = [this] { showHelp(); };
+    settingsBtn.setClickingTogglesState (false); settingsBtn.onClick = [this] { toggleSettings (! settingsOpen); }; helpBtn.onClick = [this] { showHelpMenu(); };
+    addC (loudBtn); ba.push_back (std::make_unique<BA> (A, "loudness", loudBtn)); hgui::tagParam (loudBtn, "loudness");
     for (int i = 0; i < 8; ++i)
     {
         auto& b = groupBtns[(size_t) i]; addC (b); b.setClickingTogglesState (true); b.setRadioGroupId (101);
@@ -105,6 +107,9 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
     presetPage = std::make_unique<PresetPage> (proc, lnf); content.addChildComponent (*presetPage);
     refPage = std::make_unique<ReferencePage> (proc, lnf); content.addChildComponent (*refPage);
     refPage->onSavePreset = [this] { showSaveDialog(); };
+    drumPage = std::make_unique<DrumPage> (proc, lnf); content.addChildComponent (*drumPage);
+    drumPage->onMessage = [this] (const String& m) { toast (m, 4500); };
+    drumPage->onKitChanged = [this] { fillSoundBoxes(); };
     presetPage->onLoaded = [this] { shownStyle = -1; shownVar = -1; fillSoundBoxes(); refreshStyleList(); applyPalette(); };
     for (auto* c : std::initializer_list<Component*> { &styleList, &varLabel, &keyLabel, &keyBox, &scaleLabel, &scaleBox, &barsLabel, &barsBox, &chords, &roll, &soundLabel,
                                                      &patternBtn, &midiOutBtn, &keysToLabel, &keysToBox, &seventhsBtn, &loopTile, &fullTile, &status, &disclaimer })
@@ -124,8 +129,18 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
     varBtns[(size_t) jlimit (0, 3, shownVar)].setToggleState (true, dontSendNotification);
     lnf.setLanguage (lang);
     refreshStyleList(); fillSoundBoxes(); applyPalette(); relabel(); refreshResult();
-    soundPage->setLanguage (lang, rtl); presetPage->setLanguage (lang, rtl); refPage->setLanguage (lang, rtl);
+    soundPage->setLanguage (lang, rtl); presetPage->setLanguage (lang, rtl); refPage->setLanguage (lang, rtl); drumPage->setLanguage (lang, rtl);
     proc.onResultChanged = [this] { refreshResult(); };
+    // asistan karakteri (başlıkta) ve öneri kartı; kılavuz tüm içeriğin üstünde
+    addC (orb); orb.onClick = [this] { if (bubble.isVisible()) bubble.setVisible (false); else openAssistant(); };
+    content.addChildComponent (bubble);
+    bubble.applyBtn.onClick = [this] { if (suggIdx >= 0 && suggIdx < (int) sugg.size() && sugg[(size_t) suggIdx].apply) { const auto t = sugg[(size_t) suggIdx].title; sugg[(size_t) suggIdx].apply(); toast (T ("asDone").replace ("{t}", t)); bubble.setVisible (false); } };
+    bubble.nextBtn.onClick = [this] { if (! sugg.empty()) showSuggestion ((suggIdx + 1) % (int) sugg.size()); };
+    bubble.guideBtn.onClick = [this] { bubble.setVisible (false); startGuide(); };
+    bubble.closeBtn.onClick = [this] { bubble.setVisible (false); };
+    toastView.owner = this; toastView.setInterceptsMouseClicks (false, false); content.addAndMakeVisible (toastView);
+    content.addChildComponent (guide);
+    guide.onFinish = [this] { setGuideDone(); setTab (0); grabKeyboardFocus(); };
 
     setResizable (true, true);
     if (auto* c = getConstrainer()) { c->setFixedAspectRatio ((double) kW / kH); c->setSizeLimits (kW * 3 / 4, kH * 3 / 4, kW * 2, kH * 2); }
@@ -135,6 +150,9 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
     soundPage->onRebind = [this] { midiShownVer = -1; };
     addMouseListener (this, true);              // sağ tık > MIDI Learn (tüm alt bileşenler)
     midiSeenLearned = proc.midiLearn.lastLearned(); startTimerHz (30);   // editör açılırken eski bildirimi gösterme
+    setTab (0);                                  // açılış: MIDI Studio (stil listesi ve üretici); görünürlük tutarlı kurulur
+    if (! proc.missingSamples.isEmpty()) toast (T ("dmKitMissing").replace ("{f}", proc.missingSamples.joinIntoString (", ")), 6000);
+    if (autoGuide && ! guideDone()) MessageManager::callAsync ([sp = Component::SafePointer<HitGenEditor> (this)] { if (sp != nullptr && sp->isShowing()) sp->startGuide(); });
 }
 
 HitGenEditor::~HitGenEditor()
@@ -142,7 +160,7 @@ HitGenEditor::~HitGenEditor()
     stopTimer(); removeMouseListener (this);
     if (proc.midiLearn.learning() >= 0) proc.midiLearn.cancelLearn();
     proc.onResultChanged = nullptr; proc.auditionPart.store (-1);
-    soundPage.reset(); presetPage.reset(); refPage.reset();
+    soundPage.reset(); presetPage.reset(); refPage.reset(); drumPage.reset();
     partSa.clear(); sa.clear(); ca.clear(); ba.clear(); muteBa.clear();
     styleList.setModel (nullptr);
     setLookAndFeel (nullptr);
@@ -165,7 +183,7 @@ void HitGenEditor::applyPalette()
     for (int t = 0; t < 4; ++t) { trackLabels[(size_t) t].setColour (Label::textColourId, lnf.pal().track[t]); tiles[(size_t) t].colour = lnf.pal().track[t]; }
     tagline.setColour (Label::textColourId, lnf.pal().mute); disclaimer.setColour (Label::textColourId, lnf.pal().mute);
     for (auto* l : { &status, &varLabel, &soundLabel, &hostLabel, &seedLabel, &langLabel, &qualityLabel, &sizeLabel, &keyLabel, &scaleLabel, &barsLabel, &keysToLabel }) l->setColour (Label::textColourId, lnf.pal().ink);
-    if (soundPage != nullptr) { soundPage->setLanguage (lang, rtl); presetPage->setLanguage (lang, rtl); refPage->setLanguage (lang, rtl); }
+    if (soundPage != nullptr) { soundPage->setLanguage (lang, rtl); presetPage->setLanguage (lang, rtl); refPage->setLanguage (lang, rtl); drumPage->setLanguage (lang, rtl); }
     sendLookAndFeelChange();
     repaint();
 }
@@ -177,18 +195,21 @@ void HitGenEditor::setLanguage (const String& l)
     lnf.setLanguage (l);
     langBox.setSelectedId (data.langCodes.indexOf (l) + 1, dontSendNotification);
     relabel(); fillSoundBoxes(); refreshStyleList(); refreshResult();
-    soundPage->setLanguage (lang, rtl); presetPage->setLanguage (lang, rtl); refPage->setLanguage (lang, rtl);
+    soundPage->setLanguage (lang, rtl); presetPage->setLanguage (lang, rtl); refPage->setLanguage (lang, rtl); drumPage->setLanguage (lang, rtl);
+    if (bubble.isVisible()) openAssistant();
     sendLookAndFeelChange(); resized(); repaint();
 }
 
 void HitGenEditor::setTab (int t)
 {
-    tab = jlimit (0, 3, t);
-    tabBtns[(size_t) (tab == 3 ? ws : 4 + tab)].setToggleState (true, dontSendNotification);
+    tab = jlimit (0, 4, t);
+    tabBtns[(size_t) (tab == 3 ? ws : tab == 4 ? 7 : 4 + tab)].setToggleState (true, dontSendNotification);
     for (auto* c : genComps) c->setVisible (tab == 0);
-    soundPage->setVisible (tab == 1); presetPage->setVisible (tab == 2); refPage->setVisible (tab == 3);
+    soundPage->setVisible (tab == 1); presetPage->setVisible (tab == 2); refPage->setVisible (tab == 3); drumPage->setVisible (tab == 4);
     for (auto* c : std::initializer_list<Component*> { &seed, &newBtn }) c->setVisible (tab == 0);
-    proc.auditionPart.store (tab == 1 ? soundPage->currentPart() : tab == 3 ? refPage->currentPart() : -1);
+    proc.auditionPart.store (tab == 1 ? soundPage->currentPart() : tab == 3 ? refPage->currentPart() : tab == 4 ? 3 : -1);   // 3: klavye davul pedlerini çalar
+    if (tab == 4) drumPage->tick();
+    bubble.setVisible (false);
     if (tab == 1) soundPage->tick();
     toggleSettings (false); repaint();
 }
@@ -202,7 +223,8 @@ void HitGenEditor::toggleSettings (bool on)
 {
     settingsOpen = on; settingsPanel.setVisible (on);
     if (on) settingsPanel.toFront (false);
-    for (auto* c : std::initializer_list<Component*> { &langLabel, &langBox, &qualityLabel, &qualityBox, &sizeBox, &contrastBtn, &motionBtn, &midiBtn }) { c->setVisible (on); if (on) c->toFront (false); }
+    for (auto* c : std::initializer_list<Component*> { &langLabel, &langBox, &qualityLabel, &qualityBox, &sizeBox, &contrastBtn, &motionBtn, &midiBtn, &loudBtn }) { c->setVisible (on); if (on) c->toFront (false); }
+    if (on) bubble.setVisible (false);
     sizeLabel.setVisible (false);
     settingsBtn.setToggleState (on, dontSendNotification); repaint();
 }
@@ -266,9 +288,13 @@ void HitGenEditor::relabel()
     refill (qualityBox, { T ("pEco"), T ("pBal"), T ("pHigh") });
     sizeLabel.setText (T ("pUiSize"), dontSendNotification); sizeBox.setTitle (T ("pUiSize"));
     contrastBtn.setButtonText (T ("pContrast")); motionBtn.setButtonText (T ("pMotion")); midiBtn.setButtonText (T ("mlAll")); midiBtn.setTooltip (T ("mlHint"));
+    loudBtn.setButtonText (T ("pLoud")); loudBtn.setTooltip (T ("pLoudHint"));
+    orb.setTitle (T ("asName")); orb.setTooltip (T ("asTip")); orb.setHelpText (T ("asTip"));
+    bubble.footer = T ("asFooter"); bubble.rtl = rtl; bubble.nextBtn.setButtonText (T ("asNext")); bubble.guideBtn.setButtonText (T ("gdStart")); bubble.closeBtn.setTitle (T ("asClose"));
+    guide.backText = T ("gdBack"); guide.nextText = T ("gdNext"); guide.doneText = T ("gdDone"); guide.skipText = T ("gdSkip"); guide.stepWord = T ("gdStep"); guide.rtl = rtl;
     for (int i = 0; i < 8; ++i) groupBtns[(size_t) i].setButtonText (T (kGroupKeys[i]));
     presetBtn.setButtonText (proc.userArtist.isNotEmpty() ? proc.userArtist + " - " + proc.userPreset : T ("hdPreset")); saveBtn.setButtonText (T ("hdSave")); settingsBtn.setButtonText (T ("hdSettings")); helpBtn.setButtonText (T ("hdHelp"));
-    for (int i = 0; i < 7; ++i) { tabBtns[(size_t) i].setButtonText (T (kTabKeys[i]).toUpperCase()); tabBtns[(size_t) i].setTooltip ((juce::SystemStats::getOperatingSystemType() & juce::SystemStats::MacOSX) != 0 ? "Cmd+" + String (i + 1) : "Ctrl+" + String (i + 1)); }
+    for (int i = 0; i < 8; ++i) { tabBtns[(size_t) i].setButtonText (T (kTabKeys[i]).toUpperCase()); tabBtns[(size_t) i].setTooltip ((juce::SystemStats::getOperatingSystemType() & juce::SystemStats::MacOSX) != 0 ? "Cmd+" + String (i + 1) : "Ctrl+" + String (i + 1)); }
     styleList.setTitle (T ("pStyleList"));
     varLabel.setText (T ("variation"), dontSendNotification); varLabel.setJustificationType (just);
     const char* genKeys[6] = { "orig", "energy", "thick", "human", "pump", "swing" };
@@ -452,11 +478,12 @@ void HitGenEditor::timerCallback()
         meterHold = pk > meterHold ? pk : jmax (0.0f, meterHold - 0.012f);
         if (proc.midiLearn.version() != midiShownVer) refreshMidiBadges();
         if (midiToastUntil > 0 && Time::currentTimeMillis() > midiToastUntil && proc.midiLearn.learning() < 0) { midiToastUntil = 0; midiToast.clear(); content.repaint(); }
+        if (midiToast != toastShown) { toastShown = midiToast; toastView.toFront (false); toastView.repaint(); }
         if (refPage != nullptr && tab == 3) refPage->setLevel (jlimit (0.0f, 1.0f, meter / .891f));
         const int q = (int) proc.apvts.getRawParameterValue ("quality")->load();
         juce::ignoreUnused (q);
         ++frame;
-        if (frame % 3 == 0) content.repaint (548, 16, 140, 16);
+        if (frame % 3 == 0) content.repaint (rtl ? kW - 690 : 548, 14, 142, 36);
     }
     lnf.stepHover (proc.animations && (int) proc.apvts.getRawParameterValue ("quality")->load() != 0);   // hover geçişleri yalnızca arayüz iş parçacığında
     const bool hostPlay = proc.hostPlaying.load(), prev = proc.previewPlaying.load();
@@ -475,6 +502,16 @@ void HitGenEditor::timerCallback()
     if (tab == 1) soundPage->tick();
     presetPage->tick();
     if (tab == 3) refPage->tick();
+    if (tab == 4) drumPage->tick();
+    if (prev || hostPlay) everPlayed = true;
+    // asistan: bakış ve kırpma; yeni bir öneri çıktıysa rozet (her ~2 sn)
+    orb.talking = bubble.isVisible();
+    orb.step (content.getMouseXYRelative().toFloat(), proc.animations && (int) proc.apvts.getRawParameterValue ("quality")->load() != 0);
+    if (++suggTick % 60 == 0 && ! bubble.isVisible())
+    {
+        bool fresh = false; for (auto& sg : collectSuggestions()) if (! seenSugg.contains (sg.id)) { fresh = true; break; }
+        orb.badge = fresh;
+    }
     static int presetRev = -1;
     if (isMine() && proc.presets.revision() != presetRev) { presetRev = proc.presets.revision(); refreshStyleList(); }
     static int tick = 0;
@@ -494,7 +531,9 @@ bool HitGenEditor::keyPressed (const KeyPress& k)
     if (k.getModifiers().isCommandDown() && tab == 3 && refPage != nullptr && (k.getKeyCode() == 'Z' || k.getKeyCode() == 'z' || k.getKeyCode() == 'Y' || k.getKeyCode() == 'y'))
     { if (k.getModifiers().isShiftDown() || k.getKeyCode() == 'Y' || k.getKeyCode() == 'y') refPage->redo(); else refPage->undo(); return true; }
     if (k.getModifiers().isCommandDown() && (k.getKeyCode() == 'S' || k.getKeyCode() == 's')) { loopTile.saveAs(); return true; }
-    if (k.getModifiers().isCommandDown() && k.getKeyCode() >= '1' && k.getKeyCode() <= '7') { const int i = k.getKeyCode() - '1'; if (i < 4) setWorkspace (i); else setTab (i - 4); return true; }
+    if (k.getModifiers().isCommandDown() && k.getKeyCode() >= '1' && k.getKeyCode() <= '8') { const int i = k.getKeyCode() - '1'; if (i < 4) setWorkspace (i); else setTab (tabIndexOf (i)); return true; }
+    if (k == KeyPress::F1Key) { startGuide(); return true; }
+    if (k == KeyPress::escapeKey && bubble.isVisible()) { bubble.setVisible (false); return true; }
     if (k == KeyPress::escapeKey && settingsOpen) { toggleSettings (false); return true; }
     return false;
 }
@@ -518,8 +557,8 @@ void HitGenEditor::Content::paint (Graphics& g)
         }
     // marka: WAVEJACKERS / HITGEN, altında ürün tanımı
     const float bx = ed.rtl ? kW - 300.0f : 20.0f; const auto jl = ed.rtl ? Justification::centredRight : Justification::centredLeft;
-    g.setFont (ed.lnf.font (19, true)); g.setColour (P.ink); g.drawText ("WAVEJACKERS", Rectangle<float> (bx, 6, 160, 26), jl);
-    g.setColour (P.accent); g.drawText ("/ HITGEN", Rectangle<float> (ed.rtl ? bx - 100 : bx + 148, 6, 110, 26), jl);
+    g.setFont (ed.lnf.font (19, true)); g.setColour (P.ink); g.drawText ("WAVEJACKERS", ed.rtl ? Rectangle<float> (kW - 180.0f, 6, 160, 26) : Rectangle<float> (bx, 6, 160, 26), jl);
+    g.setColour (P.accent); g.drawText ("/ HITGEN", ed.rtl ? Rectangle<float> (kW - 296.0f, 6, 110, 26) : Rectangle<float> (bx + 148, 6, 110, 26), jl);   // sağdan sola: Çal düğmesiyle çakışmaz
     g.setFont (ed.lnf.font (10.5f)); g.setColour (P.mute); g.drawText ("ARTIST SOUND DNA ENGINE", Rectangle<float> (bx, 31, 280, 16), jl);
     // çıkış seviyesi: tavan -1 dBFS (0.891); tepe tutma çizgisi ile
     {
@@ -528,17 +567,26 @@ void HitGenEditor::Content::paint (Graphics& g)
         const float lv = jlimit (0.0f, 1.0f, ed.meter / .891f), hv = jlimit (0.0f, 1.0f, ed.meterHold / .891f);
         g.setColour (lv > 0.95f ? P.warning : P.accent); g.fillRoundedRectangle (m.withWidth (jmax (2.0f, m.getWidth() * lv)), 2.0f);
         g.setColour (P.mute); g.fillRect (m.getX() + m.getWidth() * hv - 1, m.getY() - 1, 2.0f, m.getHeight() + 2);
+        // ses yüksekliği: normalleştirme açıkken kayan entegre LUFS (hedef -14)
+        if (ed.proc.apvts.getRawParameterValue ("loudness")->load() > .5f)
+        {
+            const float lu = ed.proc.engine.loudness.outLufs.load();
+            g.setFont (ed.lnf.font (10.5f, true)); g.setColour (lu > -69 && std::abs (lu + 14.0f) <= 1.0f ? P.success : P.mute);
+            g.drawText (lu > -69 ? String (lu, 1) + " LUFS" : String ("-14 LUFS"), m.withY (m.getBottom() + 4).withHeight (14), Justification::centred);
+        }
     }
-    // MIDI Learn bildirimi: altta ortada küçük bir hap (öğrenirken kalıcı)
-    if (ed.midiToast.isNotEmpty())
-    {
-        const bool learning = ed.proc.midiLearn.learning() >= 0;
-        const auto f = ed.lnf.font (12.5f, true); const float w = jmin ((float) kW - 80.0f, GlyphArrangement::getStringWidth (f, ed.midiToast) + 48.0f);
-        auto pill = Rectangle<float> (w, 34.0f).withCentre ({ kW * 0.5f, (float) kH - 30.0f });
-        g.setColour (P.panel2.withAlpha (0.97f)); g.fillRoundedRectangle (pill, 17.0f); g.setColour (learning ? P.accent : P.line); g.drawRoundedRectangle (pill.reduced (0.5f), 17.0f, learning ? 1.6f : 1.0f);
-        g.setColour (learning ? P.accent : P.success); g.fillEllipse (Rectangle<float> (8, 8).withCentre ({ pill.getX() + 20, pill.getCentreY() }));
-        g.setColour (P.ink); g.setFont (f); g.drawText (ed.midiToast, pill.withTrimmedLeft (34).withTrimmedRight (14), Justification::centredLeft, true);
-    }
+}
+
+void HitGenEditor::ToastView::paint (Graphics& g)
+{
+    auto& ed = *owner; const auto& P = ed.lnf.pal();
+    if (ed.midiToast.isEmpty()) return;
+    const bool learning = ed.proc.midiLearn.learning() >= 0;
+    const auto f = ed.lnf.font (12.5f, true); const float w = jmin ((float) kW - 80.0f, GlyphArrangement::getStringWidth (f, ed.midiToast) + 48.0f);
+    auto pill = Rectangle<float> (w, 34.0f).withCentre ({ kW * 0.5f, (float) getHeight() - 26.0f });
+    g.setColour (P.panel2.withAlpha (0.97f)); g.fillRoundedRectangle (pill, 17.0f); g.setColour (learning ? P.accent : P.line); g.drawRoundedRectangle (pill.reduced (0.5f), 17.0f, learning ? 1.6f : 1.0f);
+    g.setColour (learning ? P.accent : P.success); g.fillEllipse (Rectangle<float> (8, 8).withCentre ({ pill.getX() + 20, pill.getCentreY() }));
+    g.setColour (P.ink); g.setFont (f); g.drawText (ed.midiToast, pill.withTrimmedLeft (34).withTrimmedRight (14), Justification::centredLeft, true);
 }
 
 void HitGenEditor::layoutContent()
@@ -547,14 +595,16 @@ void HitGenEditor::layoutContent()
     // başlık (y 0-52): marka solda; çal / BPM / seviye ortada; ön ayar, kaydet, ayarlar, yardım sağda
     place (tagline, { 0, 0, 0, 0 });
     place (playBtn, { 330, 10, 100, 32 }); place (hostLabel, { 438, 10, 112, 32 });
-    place (presetBtn, { 700, 10, 214, 32 }); place (saveBtn, { 920, 10, 64, 32 }); place (settingsBtn, { 990, 10, 94, 32 }); place (helpBtn, { 1090, 10, 66, 32 });
+    place (presetBtn, { 700, 10, 180, 32 }); place (saveBtn, { 886, 10, 64, 32 }); place (settingsBtn, { 956, 10, 94, 32 }); place (helpBtn, { 1056, 10, 66, 32 });
+    place (orb, { 1126, 2, 48, 48 });
     // gezinme (y 56-90): dört çalışma alanı, ayraç, üç stüdyo sayfası
-    for (int i = 0; i < 4; ++i) place (tabBtns[(size_t) i], { 16 + i * 132, 56, 128, 34 });
-    for (int i = 0; i < 3; ++i) place (tabBtns[(size_t) (4 + i)], { 570 + i * 112, 56, 108, 34 });
-    place (seed, { 930, 58, 110, 30 }); place (newBtn, { 1046, 58, 110, 30 }); place (seedLabel, { 0, 0, 0, 0 });
+    for (int i = 0; i < 4; ++i) place (tabBtns[(size_t) i], { 16 + i * 124, 56, 120, 34 });
+    for (int i = 0; i < 3; ++i) place (tabBtns[(size_t) (4 + i)], { 516 + i * 104, 56, 100, 34 });
+    place (tabBtns[7], { 516 + 3 * 104, 56, 100, 34 });
+    place (seed, { 934, 58, 104, 30 }); place (newBtn, { 1044, 58, 112, 30 }); place (seedLabel, { 0, 0, 0, 0 });
     // ayarlar paneli (yalnızca açıkken görünür)
-    settingsPanelBounds = Rectangle<int> (760, 94, 396, 232);
-    place (midiBtn, { 780, 254, 360, 28 });
+    settingsPanelBounds = Rectangle<int> (760, 94, 396, 270);
+    place (midiBtn, { 780, 254, 360, 28 }); place (loudBtn, { 780, 292, 360, 28 });
     place (langLabel, { 780, 108, 110, 28 }); place (langBox, { 900, 108, 240, 28 });
     place (qualityLabel, { 780, 144, 110, 28 }); place (qualityBox, { 900, 144, 240, 28 });
     place (sizeLabel, { 0, 0, 0, 0 }); place (sizeBox, { 900, 180, 240, 28 }); place (contrastBtn, { 780, 218, 180, 28 }); place (motionBtn, { 968, 218, 172, 28 });
@@ -586,6 +636,10 @@ void HitGenEditor::layoutContent()
     if (soundPage) soundPage->setBounds (8, 98, SoundPage::kW, SoundPage::kH);
     if (presetPage) presetPage->setBounds (8, 98, PresetPage::kW, PresetPage::kH);
     if (refPage) refPage->setBounds (8, 98, ReferencePage::kW, ReferencePage::kH);
+    if (drumPage) drumPage->setBounds (8, 98, DrumPage::kW, DrumPage::kH);
+    { const auto br = Rectangle<int> (712, 54, 450, jmax (150, bubble.getHeight())); bubble.setBounds (rtl ? br.withX (kW - br.getRight()) : br); }
+    toastView.setBounds (0, kH - 56, kW, 56);
+    guide.setBounds (0, 0, kW, kH);
     settingsPanel.setBounds (settingsPanelBounds);
     sizeLabel.setVisible (false);
 }
@@ -606,7 +660,7 @@ void HitGenEditor::filesDropped (const StringArray& files, int, int)
 }
 
 // ---------------------------------------------------------------- MIDI Learn (arayüz)
-void HitGenEditor::toast (const String& s, int ms) { midiToast = s; midiToastUntil = Time::currentTimeMillis() + ms; content.repaint(); }
+void HitGenEditor::toast (const String& s, int ms) { midiToast = s; midiToastUntil = Time::currentTimeMillis() + ms; toastView.toFront (false); toastView.repaint(); }
 
 static String ccLabel (const hg::MidiLearn::Map& m) { return "CC " + String (m.cc) + " / ch " + String (m.channel); }
 
@@ -699,4 +753,110 @@ void HitGenEditor::refreshMidiBadges()
         if (m.param >= 0) toast (T ("mlLearned").replace ("{p}", ml.nameOf (ll)).replace ("{cc}", String (m.cc)).replace ("{ch}", String (m.channel)));
     }
     else if (learning < 0 && midiToastUntil > Time::currentTimeMillis() + 60000) { midiToastUntil = Time::currentTimeMillis() + 1; }   // öğrenme başka yerden bitti
+}
+
+// ---------------------------------------------------------------- kılavuz ve asistan (2.7)
+#if HITGEN_TEST_BUILD
+bool HitGenEditor::autoGuide = false;
+#else
+bool HitGenEditor::autoGuide = true;
+#endif
+
+File HitGenEditor::uiSettingsFile()
+{
+    return File::getSpecialLocation (File::userApplicationDataDirectory).getChildFile ("Wavejackers").getChildFile ("HitGen").getChildFile ("ui-settings.json");
+}
+
+bool HitGenEditor::guideDone()
+{
+    const auto f = uiSettingsFile(); if (! f.existsAsFile() || f.getSize() > 100000) return false;
+    return (bool) JSON::parse (f.loadFileAsString())["guideDone"];
+}
+
+void HitGenEditor::setGuideDone()
+{
+    auto f = uiSettingsFile(); f.getParentDirectory().createDirectory();
+    auto v = f.existsAsFile() ? JSON::parse (f.loadFileAsString()) : var();
+    if (! v.isObject()) v = var (new DynamicObject());
+    v.getDynamicObject()->setProperty ("guideDone", true);
+    f.replaceWithText (JSON::toString (v));
+}
+
+void HitGenEditor::showHelpMenu()
+{
+    PopupMenu m; m.setLookAndFeel (&lnf);
+    m.addItem (1, T ("gdStart") + "  (F1)"); m.addItem (2, T ("asName")); m.addSeparator(); m.addItem (3, T ("hdHelpTips"));
+    m.showMenuAsync (PopupMenu::Options().withTargetComponent (helpBtn), [this] (int r) { if (r == 1) startGuide(); else if (r == 2) openAssistant(); else if (r == 3) showHelp(); });
+}
+
+void HitGenEditor::startGuide()
+{
+    toggleSettings (false); bubble.setVisible (false);
+    auto bnd = [] (std::initializer_list<Component*> cs) { Rectangle<int> r; for (auto* c : cs) r = r.isEmpty() ? c->getBounds() : r.getUnion (c->getBounds()); return r; };
+    std::vector<hgui::GuideOverlay::Step> st;
+    auto add = [&] (const char* key, std::function<Rectangle<int>()> target, std::function<void()> enter)
+    { st.push_back ({ T (String (key) + "_t"), T (key), std::move (target), std::move (enter) }); };
+    add ("gd1", nullptr, [this] { setTab (0); });
+    add ("gd2", [this, bnd] { return bnd ({ &groupBtns[0], &groupBtns[7], &styleList, &varBtns[3] }); }, [this] { setTab (0); });
+    add ("gd3", [this, bnd] { return bnd ({ &playBtn, &hostLabel }); }, [this] { setTab (0); });
+    add ("gd4", [this, bnd] { return bnd ({ &seed, &newBtn }); }, [this] { setTab (0); });
+    add ("gd5", [this, bnd] { return bnd ({ &chords, &trackLabels[0], &soundBoxes[3], &tiles[3], &roll }); }, [this] { setTab (0); });
+    add ("gd6", [this, bnd] { return bnd ({ &loopTile, &fullTile }); }, [this] { setTab (0); });
+    add ("gd7", [this] { auto r = drumPage->getBounds(); return Rectangle<int> (r.getX(), r.getY(), r.getWidth(), 236); }, [this] { setTab (4); });
+    add ("gd8", [this] { auto r = drumPage->getBounds(); return Rectangle<int> (r.getX() + 16, r.getY() + 262, 154, 380); }, [this] { setTab (4); });
+    add ("gd9", [this, bnd] { return bnd ({ &tabBtns[0], &tabBtns[3] }); }, [this] { setWorkspace (0); });
+    add ("gd10", [this, bnd] { return bnd ({ &tabBtns[5] }); }, [this] { setTab (1); });
+    add ("gd11", [this, bnd] { return bnd ({ &orb }); }, [this] { setTab (0); });
+    add ("gd12", [this, bnd] { return bnd ({ &helpBtn, &settingsBtn }); }, [this] { setTab (0); });
+    guide.start (std::move (st));
+}
+
+std::vector<HitGenEditor::Suggestion> HitGenEditor::collectSuggestions()
+{
+    std::vector<Suggestion> v; auto& A = proc.apvts;
+    auto P = [&A] (const char* id) { return A.getRawParameterValue (id)->load(); };
+    auto add = [&] (const String& id, std::function<void()> apply)
+    { v.push_back ({ id, T ("as_" + id + "_t"), T ("as_" + id), T (apply ? "asApply" : "asOk"), std::move (apply) }); };
+    const int si = jlimit (0, data.numStyles() - 1, (int) P ("style")), vi = jlimit (0, 3, (int) P ("variation"));
+    const auto& S = data.style (si); const String grp = S["grp"].toString();
+    auto modeOf = [&S] (int i) { const auto V = S["var"][i]; const auto mm = V["mm"].toString(); return mm.isNotEmpty() ? mm : S["mel"]["mode"].toString(); };
+    if (! everPlayed) add ("play", [this] { proc.previewPlaying.store (true); relabel(); });
+    if (P ("loudness") < .5f) add ("loud", [this] { setParam ("loudness", 1); });
+    if (grp == "afro" && P ("swing") < 6) add ("swing", [this] { setParam ("swing", 10); });
+    const auto mm = modeOf (vi);
+    if (mm == "hook" || mm == "arp")
+    {
+        int best = -1; for (int i = 0; i < 4; ++i) { const auto m2 = modeOf (i); if (m2 == "motif" || m2 == "chop" || m2 == "riff") { best = i; break; } }
+        add ("hook", best >= 0 ? std::function<void()> ([this, best] { setParam ("variation", (float) best); }) : std::function<void()>());
+    }
+    if ((int) P ("bars") == 0) add ("bars", [this] { setParam ("bars", 1); });
+    if (P ("energy") < 40) add ("energy", [this] { setParam ("energy", 65); });
+    if (P ("pump") < 30 && grp != "afro") add ("pump", [this] { setParam ("pump", 80); });
+    if (P ("thick") < 40) add ("thick", [this] { setParam ("thick", 70); });
+    if (tab == 4 && P ("drumCreative") < .5f) add ("creative", [this] { setParam ("drumCreative", 1); });
+    bool anySample = false; for (int i = 0; i < hg::kNumPads; ++i) if (proc.drumSamplePath (i).isNotEmpty()) anySample = true;
+    if (tab == 4 && P ("drumCreative") > .5f && ! anySample) add ("sample", nullptr);
+    if (tab == 3 && proc.ref.clip() == nullptr) add ("ref", nullptr);
+    if (proc.engine.cpuLoad.load() > .7f && (int) P ("quality") != 0) add ("cpu", [this] { setParam ("quality", 0); });
+    add ("drums", [this] { setTab (4); });
+    add ("drag", nullptr); add ("learn", nullptr); add ("newidea", [this] { proc.newIdea(); });
+    return v;
+}
+
+void HitGenEditor::showSuggestion (int i)
+{
+    if (sugg.empty()) return;
+    suggIdx = jlimit (0, (int) sugg.size() - 1, i); const auto& s = sugg[(size_t) suggIdx];
+    seenSugg.addIfNotAlreadyThere (s.id);
+    bubble.show (s.title, s.text, T ("asCounter").replace ("{i}", String (suggIdx + 1)).replace ("{n}", String ((int) sugg.size())), (bool) s.apply, s.applyText);
+    { const int w = 450, h = jlimit (150, 330, bubble.preferredHeight (w)); const auto br = Rectangle<int> (712, 54, w, h); bubble.setBounds (rtl ? br.withX (kW - br.getRight()) : br); }
+}
+
+void HitGenEditor::openAssistant()
+{
+    toggleSettings (false);
+    sugg = collectSuggestions(); int first = 0;
+    for (int i = 0; i < (int) sugg.size(); ++i) if (! seenSugg.contains (sugg[(size_t) i].id)) { first = i; break; }
+    bubble.setVisible (true); bubble.toFront (false); showSuggestion (first);
+    orb.badge = false; orb.talking = true;
 }

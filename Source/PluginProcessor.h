@@ -78,6 +78,20 @@ public:
     juce::MemoryBlock midiBytes (int which) const;
     juce::String baseName() const;
 
+    // ---- davul makinesi (2.7): ped örnekleri, kitler
+    static constexpr int kDmCtl = 7;                           // level, tune, decay, punch, soft, mid, high
+    static juce::String dmParamId (int pad, int k);
+    static bool isDrumSampleFile (const juce::File& f);
+    bool loadDrumSample (int pad, const juce::File& f, juce::String& errKey, bool enableCreative = true);
+    void clearDrumSample (int pad);
+    void resetDrumPad (int pad);
+    juce::String drumSamplePath (int pad) const { const juce::ScopedLock sl (drumLock); return drumSamples[(size_t) juce::jlimit (0, hg::kNumPads - 1, pad)]; }
+    static juce::File drumKitFolder();
+    static juce::Array<juce::File> drumKitFiles();
+    bool saveDrumKit (const juce::String& name, juce::File& written);
+    bool loadDrumKit (const juce::File& f, juce::StringArray& missing);
+    juce::StringArray missingSamples;                          // proje yüklenirken bulunamayan örnekler (arayüz bildirir)
+
     std::atomic<bool> previewPlaying { false };
     std::atomic<double> playPpq { 0 }, hostBpm { 0 };
     std::atomic<bool> hostPlaying { false };
@@ -123,6 +137,10 @@ private:
     // ses iş parçacığı için önceden çözülmüş parametre işaretçileri (String ayırmadan okunur)
     struct PartPtrs { std::atomic<float>* vol = nullptr, *mute = nullptr, *cut = nullptr, *res = nullptr, *atk = nullptr, *rel = nullptr, *drv = nullptr, *rev = nullptr, *dly = nullptr; };
     std::array<PartPtrs, 4> pp {};
+    std::array<std::array<std::atomic<float>*, kDmCtl>, hg::kNumPads> dmPtr {};
+    std::array<juce::String, hg::kNumPads> drumSamples;      // arayüz ve durum yükleme (sunucu başka iş parçacığından çağırabilir); ses iş parçacığı dokunmaz
+    juce::CriticalSection drumLock;
+    std::atomic<float>* pLoud = nullptr, *pCreative = nullptr;
     std::atomic<float>* pQuality = nullptr, *pThick = nullptr, *pPump = nullptr, *pMaster = nullptr, *pBpm = nullptr, *pPattern = nullptr, *pMidiOut = nullptr, *pKeysTo = nullptr;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HitGenProcessor)
 };

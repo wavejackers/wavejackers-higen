@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(WavejackersHitGen VERSION 2.6.0 LANGUAGES C CXX)
+project(WavejackersHitGen VERSION 2.7.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -76,11 +76,11 @@ target_compile_definitions(hg_zstd PRIVATE ZSTD_DISABLE_ASM=1 ZSTD_LEGACY_SUPPOR
 set_target_properties(hg_zstd PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 set(HITGEN_CORE_SOURCES Source/Data.cpp Source/Generator.cpp)
-set(HITGEN_DSP_SOURCES Source/Synth.cpp)
+set(HITGEN_DSP_SOURCES Source/Synth.cpp Source/DrumMachine.cpp Source/Loudness.cpp)
 
 target_sources(WavejackersHitGen PRIVATE
   ${HITGEN_CORE_SOURCES} ${HITGEN_DSP_SOURCES}
-  Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/Ui.cpp Source/SoundParams.cpp Source/Presets.cpp Source/SoundPage.cpp Source/PresetPage.cpp Source/Import.cpp Source/RefAnalysis.cpp Source/TrackDna.cpp Source/RefEngine.cpp Source/DnaLibrary.cpp Source/ReferencePage.cpp Source/OrbView.cpp Source/LayerList.cpp Source/Assist.cpp Source/VariationGrid.cpp Source/MidiLearn.cpp)
+  Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/Ui.cpp Source/SoundParams.cpp Source/Presets.cpp Source/SoundPage.cpp Source/PresetPage.cpp Source/Import.cpp Source/RefAnalysis.cpp Source/TrackDna.cpp Source/RefEngine.cpp Source/DnaLibrary.cpp Source/ReferencePage.cpp Source/OrbView.cpp Source/LayerList.cpp Source/Assist.cpp Source/VariationGrid.cpp Source/MidiLearn.cpp Source/DrumPage.cpp Source/Assistant.cpp)
 
 set(HITGEN_DEFS
   JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0
@@ -111,7 +111,7 @@ if(HITGEN_BUILD_TESTS)
   # Kararlılık testi: işlemciyi doğrudan çalıştırır (rastgele parametre, durum kaydet/yükle, NaN, CPU ölçümü)
   juce_add_console_app(HitGenStressTest PRODUCT_NAME "HitGenStressTest")
   target_sources(HitGenStressTest PRIVATE tests/StressTest.cpp ${HITGEN_CORE_SOURCES} ${HITGEN_DSP_SOURCES}
-    Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/Ui.cpp Source/SoundParams.cpp Source/Presets.cpp Source/SoundPage.cpp Source/PresetPage.cpp Source/Import.cpp Source/RefAnalysis.cpp Source/TrackDna.cpp Source/RefEngine.cpp Source/DnaLibrary.cpp Source/ReferencePage.cpp Source/OrbView.cpp Source/LayerList.cpp Source/Assist.cpp Source/VariationGrid.cpp Source/MidiLearn.cpp)
+    Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/Ui.cpp Source/SoundParams.cpp Source/Presets.cpp Source/SoundPage.cpp Source/PresetPage.cpp Source/Import.cpp Source/RefAnalysis.cpp Source/TrackDna.cpp Source/RefEngine.cpp Source/DnaLibrary.cpp Source/ReferencePage.cpp Source/OrbView.cpp Source/LayerList.cpp Source/Assist.cpp Source/VariationGrid.cpp Source/MidiLearn.cpp Source/DrumPage.cpp Source/Assistant.cpp)
   target_compile_definitions(HitGenStressTest PRIVATE ${HITGEN_DEFS} JucePlugin_Build_Standalone=0 HITGEN_TEST_BUILD=1 JUCE_MODAL_LOOPS_PERMITTED=1 HITGEN_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
   target_link_libraries(HitGenStressTest PRIVATE HitGenData hg_zstd juce::juce_audio_utils juce::juce_dsp PUBLIC juce::juce_recommended_config_flags)
 endif()
