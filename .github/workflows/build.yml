@@ -71,7 +71,18 @@ jobs:
           vst3=$(find build -type d -name "Wavejackers HitGen.vst3" | head -1)
           if [ "$RUNNER_OS" == "macOS" ]; then pv="pv/pluginval.app/Contents/MacOS/pluginval"; elif [ "$RUNNER_OS" == "Windows" ]; then pv="pv/pluginval.exe"; else pv="pv/pluginval"; fi
           chmod +x "$pv" || true
-          if [ "$RUNNER_OS" == "Linux" ]; then xvfb-run -a "$pv" --strictness-level 7 --skip-gui-tests "$vst3"; else "$pv" --strictness-level 7 "$vst3"; fi
+          # pluginval 1.0.4'ün Linux ana makinesi, testler bittikten sonra kendi RunLoop'unda ara sıra çöküyor (gdb: juce::RunLoop::Impl::registerEventHandler,
+          # yığında eklenti kodu yok). Yalnızca çökme (çıkış kodu 139 / 134) için en çok iki kez yeniden denenir; test hatası (kod 1) hemen başarısız olur.
+          for attempt in 1 2 3; do
+            set +e
+            if [ "$RUNNER_OS" == "Linux" ]; then xvfb-run -a "$pv" --strictness-level 7 --skip-gui-tests "$vst3"; else "$pv" --strictness-level 7 "$vst3"; fi
+            code=$?
+            set -e
+            if [ $code -eq 0 ]; then break; fi
+            if [ $code -ne 139 ] && [ $code -ne 134 ]; then exit $code; fi
+            echo "::warning::pluginval crashed with code $code (attempt $attempt), retrying"
+            if [ $attempt -eq 3 ]; then exit $code; fi
+          done
 
       - name: macOS imzası (ad-hoc)
         if: runner.os == 'macOS'
