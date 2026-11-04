@@ -112,6 +112,10 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-22.04
     steps:
+      - uses: actions/checkout@v4          # sürüm başlığı CMakeLists.txt'teki VERSION'dan okunur
+        with:
+          sparse-checkout: CMakeLists.txt
+          sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@v4
         with:
           path: art
