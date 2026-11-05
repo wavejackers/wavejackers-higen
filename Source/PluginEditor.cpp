@@ -6,8 +6,8 @@ namespace
 {
 const char* const kPart[4] = { "chords", "bass", "drums", "melody" };
 const char* const kGroupKeys[8] = { "gAll", "gTechno", "gHouse", "gMain", "gTrance", "gHard", "gAfro", "gMine" };
-const char* const kTabKeys[8] = { "navRef", "navDetect", "navDna", "navGen", "navMidi", "tabSound", "tabPresets", "navDrums" };
-inline int tabIndexOf (int i) { return i < 4 ? -1 : i == 7 ? 4 : i - 4; }   // gezinme düğmesi -> sayfa (MIDI Studio 0, Ses 1, Preset 2, Davul 4)
+const char* const kTabKeys[9] = { "navRef", "navDetect", "navDna", "navGen", "navMidi", "tabSound", "tabPresets", "navDrums", "tabProject" };
+inline int tabIndexOf (int i) { return i < 4 ? -1 : i == 7 ? 4 : i == 8 ? 5 : i - 4; }   // gezinme düğmesi -> sayfa (MIDI Studio 0, Ses 1, Preset 2, Davul 4, Proje 5)
 const char* const kAwardKeys[][2] = { { "house", "awHouse" }, { "techno", "awTechno" }, { "trance", "awTrance" }, { "psy", "awPsy" }, { "hard", "awHard" }, { "group", "awGroup" } };
 String fill (String s, const String& k, const String& v) { return s.replace ("{" + k + "}", v); }
 String stripTags (String s) { while (s.contains ("<")) { auto a = s.indexOf ("<"), b = s.indexOf (a, ">"); if (b < 0) break; s = s.substring (0, a) + s.substring (b + 1); } return s; }
@@ -42,7 +42,7 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
     addC (contrastBtn); contrastBtn.onClick = [this] { proc.highContrast = contrastBtn.getToggleState(); applyPalette(); };
     addC (motionBtn); motionBtn.setToggleState (proc.animations, dontSendNotification); motionBtn.onClick = [this] { proc.animations = motionBtn.getToggleState(); content.repaint(); };
 
-    for (int i = 0; i < 8; ++i)
+    for (int i = 0; i < 9; ++i)
     {
         auto& b = tabBtns[(size_t) i]; addC (b); b.setClickingTogglesState (true); b.setRadioGroupId (100); b.setComponentID ("nav");
         b.onClick = [this, i] { if (! tabBtns[(size_t) i].getToggleState()) return; if (i < 4) { if (tab != 3 || ws != i) setWorkspace (i); } else if (tab != tabIndexOf (i)) setTab (tabIndexOf (i)); };
@@ -105,12 +105,14 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
 
     soundPage = std::make_unique<SoundPage> (proc, lnf); content.addChildComponent (*soundPage);
     presetPage = std::make_unique<PresetPage> (proc, lnf); content.addChildComponent (*presetPage);
+    projectPage = std::make_unique<ProjectPage> (proc, lnf); content.addChildComponent (*projectPage);
     refPage = std::make_unique<ReferencePage> (proc, lnf); content.addChildComponent (*refPage);
     refPage->onSavePreset = [this] { showSaveDialog(); };
     drumPage = std::make_unique<DrumPage> (proc, lnf); content.addChildComponent (*drumPage);
     drumPage->onMessage = [this] (const String& m) { toast (m, 4500); };
     drumPage->onKitChanged = [this] { fillSoundBoxes(); };
     presetPage->onLoaded = [this] { shownStyle = -1; shownVar = -1; fillSoundBoxes(); refreshStyleList(); applyPalette(); };
+    projectPage->onLoaded = presetPage->onLoaded;
     for (auto* c : std::initializer_list<Component*> { &styleList, &varLabel, &keyLabel, &keyBox, &scaleLabel, &scaleBox, &barsLabel, &barsBox, &chords, &roll, &soundLabel,
                                                      &patternBtn, &midiOutBtn, &keysToLabel, &keysToBox, &seventhsBtn, &loopTile, &fullTile, &status, &disclaimer })
         genComps.push_back (c);
@@ -129,7 +131,7 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
     varBtns[(size_t) jlimit (0, 3, shownVar)].setToggleState (true, dontSendNotification);
     lnf.setLanguage (lang);
     refreshStyleList(); fillSoundBoxes(); applyPalette(); relabel(); refreshResult();
-    soundPage->setLanguage (lang, rtl); presetPage->setLanguage (lang, rtl); refPage->setLanguage (lang, rtl); drumPage->setLanguage (lang, rtl);
+    soundPage->setLanguage (lang, rtl); presetPage->setLanguage (lang, rtl); projectPage->setLanguage (lang, rtl); refPage->setLanguage (lang, rtl); drumPage->setLanguage (lang, rtl);
     proc.onResultChanged = [this] { refreshResult(); };
     // asistan karakteri (başlıkta) ve öneri kartı; kılavuz tüm içeriğin üstünde
     addC (orb); orb.onClick = [this] { if (bubble.isVisible()) bubble.setVisible (false); else openAssistant(); };
@@ -160,7 +162,7 @@ HitGenEditor::~HitGenEditor()
     stopTimer(); removeMouseListener (this);
     if (proc.midiLearn.learning() >= 0) proc.midiLearn.cancelLearn();
     proc.onResultChanged = nullptr; proc.auditionPart.store (-1);
-    soundPage.reset(); presetPage.reset(); refPage.reset(); drumPage.reset();
+    soundPage.reset(); presetPage.reset(); projectPage.reset(); refPage.reset(); drumPage.reset();
     partSa.clear(); sa.clear(); ca.clear(); ba.clear(); muteBa.clear();
     styleList.setModel (nullptr);
     setLookAndFeel (nullptr);
@@ -183,7 +185,7 @@ void HitGenEditor::applyPalette()
     for (int t = 0; t < 4; ++t) { trackLabels[(size_t) t].setColour (Label::textColourId, lnf.pal().track[t]); tiles[(size_t) t].colour = lnf.pal().track[t]; }
     tagline.setColour (Label::textColourId, lnf.pal().mute); disclaimer.setColour (Label::textColourId, lnf.pal().mute);
     for (auto* l : { &status, &varLabel, &soundLabel, &hostLabel, &seedLabel, &langLabel, &qualityLabel, &sizeLabel, &keyLabel, &scaleLabel, &barsLabel, &keysToLabel }) l->setColour (Label::textColourId, lnf.pal().ink);
-    if (soundPage != nullptr) { soundPage->setLanguage (lang, rtl); presetPage->setLanguage (lang, rtl); refPage->setLanguage (lang, rtl); drumPage->setLanguage (lang, rtl); }
+    if (soundPage != nullptr) { soundPage->setLanguage (lang, rtl); presetPage->setLanguage (lang, rtl); projectPage->setLanguage (lang, rtl); refPage->setLanguage (lang, rtl); drumPage->setLanguage (lang, rtl); }
     sendLookAndFeelChange();
     repaint();
 }
@@ -195,17 +197,17 @@ void HitGenEditor::setLanguage (const String& l)
     lnf.setLanguage (l);
     langBox.setSelectedId (data.langCodes.indexOf (l) + 1, dontSendNotification);
     relabel(); fillSoundBoxes(); refreshStyleList(); refreshResult();
-    soundPage->setLanguage (lang, rtl); presetPage->setLanguage (lang, rtl); refPage->setLanguage (lang, rtl); drumPage->setLanguage (lang, rtl);
+    soundPage->setLanguage (lang, rtl); presetPage->setLanguage (lang, rtl); projectPage->setLanguage (lang, rtl); refPage->setLanguage (lang, rtl); drumPage->setLanguage (lang, rtl);
     if (bubble.isVisible()) openAssistant();
     sendLookAndFeelChange(); resized(); repaint();
 }
 
 void HitGenEditor::setTab (int t)
 {
-    tab = jlimit (0, 4, t);
-    tabBtns[(size_t) (tab == 3 ? ws : tab == 4 ? 7 : 4 + tab)].setToggleState (true, dontSendNotification);
+    tab = jlimit (0, 5, t);
+    tabBtns[(size_t) (tab == 3 ? ws : tab == 4 ? 7 : tab == 5 ? 8 : 4 + tab)].setToggleState (true, dontSendNotification);
     for (auto* c : genComps) c->setVisible (tab == 0);
-    soundPage->setVisible (tab == 1); presetPage->setVisible (tab == 2); refPage->setVisible (tab == 3); drumPage->setVisible (tab == 4);
+    soundPage->setVisible (tab == 1); presetPage->setVisible (tab == 2); refPage->setVisible (tab == 3); drumPage->setVisible (tab == 4); projectPage->setVisible (tab == 5);
     for (auto* c : std::initializer_list<Component*> { &seed, &newBtn }) c->setVisible (tab == 0);
     proc.auditionPart.store (tab == 1 ? soundPage->currentPart() : tab == 3 ? refPage->currentPart() : tab == 4 ? 3 : -1);   // 3: klavye davul pedlerini çalar
     if (tab == 4) drumPage->tick();
@@ -294,7 +296,7 @@ void HitGenEditor::relabel()
     guide.backText = T ("gdBack"); guide.nextText = T ("gdNext"); guide.doneText = T ("gdDone"); guide.skipText = T ("gdSkip"); guide.stepWord = T ("gdStep"); guide.rtl = rtl;
     for (int i = 0; i < 8; ++i) groupBtns[(size_t) i].setButtonText (T (kGroupKeys[i]));
     presetBtn.setButtonText (proc.userArtist.isNotEmpty() ? proc.userArtist + " - " + proc.userPreset : T ("hdPreset")); saveBtn.setButtonText (T ("hdSave")); settingsBtn.setButtonText (T ("hdSettings")); helpBtn.setButtonText (T ("hdHelp"));
-    for (int i = 0; i < 8; ++i) { tabBtns[(size_t) i].setButtonText (T (kTabKeys[i]).toUpperCase()); tabBtns[(size_t) i].setTooltip ((juce::SystemStats::getOperatingSystemType() & juce::SystemStats::MacOSX) != 0 ? "Cmd+" + String (i + 1) : "Ctrl+" + String (i + 1)); }
+    for (int i = 0; i < 9; ++i) { tabBtns[(size_t) i].setButtonText (T (kTabKeys[i]).toUpperCase()); tabBtns[(size_t) i].setTooltip ((juce::SystemStats::getOperatingSystemType() & juce::SystemStats::MacOSX) != 0 ? "Cmd+" + String (i + 1) : "Ctrl+" + String (i + 1)); }
     styleList.setTitle (T ("pStyleList"));
     varLabel.setText (T ("variation"), dontSendNotification); varLabel.setJustificationType (just);
     const char* genKeys[6] = { "orig", "energy", "thick", "human", "pump", "swing" };
@@ -500,7 +502,7 @@ void HitGenEditor::timerCallback()
     bool soundsChanged = false; for (int t = 0; t < 4; ++t) if (shownSounds[(size_t) t] != proc.soundId (t)) soundsChanged = true;
     if (soundsChanged) fillSoundBoxes();
     if (tab == 1) soundPage->tick();
-    presetPage->tick();
+    presetPage->tick(); if (tab == 5) projectPage->tick();
     if (tab == 3) refPage->tick();
     if (tab == 4) drumPage->tick();
     if (prev || hostPlay) everPlayed = true;
@@ -531,7 +533,7 @@ bool HitGenEditor::keyPressed (const KeyPress& k)
     if (k.getModifiers().isCommandDown() && tab == 3 && refPage != nullptr && (k.getKeyCode() == 'Z' || k.getKeyCode() == 'z' || k.getKeyCode() == 'Y' || k.getKeyCode() == 'y'))
     { if (k.getModifiers().isShiftDown() || k.getKeyCode() == 'Y' || k.getKeyCode() == 'y') refPage->redo(); else refPage->undo(); return true; }
     if (k.getModifiers().isCommandDown() && (k.getKeyCode() == 'S' || k.getKeyCode() == 's')) { loopTile.saveAs(); return true; }
-    if (k.getModifiers().isCommandDown() && k.getKeyCode() >= '1' && k.getKeyCode() <= '8') { const int i = k.getKeyCode() - '1'; if (i < 4) setWorkspace (i); else setTab (tabIndexOf (i)); return true; }
+    if (k.getModifiers().isCommandDown() && k.getKeyCode() >= '1' && k.getKeyCode() <= '9') { const int i = k.getKeyCode() - '1'; if (i < 4) setWorkspace (i); else setTab (tabIndexOf (i)); return true; }
     if (k == KeyPress::F1Key) { startGuide(); return true; }
     if (k == KeyPress::escapeKey && bubble.isVisible()) { bubble.setVisible (false); return true; }
     if (k == KeyPress::escapeKey && settingsOpen) { toggleSettings (false); return true; }
@@ -598,9 +600,9 @@ void HitGenEditor::layoutContent()
     place (presetBtn, { 700, 10, 180, 32 }); place (saveBtn, { 886, 10, 64, 32 }); place (settingsBtn, { 956, 10, 94, 32 }); place (helpBtn, { 1056, 10, 66, 32 });
     place (orb, { 1126, 2, 48, 48 });
     // gezinme (y 56-90): dört çalışma alanı, ayraç, üç stüdyo sayfası
-    for (int i = 0; i < 4; ++i) place (tabBtns[(size_t) i], { 16 + i * 124, 56, 120, 34 });
-    for (int i = 0; i < 3; ++i) place (tabBtns[(size_t) (4 + i)], { 516 + i * 104, 56, 100, 34 });
-    place (tabBtns[7], { 516 + 3 * 104, 56, 100, 34 });
+    for (int i = 0; i < 4; ++i) place (tabBtns[(size_t) i], { 16 + i * 112, 56, 108, 34 });
+    for (int i = 0; i < 3; ++i) place (tabBtns[(size_t) (4 + i)], { 468 + i * 93, 56, 90, 34 });
+    place (tabBtns[7], { 468 + 3 * 93, 56, 90, 34 }); place (tabBtns[8], { 468 + 4 * 93, 56, 90, 34 });
     place (seed, { 934, 58, 104, 30 }); place (newBtn, { 1044, 58, 112, 30 }); place (seedLabel, { 0, 0, 0, 0 });
     // ayarlar paneli (yalnızca açıkken görünür)
     settingsPanelBounds = Rectangle<int> (760, 94, 396, 270);
@@ -637,6 +639,7 @@ void HitGenEditor::layoutContent()
     if (presetPage) presetPage->setBounds (8, 98, PresetPage::kW, PresetPage::kH);
     if (refPage) refPage->setBounds (8, 98, ReferencePage::kW, ReferencePage::kH);
     if (drumPage) drumPage->setBounds (8, 98, DrumPage::kW, DrumPage::kH);
+    if (projectPage) projectPage->setBounds (8, 98, ProjectPage::kW, ProjectPage::kH);
     { const auto br = Rectangle<int> (712, 54, 450, jmax (150, bubble.getHeight())); bubble.setBounds (rtl ? br.withX (kW - br.getRight()) : br); }
     toastView.setBounds (0, kH - 56, kW, 56);
     guide.setBounds (0, 0, kW, kH);
