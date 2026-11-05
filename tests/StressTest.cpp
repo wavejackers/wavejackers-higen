@@ -5,6 +5,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "../Source/PluginProcessor.h"
 #include "../Source/PluginEditor.h"
+#include <BinaryData.h>
 #include "../Source/SoundParams.h"
 #include "../Source/DnaLibrary.h"
 #include "../Source/Assist.h"
@@ -328,6 +329,39 @@ static void snapPng (juce::Component& c, const juce::File& f)
 {
     auto img = c.createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f);
     f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os);
+}
+
+// açılış: ses çalar ve kendiliğinden biter, dışa aktarımda ve atlamada susar; göz gezip yerine oturur
+static void testIntro (const juce::File& outDir, const FailFn& fail)
+{
+    auto p_h = std::make_unique<HitGenProcessor>(); auto& p = *p_h; p.setRateAndBufferSizeDetails (48000.0, 256); p.prepareToPlay (48000.0, 256);
+    juce::AudioBuffer<float> buf (2, 256); juce::MidiBuffer midi;
+    auto block = [&] { buf.clear(); midi.clear(); p.processBlock (buf, midi); return buf.getMagnitude (0, 256); };
+    if (! p.intro.start (BinaryData::intro_ogg, (size_t) BinaryData::intro_oggSize)) { fail ("intro: decode failed"); return; }
+    float pk = 0; int b = 0;
+    for (; b < 4000 && (b < 2 || p.intro.playing()); ++b) pk = std::max (pk, block());
+    const double secs = b * 256.0 / 48000.0;
+    if (pk < 0.05f || pk > 0.8914f) fail ("intro: peak " + juce::String (pk));
+    if (p.intro.playing() || secs < 4.0 || secs > 12.0) fail ("intro: length " + juce::String (secs));
+    p.setNonRealtime (true); p.intro.start (BinaryData::intro_ogg, (size_t) BinaryData::intro_oggSize);
+    for (int i = 0; i < 8; ++i) block();
+    if (block() > 0.0f || p.intro.playing()) fail ("intro: not silent during offline export");
+    p.setNonRealtime (false); p.intro.start (BinaryData::intro_ogg, (size_t) BinaryData::intro_oggSize);
+    for (int i = 0; i < 40; ++i) block();
+    p.intro.stop(); for (int i = 0; i < 8; ++i) block();
+    if (block() > 0.0f || p.intro.playing()) fail ("intro: skip did not silence");
+
+    std::unique_ptr<HitGenEditor> ed (dynamic_cast<HitGenEditor*> (p.createEditor()));
+    ed->startIntro(); auto& ov = ed->introOverlay(); const auto home = ed->eyeHome();
+    if (! ov.running()) { fail ("intro: overlay not running"); return; }
+    bool moved = false; juce::Rectangle<int> r;
+    for (double t = 0; t < 2400; t += 33.0) { ed->advanceIntro (33.0); r = ed->eyeBounds(); moved = moved || r.getCentre().getDistanceFrom (home.getCentre()) > 200; }
+    snapPng (ed->contentComponent(), outDir.getChildFile ("plugin-en-intro.png"));
+    for (double t = 2400; t < 7000 && ov.running(); t += 33.0) ed->advanceIntro (33.0);
+    if (ed->eyeBounds() != home) fail ("intro: eye not back home");
+    if (! moved) fail ("intro: eye did not travel");
+    if (ov.running() || ov.isVisible()) fail ("intro: overlay did not finish");
+    std::cout << "intro ok: " << juce::String (secs, 2) << " s, peak " << juce::String (pk, 3) << "\n";
 }
 
 // -14 LUFS: oynatma sırasında kayan entegre ses yüksekliği hedefe oturmalı, tepe -1 dBFS altında kalmalı
@@ -770,6 +804,7 @@ int main (int argc, char** argv)
         delete e2;
         std::cout << "editor snapshots written\n";
     }
+    testIntro (outDir, fail);
     testReference (outDir, fail); testSampler (fail); testLibrary (fail); testMidiLearn (outDir, fail);
     testLoudness (outDir, fail, quick); testDrumMachine (outDir, fail); testGuideAndAssistant (outDir, fail);
     std::cout << (failures == 0 ? "ALL PASSED" : "FAILURES: " + std::to_string (failures)) << "\n";

@@ -504,6 +504,7 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     if (wasSamp && ! sampOn) ref.samplerAllOff();
     wasSamp = sampOn;
     ref.render (buffer, getSampleRate());      // referans sesin orijinali (yalnızca kullanıcı çal dediğinde)
+    intro.process (buffer, getSampleRate(), hostPlay || isNonRealtime());   // açılış sesi: taşıma ya da dışa aktarım başlarsa 20 ms içinde susar
     for (int i = 0; i < numOffs;)
     {
         if (offs[(size_t) i].at < sampleClock + n)

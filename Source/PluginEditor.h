@@ -4,6 +4,7 @@
 #include "Ui.h"
 #include "SoundPage.h"
 #include "PresetPage.h"
+#include "IntroOverlay.h"
 #include "ProjectPage.h"
 #include "ReferencePage.h"
 #include "DrumPage.h"
@@ -27,7 +28,7 @@ public:
     void setLanguage (const juce::String& l);
     void setTab (int t);
     void setWorkspace (int w);   // 0 Reference, 1 Smart Detect, 2 DNA Engine, 3 Generate
-    static bool autoGuide;       // ilk açılışta kılavuzu göster (testlerde kapalı)
+    static bool autoGuide, autoIntro;       // ilk açılışta kılavuzu göster (testlerde kapalı)
     int currentWorkspace() const noexcept { return ws; }   // 0 üret, 1 ses tasarımı, 2 presetler, 3 referans
     int currentTab() const noexcept { return tab; }
     SoundPage& sounds() { return *soundPage; }
@@ -36,6 +37,11 @@ public:
     hgui::GuideOverlay& guideOverlay() { return guide; }
     hgui::AssistantBubble& assistantBubble() { return bubble; }
     void startGuide();
+    void startIntro();                         // açılış ekranı + sesi (testler doğrudan çağırabilir)
+    IntroOverlay& introOverlay() { return intro; }
+    void advanceIntro (double ms);              // zamanlayıcı her karede çağırır; testler doğrudan
+    juce::Rectangle<int> eyeHome() const { return orbHome; }
+    juce::Rectangle<int> eyeBounds() const { return orb.getBounds(); }
     void openAssistant();
     juce::String assistantText() const { return sugg.empty() ? juce::String() : sugg[(size_t) juce::jlimit (0, (int) sugg.size() - 1, suggIdx)].text; }
     int assistantCount() const { return (int) sugg.size(); }
@@ -97,7 +103,9 @@ private:
     std::unique_ptr<SoundPage> soundPage; std::unique_ptr<PresetPage> presetPage; std::unique_ptr<ProjectPage> projectPage; std::unique_ptr<ReferencePage> refPage; std::unique_ptr<DrumPage> drumPage;
     // kılavuz ve asistan (2.7)
     hgui::AssistantOrb orb { lnf }; hgui::AssistantBubble bubble { lnf }; hgui::GuideOverlay guide { lnf };
-    juce::ToggleButton loudBtn;
+    juce::ToggleButton loudBtn, introBtn;
+    IntroOverlay intro { lnf }; juce::Rectangle<int> orbHome; double introLast = 0.0; bool guideAfterIntro = false;
+    static bool introEnabled(); static void setIntroEnabled (bool);
     struct ToastView : public juce::Component { HitGenEditor* owner = nullptr; void paint (juce::Graphics&) override; } toastView;   // bildirim hapı her sayfanın üstünde
     juce::String toastShown;
     struct Suggestion { juce::String id, title, text, applyText; std::function<void()> apply; };

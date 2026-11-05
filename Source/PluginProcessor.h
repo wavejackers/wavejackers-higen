@@ -1,4 +1,5 @@
 #pragma once
+#include "IntroSound.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "Data.h"
 #include "Generator.h"
@@ -54,6 +55,7 @@ public:
     hg::RefEngine ref;                     // referans ses: yükleme, SMART DETECT, orijinali çalma
     hg::MidiLearn midiLearn;               // MIDI CC -> parametre (sağ tık > MIDI Learn)
     float uiScale = 1.0f; bool highContrast = false; bool animations = true;
+    hg::IntroSound intro;                  // açılış sesi (DAW çalarken ve dışa aktarımda sessiz)
     std::function<void()> onResultChanged;
     juce::File writeMidi (int which);
     // ---- ses tasarımı (part: 0 akor, 1 bas, 2 melodi)

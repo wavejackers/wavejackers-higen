@@ -155,7 +155,24 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
     midiSeenLearned = proc.midiLearn.lastLearned(); startTimerHz (30);   // editör açılırken eski bildirimi gösterme
     setTab (0);                                  // açılış: MIDI Studio (stil listesi ve üretici); görünürlük tutarlı kurulur
     if (! proc.missingSamples.isEmpty()) toast (T ("dmKitMissing").replace ("{f}", proc.missingSamples.joinIntoString (", ")), 6000);
-    if (autoGuide && ! guideDone()) MessageManager::callAsync ([sp = Component::SafePointer<HitGenEditor> (this)] { if (sp != nullptr && sp->isShowing()) sp->startGuide(); });
+    // açılış: süreç başına bir kez (aynı DAW oturumunda birden çok örnek açılınca tekrar çalmaz); ardından gerekiyorsa ilk kullanım kılavuzu
+    content.addChildComponent (intro);
+    intro.onSkip = [this] { proc.intro.stop(); };
+    intro.onFinished = [this]
+    {
+        orb.setBounds (orbHome); orb.step (orbHome.getCentre().toFloat(), false);
+        if (guideAfterIntro) { guideAfterIntro = false; startGuide(); }
+        else if (isShowing()) grabKeyboardFocus();
+    };
+    addC (introBtn); introBtn.setToggleState (introEnabled(), dontSendNotification); introBtn.onClick = [this] { setIntroEnabled (introBtn.getToggleState()); };
+    MessageManager::callAsync ([sp = Component::SafePointer<HitGenEditor> (this)]
+    {
+        if (sp == nullptr || ! sp->isShowing()) return;
+        static std::atomic<bool> shownThisSession { false };
+        const bool guide = autoGuide && ! guideDone();
+        if (autoIntro && introEnabled() && ! shownThisSession.exchange (true)) { sp->guideAfterIntro = guide; sp->startIntro(); }
+        else if (guide) sp->startGuide();
+    });
 }
 
 HitGenEditor::~HitGenEditor()
@@ -226,7 +243,7 @@ void HitGenEditor::toggleSettings (bool on)
 {
     settingsOpen = on; settingsPanel.setVisible (on);
     if (on) settingsPanel.toFront (false);
-    for (auto* c : std::initializer_list<Component*> { &langLabel, &langBox, &qualityLabel, &qualityBox, &sizeBox, &contrastBtn, &motionBtn, &midiBtn, &loudBtn }) { c->setVisible (on); if (on) c->toFront (false); }
+    for (auto* c : std::initializer_list<Component*> { &langLabel, &langBox, &qualityLabel, &qualityBox, &sizeBox, &contrastBtn, &motionBtn, &midiBtn, &loudBtn, &introBtn }) { c->setVisible (on); if (on) c->toFront (false); }
     if (on) bubble.setVisible (false);
     sizeLabel.setVisible (false);
     settingsBtn.setToggleState (on, dontSendNotification); repaint();
@@ -292,6 +309,7 @@ void HitGenEditor::relabel()
     sizeLabel.setText (T ("pUiSize"), dontSendNotification); sizeBox.setTitle (T ("pUiSize"));
     contrastBtn.setButtonText (T ("pContrast")); motionBtn.setButtonText (T ("pMotion")); midiBtn.setButtonText (T ("mlAll")); midiBtn.setTooltip (T ("mlHint"));
     loudBtn.setButtonText (T ("pLoud")); loudBtn.setTooltip (T ("pLoudHint"));
+    introBtn.setButtonText (T ("pIntro")); introBtn.setTooltip (T ("pIntroHint"));
     orb.setTitle (T ("asName")); orb.setTooltip (T ("asTip")); orb.setHelpText (T ("asTip"));
     bubble.footer = T ("asFooter"); bubble.rtl = rtl; bubble.nextBtn.setButtonText (T ("asNext")); bubble.guideBtn.setButtonText (T ("gdStart")); bubble.closeBtn.setTitle (T ("asClose"));
     guide.backText = T ("gdBack"); guide.nextText = T ("gdNext"); guide.doneText = T ("gdDone"); guide.skipText = T ("gdSkip"); guide.stepWord = T ("gdStep"); guide.rtl = rtl;
@@ -509,7 +527,12 @@ void HitGenEditor::timerCallback()
     if (prev || hostPlay) everPlayed = true;
     // asistan: bakış ve kırpma; yeni bir öneri çıktıysa rozet (her ~2 sn)
     orb.talking = bubble.isVisible();
-    orb.step (content.getMouseXYRelative().toFloat(), proc.animations && (int) proc.apvts.getRawParameterValue ("quality")->load() != 0);
+    if (intro.running())
+    {
+        const double now = Time::getMillisecondCounterHiRes(); const double dt = jlimit (0.0, 100.0, now - introLast); introLast = now;
+        advanceIntro (dt);
+    }
+    else orb.step (content.getMouseXYRelative().toFloat(), proc.animations && (int) proc.apvts.getRawParameterValue ("quality")->load() != 0);
     if (++suggTick % 60 == 0 && ! bubble.isVisible())
     {
         bool fresh = false; for (auto& sg : collectSuggestions()) if (! seenSugg.contains (sg.id)) { fresh = true; break; }
@@ -638,8 +661,8 @@ void HitGenEditor::layoutContent()
     place (tabBtns[7], { 468 + 3 * 93, 56, 90, 34 }); place (tabBtns[8], { 468 + 4 * 93, 56, 90, 34 });
     place (seed, { 934, 58, 104, 30 }); place (newBtn, { 1044, 58, 112, 30 }); place (seedLabel, { 0, 0, 0, 0 });
     // ayarlar paneli (yalnızca açıkken görünür)
-    settingsPanelBounds = Rectangle<int> (760, 94, 396, 270);
-    place (midiBtn, { 780, 254, 360, 28 }); place (loudBtn, { 780, 292, 360, 28 });
+    settingsPanelBounds = Rectangle<int> (760, 94, 396, 306);
+    place (midiBtn, { 780, 254, 360, 28 }); place (loudBtn, { 780, 292, 360, 28 }); place (introBtn, { 780, 328, 360, 28 });
     place (langLabel, { 780, 108, 110, 28 }); place (langBox, { 900, 108, 240, 28 });
     place (qualityLabel, { 780, 144, 110, 28 }); place (qualityBox, { 900, 144, 240, 28 });
     place (sizeLabel, { 0, 0, 0, 0 }); place (sizeBox, { 900, 180, 240, 28 }); place (contrastBtn, { 780, 218, 180, 28 }); place (motionBtn, { 968, 218, 172, 28 });
@@ -794,9 +817,45 @@ void HitGenEditor::refreshMidiBadges()
 // ---------------------------------------------------------------- kılavuz ve asistan (2.7)
 #if HITGEN_TEST_BUILD
 bool HitGenEditor::autoGuide = false;
+bool HitGenEditor::autoIntro = false;
 #else
 bool HitGenEditor::autoGuide = true;
+bool HitGenEditor::autoIntro = true;
 #endif
+
+void HitGenEditor::startIntro()
+{
+    const bool motion = proc.animations && (int) proc.apvts.getRawParameterValue ("quality")->load() != 0;
+    if (! intro.running()) orbHome = orb.getBounds();
+    toggleSettings (false); bubble.setVisible (false);
+    intro.setSkipText (T ("inSkip"));
+    intro.setBounds (0, 0, kW, kH); intro.begin (motion, orbHome); orb.toFront (false);
+    introLast = Time::getMillisecondCounterHiRes();
+    proc.intro.start (BinaryData::intro_ogg, (size_t) BinaryData::intro_oggSize);
+    if (intro.isShowing()) intro.grabKeyboardFocus();
+}
+
+void HitGenEditor::advanceIntro (double ms)
+{
+    const auto r = intro.advance (ms);
+    if (intro.running()) { orb.setBounds (r); orb.toFront (false); orb.step (intro.eyeLook(), true); }
+}
+
+bool HitGenEditor::introEnabled()
+{
+    const auto f = uiSettingsFile(); if (! f.existsAsFile() || f.getSize() > 100000) return true;
+    const auto v = JSON::parse (f.loadFileAsString())["introOn"];
+    return v.isVoid() ? true : (bool) v;
+}
+
+void HitGenEditor::setIntroEnabled (bool on)
+{
+    auto f = uiSettingsFile(); f.getParentDirectory().createDirectory();
+    auto v = f.existsAsFile() ? JSON::parse (f.loadFileAsString()) : var();
+    if (! v.isObject()) v = var (new DynamicObject());
+    v.getDynamicObject()->setProperty ("introOn", on);
+    f.replaceWithText (JSON::toString (v));
+}
 
 File HitGenEditor::uiSettingsFile()
 {
