@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include <BinaryData.h>
 
 using namespace juce;
 
@@ -16,7 +17,7 @@ String stripTags (String s) { while (s.contains ("<")) { auto a = s.indexOf ("<"
 HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc (p), data (p.data)
 {
     setLookAndFeel (&lnf);
-    content.owner = this;
+    content.owner = this; loadArt();
     addAndMakeVisible (content);
     content.setFocusContainerType (FocusContainerType::keyboardFocusContainer);
     setTitle ("Wavejackers HitGen");
@@ -485,7 +486,7 @@ void HitGenEditor::timerCallback()
         const int q = (int) proc.apvts.getRawParameterValue ("quality")->load();
         juce::ignoreUnused (q);
         ++frame;
-        if (frame % 3 == 0) content.repaint (rtl ? kW - 690 : 548, 14, 142, 36);
+        if (frame % 3 == 0) { content.repaint (rtl ? kW - 690 : 548, 14, 142, 36); content.repaint (rtl ? kW - 66 : 0, 0, 66, 52); }
     }
     lnf.stepHover (proc.animations && (int) proc.apvts.getRawParameterValue ("quality")->load() != 0);   // hover geçişleri yalnızca arayüz iş parçacığında
     const bool hostPlay = proc.hostPlaying.load(), prev = proc.previewPlaying.load();
@@ -542,13 +543,38 @@ bool HitGenEditor::keyPressed (const KeyPress& k)
 
 void HitGenEditor::paint (Graphics& g) { g.fillAll (lnf.pal().bg); }
 
+void HitGenEditor::loadArt()
+{
+    // figürler bir kez yüksek kalitede ölçeklenir; boyama sırasında yeniden örnekleme yapılmaz
+    auto load = [] (const void* d, int n, int h)
+    {
+        auto im = ImageFileFormat::loadFrom (d, (size_t) n);
+        return im.isValid() ? im.rescaled (jmax (1, im.getWidth() * h / im.getHeight()), h, Graphics::highResamplingQuality) : im;
+    };
+    artElder  = load (BinaryData::elder_png, BinaryData::elder_pngSize, 620);
+    artAngelF = load (BinaryData::angel_f_png, BinaryData::angel_f_pngSize, 560);
+    artAngelM = load (BinaryData::angel_m_png, BinaryData::angel_m_pngSize, 470);
+    artHead   = load (BinaryData::elder_head_png, BinaryData::elder_head_pngSize, 46);
+}
+
 void HitGenEditor::Content::paint (Graphics& g)
 {
     auto& ed = *owner; const auto& P = ed.lnf.pal();
     g.fillAll (P.bg);
-    // derin çivit atmosfer: üstte ve sağ altta çok hafif iki ışık havuzu (durağan; animasyon yok)
-    { ColourGradient a (P.accent.withAlpha (0.10f), kW * 0.5f, 120.0f, P.accent.withAlpha (0.0f), kW * 0.5f + 620.0f, 120.0f, true); g.setGradientFill (a); g.fillRect (0, 0, kW, kH); }
-    { ColourGradient b (P.track[3].withAlpha (0.05f), kW * 0.92f, (float) kH, P.track[3].withAlpha (0.0f), kW * 0.92f - 520.0f, (float) kH, true); g.setGradientFill (b); g.fillRect (0, 0, kW, kH); }
+    // göksel tema: üstte altın ışık, figürler panellerin ardında (yarı saydam paneller arasından hafifçe görünür)
+    { ColourGradient a (P.accent.withAlpha (0.12f), kW * 0.5f, 0.0f, P.accent.withAlpha (0.0f), kW * 0.5f, 520.0f, true); g.setGradientFill (a); g.fillRect (0, 0, kW, kH); }
+    if (! ed.proc.highContrast)
+    {
+        auto put = [&] (const Image& im, int x, int y, float a)
+        {
+            if (! im.isValid()) return;
+            const int xx = ed.rtl ? kW - x - im.getWidth() : x;
+            g.setOpacity (a); g.drawImageAt (im, xx, y); g.setOpacity (1.0f);
+        };
+        put (ed.artAngelM, 150, kH - ed.artAngelM.getHeight() + 10, 0.26f);
+        put (ed.artAngelF, -24, kH - ed.artAngelF.getHeight() + 6, 0.32f);
+        put (ed.artElder, kW - ed.artElder.getWidth() + 30, kH - ed.artElder.getHeight() + 8, 0.34f);   // metin okunurluğu için soluk
+    }
     // ince başlık ve gezinme çizgileri
     g.setColour (P.line); g.fillRect (0, 52, kW, 1); g.fillRect (0, 90, kW, 1);
     if (ed.tab == 0)
@@ -558,10 +584,17 @@ void HitGenEditor::Content::paint (Graphics& g)
             g.setColour (P.panel); g.fillRoundedRectangle (rr, 12); g.setColour (P.line); g.drawRoundedRectangle (rr.reduced (0.5f), 12, 1);
         }
     // marka: WAVEJACKERS / HITGEN, altında ürün tanımı
-    const float bx = ed.rtl ? kW - 300.0f : 20.0f; const auto jl = ed.rtl ? Justification::centredRight : Justification::centredLeft;
-    g.setFont (ed.lnf.font (19, true)); g.setColour (P.ink); g.drawText ("WAVEJACKERS", ed.rtl ? Rectangle<float> (kW - 180.0f, 6, 160, 26) : Rectangle<float> (bx, 6, 160, 26), jl);
-    g.setColour (P.accent); g.drawText ("/ HITGEN", ed.rtl ? Rectangle<float> (kW - 296.0f, 6, 110, 26) : Rectangle<float> (bx + 148, 6, 110, 26), jl);   // sağdan sola: Çal düğmesiyle çakışmaz
-    g.setFont (ed.lnf.font (10.5f)); g.setColour (P.mute); g.drawText ("ARTIST SOUND DNA ENGINE", Rectangle<float> (bx, 31, 280, 16), jl);
+    {   // bilge portresi: altın hale çıkış seviyesine göre parlar (hareket kapalıysa sabit)
+        const auto cam = Rectangle<float> (ed.rtl ? kW - 58.0f : 10.0f, 3, 46, 46);
+        const float L = ed.proc.animations ? jlimit (0.0f, 1.0f, ed.meter / .891f) : 0.0f;
+        ColourGradient h (P.accent.withAlpha (0.18f + 0.5f * L), cam.getCentreX(), cam.getCentreY(), P.accent.withAlpha (0.0f), cam.getCentreX() + 30, cam.getCentreY(), true);
+        g.setGradientFill (h); g.fillEllipse (cam.expanded (8));
+        if (ed.artHead.isValid()) g.drawImageAt (ed.artHead, (int) cam.getX(), (int) cam.getY());
+    }
+    const float bx = ed.rtl ? kW - 360.0f : 64.0f; const auto jl = ed.rtl ? Justification::centredRight : Justification::centredLeft;
+    g.setFont (ed.lnf.font (19, true)); g.setColour (P.ink); g.drawText ("WAVEJACKERS", ed.rtl ? Rectangle<float> (kW - 226.0f, 6, 160, 26) : Rectangle<float> (bx, 6, 160, 26), jl);
+    g.setColour (P.accent); g.drawText ("/ HITGEN", ed.rtl ? Rectangle<float> (kW - 342.0f, 6, 110, 26) : Rectangle<float> (bx + 148, 6, 110, 26), jl);   // sağdan sola: Çal düğmesiyle çakışmaz
+    g.setFont (ed.lnf.font (10.5f)); g.setColour (P.mute); g.drawText ("ARTIST SOUND DNA ENGINE", Rectangle<float> (ed.rtl ? kW - 344.0f : bx, 31, 280, 16), jl);
     // çıkış seviyesi: tavan -1 dBFS (0.891); tepe tutma çizgisi ile
     {
         Rectangle<float> m (556, 24, 120, 4); if (ed.rtl) m = m.withX (kW - 556 - m.getWidth());

@@ -149,8 +149,8 @@ void OrbView::renderStatic (Graphics& g, float sc)
     // çekirdek: parlak, iki tonlu küre (dekoratif; üstündeki tüm sayılar gerçek)
     {
         const auto core = Rectangle<float> (rCore * 2, rCore * 2).withCentre (c);
-        ColourGradient body (Colour (0xffd2c8ff), c.x - rCore * 0.42f, c.y - rCore * 0.48f, Colour (0xff1a1150), c.x + rCore * 0.55f, c.y + rCore * 0.80f, true);
-        body.addColour (0.30, Colour (0xff8f78f8)); body.addColour (0.62, Colour (0xff4a32c4)); body.addColour (0.86, Colour (0xff24186a));
+        ColourGradient body (Colour (0xfffff1cc), c.x - rCore * 0.42f, c.y - rCore * 0.48f, Colour (0xff2a1c08), c.x + rCore * 0.55f, c.y + rCore * 0.80f, true);
+        body.addColour (0.30, Colour (0xffe6c070)); body.addColour (0.62, Colour (0xffa87a28)); body.addColour (0.86, Colour (0xff4f3510));   // asa ucundaki altın küre
         g.setGradientFill (body); g.fillEllipse (core);
         const auto tint = catColour ? catColour (1) : P.accent;    // ikinci renk alt sağdan sızar
         ColourGradient rim (tint.withAlpha (0.0f), c.x - rCore * 0.1f, c.y - rCore * 0.1f, tint.withAlpha (0.55f), c.x + rCore * 0.78f, c.y + rCore * 0.70f, true);
@@ -158,7 +158,7 @@ void OrbView::renderStatic (Graphics& g, float sc)
         const auto pink = catColour ? catColour (2) : P.accent2;
         ColourGradient bloom (pink.withAlpha (0.32f), c.x - rCore * 0.55f, c.y + rCore * 0.55f, pink.withAlpha (0.0f), c.x - rCore * 0.05f, c.y + rCore * 0.15f, true);
         g.setGradientFill (bloom); g.fillEllipse (core);
-        ColourGradient centreDim (Colour (0xff0c0820).withAlpha (0.42f), c.x, c.y + rCore * 0.05f, Colour (0xff0c0820).withAlpha (0.0f), c.x + rCore * 0.62f, c.y, true);
+        ColourGradient centreDim (Colour (0xff140d03).withAlpha (0.55f), c.x, c.y + rCore * 0.05f, Colour (0xff140d03).withAlpha (0.0f), c.x + rCore * 0.62f, c.y, true);
         g.setGradientFill (centreDim); g.fillEllipse (core);   // ortadaki sayılar okunsun diye merkez hafif koyulaşır
         g.setColour (Colours::white.withAlpha (0.18f)); g.drawEllipse (core.reduced (0.5f), 1.0f);
     }

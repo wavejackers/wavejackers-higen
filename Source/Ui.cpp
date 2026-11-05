@@ -7,7 +7,7 @@ using namespace juce;
 
 Palette Palette::make (bool hc, Colour)
 {
-    // AI Minimal: koyu antrasit yüzeyler, tek bir lavanta vurgu; ikinci renkler yalnızca durum anlamı taşır.
+    // Göksel tema; yüksek kontrast modu ayrı ve tamamen opak kalır.
     Palette p;
     if (hc)
     {
@@ -18,12 +18,13 @@ Palette Palette::make (bool hc, Colour)
     }
     else
     {
-        // derin çivit: yüzeyler mora çalan lacivert, tek lavanta vurgu; kategoriler için dört ayrışık ton
-        p.bg = Colour (0xff0c0b19); p.panel = Colour (0xff141329); p.panel2 = Colour (0xff1d1b38); p.ink = Colour (0xfff3f2fa); p.mute = Colour (0xff9896b8);
-        p.line = Colour (0xff2b2950); p.accent = Colour (0xff9b8cf5); p.accent2 = Colour (0xff7c70d6); p.accentInk = Colour (0xff0c0b19);
-        p.grid = Colour (0xff181730); p.grid2 = Colour (0xff36345e); p.focus = Colour (0xffc2b9ff);
-        p.success = Colour (0xff64c9ad); p.warning = Colour (0xffe7b96b);
-        p.track[0] = Colour (0xffd68be0); p.track[1] = Colour (0xff9b8cf5); p.track[2] = Colour (0xffe7b96b); p.track[3] = Colour (0xff6fd3e6);
+        // göksel tema (bilge ve melekler): gece laciverdi zemin, fildişi yazı, tek altın vurgu.
+        // paneller hafif saydam: arka plandaki figürler panellerin ardından sezilir, metin kontrastı korunur (fildişi/panel > 12:1)
+        p.bg = Colour (0xff0d0f1a); p.panel = Colour (0xe0161827); p.panel2 = Colour (0xf0202235); p.ink = Colour (0xfff6f0e1); p.mute = Colour (0xffb3aa95);
+        p.line = Colour (0xff3d3628); p.accent = Colour (0xffe3bb62); p.accent2 = Colour (0xffb8913e); p.accentInk = Colour (0xff1a1408);
+        p.grid = Colour (0xff15172a); p.grid2 = Colour (0xff3d3829); p.focus = Colour (0xffffe6a6);
+        p.success = Colour (0xff8fd1b0); p.warning = Colour (0xfff0a35e);
+        p.track[0] = Colour (0xffe9b4c8); p.track[1] = Colour (0xffe3bb62); p.track[2] = Colour (0xff8fb7ea); p.track[3] = Colour (0xffa9e0cf);
     }
     return p;
 }

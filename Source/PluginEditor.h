@@ -46,6 +46,8 @@ private:
     using BA = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
     struct Content : public juce::Component { HitGenEditor* owner = nullptr; void paint (juce::Graphics&) override; };
+    juce::Image artElder, artAngelF, artAngelM, artHead;   // karakter teması: önceden ölçeklenmiş arka plan figürleri ve başlık portresi
+    void loadArt();
     struct StyleModel : public juce::ListBoxModel
     {
         HitGenEditor& ed; explicit StyleModel (HitGenEditor& e) : ed (e) {}

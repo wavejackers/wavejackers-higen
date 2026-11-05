@@ -216,7 +216,6 @@ Voice* Engine::findVoice (int track)
 
 void Engine::noteOn (int track, int note, int vel, double durSec, int)
 {
-    if (track >= 0 && track < 4) partAct[track].store (juce::jmax (0.15f, vel / 127.0f), std::memory_order_relaxed);
     if (track == 2) { drumHit (note, vel, 0); return; }
     const int ti = track == 3 ? 2 : track;   // patch dizisi: 0 akor, 1 bas, 2 melodi
     Patch* p = cur[(size_t) ti]; if (p == nullptr) return;
