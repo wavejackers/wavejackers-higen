@@ -19,7 +19,7 @@ static double toneAmp (const std::vector<float>& y, double fs, double f, size_t 
     double re = 0, im = 0; size_t n = y.size() - from;
     for (size_t i = from; i < y.size(); ++i)
     {
-        double ph = 2.0 * M_PI * f * (double) (i - from) / fs;
+        double ph = 2.0 * juce::MathConstants<double>::pi * f * (double) (i - from) / fs;
         re += y[i] * std::cos (ph); im += y[i] * std::sin (ph);
     }
     return 2.0 * std::sqrt (re * re + im * im) / (double) n;
@@ -29,7 +29,7 @@ static void testSaturator()
 {
     const double fs = 48000.0; const int N = 48000 * 2; const size_t skip = 48000;
     std::vector<float> x (N), ySym (N), yAsym (N);
-    for (int i = 0; i < N; ++i) x[i] = 0.5f * (float) std::sin (2.0 * M_PI * 50.0 * i / fs);
+    for (int i = 0; i < N; ++i) x[i] = 0.5f * (float) std::sin (2.0 * juce::MathConstants<double>::pi * 50.0 * i / fs);
 
     AsymmetricSaturator sym; sym.bias = 0.0f; sym.drive = 2.0f;
     AsymmetricSaturator asy; asy.bias = 0.25f; asy.drive = 2.0f;
@@ -63,7 +63,7 @@ static void testLowPass()
         juce::AudioBuffer<float> buf (1, block);
         for (int start = 0; start < N; start += block)
         {
-            for (int i = 0; i < block; ++i) buf.setSample (0, i, 0.5f * (float) std::sin (2.0 * M_PI * f * (start + i) / fs));
+            for (int i = 0; i < block; ++i) buf.setSample (0, i, 0.5f * (float) std::sin (2.0 * juce::MathConstants<double>::pi * f * (start + i) / fs));
             lp.process (buf);
             for (int i = 0; i < block; ++i) y.push_back (buf.getSample (0, i));
         }
