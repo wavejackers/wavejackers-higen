@@ -831,7 +831,7 @@ void HitGenEditor::startIntro()
     intro.setSkipText (T ("inSkip"));
     intro.setBounds (0, 0, kW, kH); intro.begin (motion, orbHome); orb.toFront (false);
     introLast = Time::getMillisecondCounterHiRes();
-    proc.intro.start (BinaryData::intro_ogg, (size_t) BinaryData::intro_oggSize);
+    proc.intro.start (BinaryData::intro_wav, (size_t) BinaryData::intro_wavSize);
     if (intro.isShowing()) intro.grabKeyboardFocus();
 }
 

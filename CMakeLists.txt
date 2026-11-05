@@ -66,7 +66,7 @@ juce_add_binary_data(HitGenData SOURCES
   Resources/characters/angel_m.png
   Resources/characters/angel_f.png
   Resources/characters/elder_head.png
-  Resources/intro/intro.ogg)
+  Resources/intro/intro.wav)
 set_target_properties(HitGenData PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # zstd (yalnızca açma): Serum 2 presetleri zstd ile sıkıştırılır. -DHITGEN_ZSTD_DIR=<yol> ya da GitHub'dan v1.5.6

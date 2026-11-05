@@ -14,7 +14,7 @@ public:
     {
         if (! ready.load())
         {
-            juce::OggVorbisAudioFormat fmt;
+            juce::WavAudioFormat fmt;   // WAV: harici kod çözücü yok
             std::unique_ptr<juce::AudioFormatReader> r (fmt.createReaderFor (new juce::MemoryInputStream (data, size, false), true));
             if (r == nullptr || r->lengthInSamples <= 0) return false;
             buf.setSize (2, (int) r->lengthInSamples);

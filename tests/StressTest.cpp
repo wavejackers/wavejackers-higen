@@ -337,16 +337,16 @@ static void testIntro (const juce::File& outDir, const FailFn& fail)
     auto p_h = std::make_unique<HitGenProcessor>(); auto& p = *p_h; p.setRateAndBufferSizeDetails (48000.0, 256); p.prepareToPlay (48000.0, 256);
     juce::AudioBuffer<float> buf (2, 256); juce::MidiBuffer midi;
     auto block = [&] { buf.clear(); midi.clear(); p.processBlock (buf, midi); return buf.getMagnitude (0, 256); };
-    if (! p.intro.start (BinaryData::intro_ogg, (size_t) BinaryData::intro_oggSize)) { fail ("intro: decode failed"); return; }
+    if (! p.intro.start (BinaryData::intro_wav, (size_t) BinaryData::intro_wavSize)) { fail ("intro: decode failed"); return; }
     float pk = 0; int b = 0;
     for (; b < 4000 && (b < 2 || p.intro.playing()); ++b) pk = std::max (pk, block());
     const double secs = b * 256.0 / 48000.0;
     if (pk < 0.05f || pk > 0.8914f) fail ("intro: peak " + juce::String (pk));
     if (p.intro.playing() || secs < 4.0 || secs > 12.0) fail ("intro: length " + juce::String (secs));
-    p.setNonRealtime (true); p.intro.start (BinaryData::intro_ogg, (size_t) BinaryData::intro_oggSize);
+    p.setNonRealtime (true); p.intro.start (BinaryData::intro_wav, (size_t) BinaryData::intro_wavSize);
     for (int i = 0; i < 8; ++i) block();
     if (block() > 0.0f || p.intro.playing()) fail ("intro: not silent during offline export");
-    p.setNonRealtime (false); p.intro.start (BinaryData::intro_ogg, (size_t) BinaryData::intro_oggSize);
+    p.setNonRealtime (false); p.intro.start (BinaryData::intro_wav, (size_t) BinaryData::intro_wavSize);
     for (int i = 0; i < 40; ++i) block();
     p.intro.stop(); for (int i = 0; i < 8; ++i) block();
     if (block() > 0.0f || p.intro.playing()) fail ("intro: skip did not silence");
