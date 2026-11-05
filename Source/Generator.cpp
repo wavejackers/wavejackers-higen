@@ -269,7 +269,7 @@ Result generate (const Data& data, const GenParams& P)
         if (auto* a = hv2.getArray()) for (auto& x : *a) hrk.push_back (x.toString());
         std::vector<std::vector<std::vector<double>>> tpls;
         for (auto& k : hrk) tpls.push_back (rows (data.root()["hr"][juce::Identifier (k)]));
-        const double rep = has (mel, "rep") ? num (mel["rep"]) : .4, leap = .12 + orig * .3;
+        const double rep = has (mel, "rep") ? num (mel["rep"]) : .4, leap = .12;   // özgünlük melodiye eklenmez
         int cur = 3 + (int) std::floor (rm() * 3);
         for (int b = 0; b < bars; ++b)
         {
@@ -308,12 +308,12 @@ Result generate (const Data& data, const GenParams& P)
             for (auto n : c.midi) { int x = n; while (x < oc - 4) x += 12; while (x > oc + 8) x -= 12; ext.push_back (x); }
             auto e2 = ext; for (auto n : ext) e2.push_back (n + 12);
             std::stable_sort (e2.begin(), e2.end());
-            const int lift = (b % 4 == 3 && orig > .3) ? 12 : 0, shift = (b % 8 >= 4) ? 1 : 0;
+            const int shift = (b % 8 >= 4) ? 1 : 0;
             for (int s = 0; s < 16; ++s)
             {
                 int ix = seq[(size_t) ((s + shift) % (int) seq.size())]; if (ix < 0) continue;
                 if (rm() < (1 - clampT (dens, 0.0, 1.0)) * .55) continue;
-                int m = e2[(size_t) (ix % (int) e2.size())] + (s >= 12 ? lift : 0);
+                int m = e2[(size_t) (ix % (int) e2.size())];
                 addM (b, s, 1, m, s % 4 == 0 ? 98 : 78);
             }
         }
@@ -334,7 +334,7 @@ Result generate (const Data& data, const GenParams& P)
         for (int b = 0; b < bars; ++b)
         {
             const auto& c = R.chords[(size_t) b];
-            if (b % 4 == 3 && riff.size() > 2 && rm() < .4 + orig * .5) { size_t i = (size_t) std::floor (rm() * (double) riff.size()); riff[i] = { riff[i].first, pickFrom (rm, offs) }; }
+            if (b % 4 == 3 && riff.size() > 2 && rm() < .4) { size_t i = (size_t) std::floor (rm() * (double) riff.size()); riff[i] = { riff[i].first, pickFrom (rm, offs) }; }
             const int rootM = oc + ((c.pc - (oc % 12) + 12) % 12);
             for (size_t j = 0; j < riff.size(); ++j)
             {

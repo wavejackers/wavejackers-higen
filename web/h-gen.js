@@ -124,7 +124,7 @@ HG.generate = function (P) {
   const snapDeg = (m, tones) => { let best = m, bd = 99; for (let k = m - 3; k <= m + 3; k++) { if (!tones.includes(((k % 7) + 7) % 7)) continue; const d = Math.abs(k - m) + rm() * .1; if (d < bd) { bd = d; best = k; } } return best; };
   const addM = (b, s, l, m, v) => { let x = m; while (x > 96) x -= 12; while (x < 36) x += 12; add('melody', b * 16 + s, Math.max(1, l), x, v); };
   if (mmode === 'hook') {
-    const hrk = V.hr || S.mel.hr, tpls = hrk.map(k => HG.HR[k]), rep = S.mel.rep == null ? .4 : S.mel.rep, leap = .12 + orig * .3;
+    const hrk = V.hr || S.mel.hr, tpls = hrk.map(k => HG.HR[k]), rep = S.mel.rep == null ? .4 : S.mel.rep, leap = .12;   // özgünlük melodiye eklenmez
     let cur = 3 + Math.floor(rm() * 3);
     for (let b = 0; b < bars; b++) {
       const c = chords[b], tp = tpls[(b >> 1) % tpls.length], odd = b % 2 === 1;
@@ -148,11 +148,11 @@ HG.generate = function (P) {
       const c = chords[b]; let ext = [];
       c.midi.forEach(n => { let x = n; while (x < (S.mel.oct || 72) - 4) x += 12; while (x > (S.mel.oct || 72) + 8) x -= 12; ext.push(x); });
       ext = ext.concat(ext.map(n => n + 12)).sort((a, z) => a - z);
-      const lift = (b % 4 === 3 && orig > .3) ? 12 : 0, shift = (b % 8 >= 4) ? 1 : 0;
+      const shift = (b % 8 >= 4) ? 1 : 0;
       for (let s = 0; s < 16; s++) {
         const ix = seq[(s + shift) % seq.length]; if (ix < 0) continue;
         if (rm() < (1 - clamp(dens, 0, 1)) * .55) continue;
-        const m = ext[ix % ext.length] + (s >= 12 ? lift : 0);
+        const m = ext[ix % ext.length];
         addM(b, s, 1, m, s % 4 === 0 ? 98 : 78);
       }
     }
@@ -164,7 +164,7 @@ HG.generate = function (P) {
     riff.sort((a, z) => a[0] - z[0]);
     for (let b = 0; b < bars; b++) {
       const c = chords[b];
-      if (b % 4 === 3 && riff.length > 2 && rm() < .4 + orig * .5) { const i = Math.floor(rm() * riff.length); riff[i] = [riff[i][0], pick(rm, offs)]; }
+      if (b % 4 === 3 && riff.length > 2 && rm() < .4) { const i = Math.floor(rm() * riff.length); riff[i] = [riff[i][0], pick(rm, offs)]; }
       const rootM = (S.mel.oct || 60) + ((c.pc - ((S.mel.oct || 60) % 12) + 12) % 12);
       riff.forEach(([s, o], j) => { const nx = j + 1 < riff.length ? riff[j + 1][0] : 16; addM(b, s, Math.min(nx - s, rm() < .3 ? 2 : 1), rootM + o, s % 4 === 0 ? 102 : 84); });
     }
