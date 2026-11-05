@@ -558,6 +558,7 @@ juce::MemoryBlock midiFile (const Data& data, const Result& res, const std::vect
         int us = (int) jsRound (60000000.0 / P.bpm); auto ki = keyInfo (data, P.key, P.scale);
         std::vector<MEv> ev { meta (0, 0x03, str (title)), meta (0, 0x51, { (uint8_t) ((us >> 16) & 255), (uint8_t) ((us >> 8) & 255), (uint8_t) (us & 255) }),
                               meta (0, 0x58, { 4, 2, 24, 8 }), meta (0, 0x59, { (uint8_t) (ki.sf & 255), (uint8_t) ki.mi }) };
+        for (const auto& sc : res.sections) ev.push_back (meta (sc.bar * 16 * STEP, 0x06, str (sc.name)));   // bölüm işaretçileri (tam parça)
         for (size_t b = 0; b < res.chords.size(); ++b) ev.push_back (meta ((int) b * 16 * STEP, 0x06, str (res.chords[b].name)));
         return ev;
     };

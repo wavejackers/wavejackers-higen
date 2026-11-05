@@ -26,6 +26,7 @@ private:
     juce::TextEditor nameEd;
     juce::TextButton startBtn, saveBtn, openBtn, deleteBtn;
     juce::ListBox tmplList, mineList;
+    hgui::DragTile fullTile, full0Tile, loopTile;   // DAW'a sürüklenen MIDI: tam parça (çok izli), tam parça (Format 0), tüm izler (döngü)
     std::unique_ptr<Model> tmplModel, mineModel;
 
     juce::String T (const juce::String& k) const { return data.tr (lang, k); }
@@ -34,6 +35,7 @@ private:
     void openRow (int row);
     void say (const juce::String& s);
     void updateButtons();
+    void paintSkeleton (juce::Graphics& g, juce::Rectangle<int> area, int style) const;
     juce::Rectangle<int> mir (juce::Rectangle<int> r) const { return rtl ? r.withX (kW - r.getRight()) : r; }
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ProjectPage)
 };

@@ -532,6 +532,7 @@ juce::MemoryBlock HitGenProcessor::midiBytes (int which) const
     hg::Result res = *r;
     const double hb = hostBpm.load(); res.P.bpm = hb > 0 ? (int) std::lround (hb) : (int) p ("bpm")->load();
     const std::vector<int> all { hg::kChords, hg::kBass, hg::kDrums, hg::kMelody };
+    if (which == 6) return hg::midiFile (data, hg::assemble (data, res), all, true);    // tam parça, tek iz (Format 0)
     if (which == 5) return hg::midiFile (data, hg::assemble (data, res), all, false);
     if (which == 4) return hg::midiFile (data, res, all, false);
     return hg::midiFile (data, res, { which }, false);
@@ -541,7 +542,7 @@ juce::File HitGenProcessor::writeMidi (int which)
 {
     auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("WavejackersHitGen");
     dir.createDirectory();
-    const juce::String suffix = which == 5 ? "_tam-parca" : which == 4 ? "_tum-izler" : juce::String ("_") + kPartIds[which];
+    const juce::String suffix = which == 6 ? "_tam-parca_format0" : which == 5 ? "_tam-parca" : which == 4 ? "_tum-izler" : juce::String ("_") + kPartIds[which];
     auto f = dir.getChildFile (baseName() + suffix + ".mid");
     auto bytes = midiBytes (which);
     if (bytes.getSize() > 0) f.replaceWithData (bytes.getData(), bytes.getSize());

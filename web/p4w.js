@@ -27,6 +27,7 @@ MB.TNAME = { chords: 'Chords', bass: 'Bass', melody: 'Melody', drums: 'Drums' };
       meta(0, 0x58, [4, 2, 24, 8]),
       meta(0, 0x59, [ki.sf & 255, ki.mi])
     ];
+    (res.sections || []).forEach(sc => ev.push(meta(sc.bar * 16 * STEP, 0x06, str(sc.name))));   // bölüm işaretçileri (tam parça): Intro, Build, Drop...
     res.chords.forEach((c, b) => ev.push(meta(b * 16 * STEP, 0x06, str(c.name))));
     return ev;
   }

@@ -30,7 +30,7 @@ struct ProjectPage::Model : ListBoxModel
     void activate (int row) { if (templates) owner.startTemplate (row); else owner.openRow (row); }
     void listBoxItemDoubleClicked (int row, const MouseEvent&) override { activate (row); }
     void returnKeyPressed (int row) override { activate (row); }
-    void selectedRowsChanged (int) override { owner.pendingDelete = -1; owner.updateButtons(); }
+    void selectedRowsChanged (int) override { owner.pendingDelete = -1; owner.updateButtons(); owner.repaint(); }
 };
 
 ProjectPage::ProjectPage (HitGenProcessor& p, hgui::LookAndFeel& l) : proc (p), lnf (l), data (p.data)
@@ -41,6 +41,16 @@ ProjectPage::ProjectPage (HitGenProcessor& p, hgui::LookAndFeel& l) : proc (p), 
     addAndMakeVisible (nameEd); nameEd.setFont (lnf.font (16)); nameEd.setInputRestrictions (80); nameEd.setIndents (8, 6);
     nameEd.onReturnKey = [this] { save(); };
     for (auto* b : { &startBtn, &saveBtn, &openBtn, &deleteBtn }) addAndMakeVisible (*b);
+    const int which[3] = { 5, 6, 4 };
+    hgui::DragTile* tiles[3] = { &fullTile, &full0Tile, &loopTile };
+    for (int i = 0; i < 3; ++i)
+    {
+        auto* t = tiles[i]; addAndMakeVisible (*t);
+        t->palette = [this]() -> const hgui::Palette& { return lnf.pal(); };
+        t->font = [this] (float h, bool b) { return lnf.font (h, b); };
+        t->makeFile = [this, w = which[i]] { return proc.writeMidi (w); };
+        t->onSaved = [this] (const File& f) { say (T ("pSavedTo").replace ("{f}", f.getFullPathName())); };
+    }
     tmplModel = std::make_unique<Model> (*this, true); mineModel = std::make_unique<Model> (*this, false);
     for (auto* lb : { &tmplList, &mineList }) { addAndMakeVisible (*lb); lb->setRowHeight (44); lb->setWantsKeyboardFocus (true); }
     tmplList.setModel (tmplModel.get()); mineList.setModel (mineModel.get());
@@ -118,6 +128,8 @@ void ProjectPage::setLanguage (const String& l, bool r)
     nameLabel.setText (T ("pjName"), dontSendNotification); nameEd.setTitle (T ("pjName"));
     nameEd.setTextToShowWhenEmpty (T ("prDefault"), lnf.pal().mute);
     help.setText (T ("pjHelp"), dontSendNotification);
+    fullTile.label = T ("pjFull"); full0Tile.label = T ("pjFull0"); loopTile.label = T ("pjLoop");
+    for (auto* t : { &fullTile, &full0Tile, &loopTile }) { t->setTitle (t->label); t->setTooltip (T ("pDragHint")); t->setHelpText (T ("pDragHint")); }
     startBtn.setButtonText (T ("pjStart")); saveBtn.setButtonText (T ("pjSave")); openBtn.setButtonText (T ("prLoad")); deleteBtn.setButtonText (T ("prDelete"));
     tmplList.setTitle (T ("pjTemplates")); mineList.setTitle (T ("pjMine"));
     const auto j = rtl ? Justification::centredRight : Justification::centredLeft;
@@ -138,7 +150,8 @@ void ProjectPage::resized()
         { &help, { 20, 48, 410, 110 } },
         { &tmplList, { 20, 166, 410, 362 } }, { &startBtn, { 20, 548, 410, 38 } },
         { &nameLabel, { 468, 48, 400, 20 } }, { &nameEd, { 468, 70, 540, 36 } }, { &saveBtn, { 1018, 70, 126, 36 } },
-        { &mineList, { 468, 122, 676, 406 } }, { &openBtn, { 468, 548, 128, 36 } }, { &deleteBtn, { 604, 548, 128, 36 } },
+        { &mineList, { 468, 122, 676, 250 } },
+        { &fullTile, { 468, 480, 216, 44 } }, { &full0Tile, { 692, 480, 216, 44 } }, { &loopTile, { 916, 480, 228, 44 } }, { &openBtn, { 468, 548, 128, 36 } }, { &deleteBtn, { 604, 548, 128, 36 } },
         { &status, { 740, 540, 404, 60 } } };
     for (auto& [c, r] : L) c->setBounds (mir (r));
 }
@@ -151,9 +164,36 @@ void ProjectPage::paint (Graphics& g)
     g.setColour (P.ink); g.setFont (lnf.font (17, true));
     g.drawText (T ("pjTemplates"), mir ({ 20, 12, 410, 30 }), j);
     g.drawText (T ("pjMine"), mir ({ 468, 12, 676, 30 }), j);
+    g.setColour (P.ink); g.setFont (lnf.font (15, true));
+    g.drawText (T ("pjSkeleton"), mir ({ 468, 380, 676, 24 }), j);
+    paintSkeleton (g, mir ({ 468, 408, 676, 60 }), jmax (0, tmplList.getSelectedRow()));
     if (proc.presets.items().isEmpty())
     {
         g.setColour (P.mute); g.setFont (lnf.font (14));
         g.drawFittedText (T ("pjEmpty"), mir ({ 488, 140, 636, 80 }), rtl ? Justification::topRight : Justification::topLeft, 3);
+    }
+}
+
+// Seçili stilin parça iskeleti: bölümler uzunluklarıyla orantılı kutular (Intro, Build, Drop, Breakdown, Outro...).
+void ProjectPage::paintSkeleton (Graphics& g, Rectangle<int> area, int style) const
+{
+    if (style < 0 || style >= data.numStyles()) return;
+    const auto* arr = data.style (style)["arr"].getArray(); if (arr == nullptr || arr->isEmpty()) return;
+    int total = 0; for (auto& sec : *arr) total += (int) sec[1];
+    if (total <= 0) return;
+    const auto& P = lnf.pal(); const float gap = 3.0f; float x = (float) area.getX(); const float W = (float) area.getWidth() - gap * (float) (arr->size() - 1);
+    for (int i = 0; i < arr->size(); ++i)
+    {
+        const auto name = (*arr)[i][0].toString(); const int B = (int) (*arr)[i][1];
+        const float w = W * (float) B / (float) total;
+        Rectangle<float> r (rtl ? (float) area.getRight() - (x - (float) area.getX()) - w : x, (float) area.getY(), w, (float) area.getHeight());
+        const bool drop = name.equalsIgnoreCase ("Drop"), build = name.equalsIgnoreCase ("Build"), brk = name.equalsIgnoreCase ("Breakdown");
+        g.setColour (drop ? P.accent : build ? P.accent.withAlpha (.45f) : brk ? P.panel2 : P.panel2.brighter (.08f)); g.fillRoundedRectangle (r, 6);
+        g.setColour (brk ? P.accent.withAlpha (.5f) : P.line); g.drawRoundedRectangle (r, 6, 1.0f);
+        g.setColour (drop ? P.panel : P.ink); g.setFont (lnf.font (w > 60 ? 12.5f : 10.5f, true));
+        g.drawFittedText (name, r.reduced (3, 6).withHeight (22).toNearestInt(), Justification::centred, 1, .7f);
+        g.setFont (lnf.font (11)); g.setColour (drop ? P.panel : P.mute);
+        g.drawText (T ("pjBars").replace ("{n}", String (B)), r.reduced (3, 4).withTrimmedTop (28).toNearestInt(), Justification::centred);
+        x += w + gap;
     }
 }
