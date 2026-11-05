@@ -155,3 +155,6 @@ Wavejackers HitGen is a MIDI generator and synth plugin: VST3 (FL Studio, Ableto
 
 Builds come from GitHub Actions (see Installation above). Build locally with CMake as shown.
 Artist styles are inspiration only. No notes from any track are used, and there is no affiliation with the artists named.
+
+### Character layer (Project tab)
+An optional stage under "My projects" shows a sage (full mix) and two angels (chords, melody) that glow when notes play. It only reads atomic note levels from the audio thread (`Engine::partAct`, one relaxed store per note) and never changes audio. Animation follows the existing motion toggle and the Performance setting (Eco = light only, otherwise light + halo + staff glow; motion off = still portraits). Sprites are small JPEG crops (~7 KB each) from the supplied concept sheet in `Resources/characters/`. **The art's license/ownership is unconfirmed; confirm it before any public release.** Visual layout was not checked on screen in this environment.

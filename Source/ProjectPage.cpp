@@ -52,6 +52,7 @@ ProjectPage::ProjectPage (HitGenProcessor& p, hgui::LookAndFeel& l) : proc (p), 
         t->onSaved = [this] (const File& f) { say (T ("pSavedTo").replace ("{f}", f.getFullPathName())); };
     }
     tmplModel = std::make_unique<Model> (*this, true); mineModel = std::make_unique<Model> (*this, false);
+    stage = std::make_unique<CharacterStage> (proc.engine, lnf); addAndMakeVisible (*stage);
     for (auto* lb : { &tmplList, &mineList }) { addAndMakeVisible (*lb); lb->setRowHeight (44); lb->setWantsKeyboardFocus (true); }
     tmplList.setModel (tmplModel.get()); mineList.setModel (mineModel.get());
     tmplList.selectRow (juce::jlimit (0, juce::jmax (0, data.numStyles() - 1), (int) proc.apvts.getRawParameterValue ("style")->load()));
@@ -119,6 +120,7 @@ void ProjectPage::openRow (int row)
 
 void ProjectPage::tick()
 {
+    { const int q = (int) proc.apvts.getRawParameterValue ("quality")->load(); stage->tick (! proc.animations ? 0 : (q == 0 ? 1 : 2)); }
     if (proc.presets.revision() != shownRev) { shownRev = proc.presets.revision(); mineList.updateContent(); mineList.repaint(); updateButtons(); }
 }
 
@@ -131,6 +133,7 @@ void ProjectPage::setLanguage (const String& l, bool r)
     fullTile.label = T ("pjFull"); full0Tile.label = T ("pjFull0"); loopTile.label = T ("pjLoop");
     for (auto* t : { &fullTile, &full0Tile, &loopTile }) { t->setTitle (t->label); t->setTooltip (T ("pDragHint")); t->setHelpText (T ("pDragHint")); }
     startBtn.setButtonText (T ("pjStart")); saveBtn.setButtonText (T ("pjSave")); openBtn.setButtonText (T ("prLoad")); deleteBtn.setButtonText (T ("prDelete"));
+    stage->setLabels (T ("chElder"), T ("chChords"), T ("chMelody"));
     tmplList.setTitle (T ("pjTemplates")); mineList.setTitle (T ("pjMine"));
     const auto j = rtl ? Justification::centredRight : Justification::centredLeft;
     nameLabel.setJustificationType (j); nameLabel.setColour (Label::textColourId, lnf.pal().ink);
@@ -150,7 +153,7 @@ void ProjectPage::resized()
         { &help, { 20, 48, 410, 110 } },
         { &tmplList, { 20, 166, 410, 362 } }, { &startBtn, { 20, 548, 410, 38 } },
         { &nameLabel, { 468, 48, 400, 20 } }, { &nameEd, { 468, 70, 540, 36 } }, { &saveBtn, { 1018, 70, 126, 36 } },
-        { &mineList, { 468, 122, 676, 250 } },
+        { &mineList, { 468, 122, 676, 160 } }, { stage.get(), { 468, 288, 676, 84 } },
         { &fullTile, { 468, 480, 216, 44 } }, { &full0Tile, { 692, 480, 216, 44 } }, { &loopTile, { 916, 480, 228, 44 } }, { &openBtn, { 468, 548, 128, 36 } }, { &deleteBtn, { 604, 548, 128, 36 } },
         { &status, { 740, 540, 404, 60 } } };
     for (auto& [c, r] : L) c->setBounds (mir (r));

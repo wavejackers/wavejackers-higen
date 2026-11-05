@@ -5,6 +5,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "PluginProcessor.h"
 #include "Ui.h"
+#include "CharacterStage.h"
 
 class ProjectPage : public juce::Component
 {
@@ -28,6 +29,7 @@ private:
     juce::ListBox tmplList, mineList;
     hgui::DragTile fullTile, full0Tile, loopTile;   // DAW'a sürüklenen MIDI: tam parça (çok izli), tam parça (Format 0), tüm izler (döngü)
     std::unique_ptr<Model> tmplModel, mineModel;
+    std::unique_ptr<CharacterStage> stage;   // isteğe bağlı karakter katmanı (bilge + iki melek)
 
     juce::String T (const juce::String& k) const { return data.tr (lang, k); }
     void startTemplate (int style);

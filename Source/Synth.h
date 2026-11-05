@@ -112,6 +112,7 @@ public:
     LoudnessNormalizer loudness;
     Quality quality;
     std::atomic<float> peakOut { 0 }, cpuLoad { 0 };
+    std::atomic<float> partAct[4] { { 0 }, { 0 }, { 0 }, { 0 } };   // 0 akor, 1 bas, 2 davul, 3 melodi: son nota şiddeti (yalnızca arayüz göstergesi, sese etkisi yok)
     int activeVoices() const noexcept { return lastActive; }
 
 private:
