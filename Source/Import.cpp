@@ -61,7 +61,7 @@ struct Cbor
                 for (uint64_t k = 0; k < c && ! bad; ++k)
                 {
                     auto key = read(); auto val = read();
-                    if (key.isString()) o->setProperty (juce::Identifier (key.toString()), val);
+                    if (key.isString() && key.toString().isNotEmpty()) o->setProperty (juce::Identifier (key.toString()), val);
                 }
                 --depth; return res;
             }

@@ -71,7 +71,7 @@ void PresetPage::updateButtons()
 void PresetPage::save()
 {
     const auto a = artistEd.getText().trim(), n = nameEd.getText().trim();
-    if (a.isEmpty() || n.isEmpty()) { say (T ("prNeed")); (a.isEmpty() ? artistEd : nameEd).grabKeyboardFocus(); return; }
+    if (a.isEmpty() || n.isEmpty()) { say (T ("prNeed")); { auto& e = a.isEmpty() ? artistEd : nameEd; if (e.isShowing()) e.grabKeyboardFocus(); } return; }
     String path;
     if (! proc.savePreset (a, n, path)) { say (T ("saveFail")); return; }
     list.updateContent();

@@ -61,7 +61,7 @@ void VariationGrid::paint (Graphics& g)
 
 void VariationGrid::mouseDown (const MouseEvent& e)
 {
-    grabKeyboardFocus();
+    if (isShowing()) grabKeyboardFocus();
     if (closeRect().contains (e.getPosition())) { if (onClose) onClose(); return; }
     const int i = hit (e.getPosition()); if (i < 0) return;
     if (keepRect (i).contains (e.getPosition())) { if (onKeep) onKeep (i); return; }

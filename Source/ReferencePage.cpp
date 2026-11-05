@@ -560,7 +560,7 @@ void ReferencePage::Wave::paint (Graphics& g)
     const double pos = o->proc.ref.posSec.load(); if (o->proc.ref.playing.load() || pos > 0) { const float x = secToX (pos); if (x >= 0 && x <= W) { g.setColour (P.ink); g.drawLine (x, 0, x, (float) H, 1.6f); } }
 }
 
-void ReferencePage::Wave::mouseDown (const MouseEvent& e) { o->grabKeyboardFocus(); if (o->proc.ref.clip() == nullptr) return; dragging = false; dragA = xToSec ((float) e.x); }
+void ReferencePage::Wave::mouseDown (const MouseEvent& e) { if (o->isShowing()) o->grabKeyboardFocus(); if (o->proc.ref.clip() == nullptr) return; dragging = false; dragA = xToSec ((float) e.x); }
 void ReferencePage::Wave::mouseDrag (const MouseEvent& e)
 {
     if (o->proc.ref.clip() == nullptr) return;

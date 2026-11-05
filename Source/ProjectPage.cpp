@@ -96,7 +96,7 @@ void ProjectPage::startTemplate (int style)
 void ProjectPage::save()
 {
     const auto n = nameEd.getText().trim();
-    if (n.isEmpty()) { say (T ("prNeed")); nameEd.grabKeyboardFocus(); return; }
+    if (n.isEmpty()) { say (T ("prNeed")); if (nameEd.isShowing()) nameEd.grabKeyboardFocus(); return; }
     const String a = proc.userArtist.isNotEmpty() ? proc.userArtist : String ("Wavejackers");
     String path;
     if (! proc.savePreset (a, n, path)) { say (T ("saveFail")); return; }

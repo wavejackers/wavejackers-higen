@@ -143,7 +143,7 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
     bubble.closeBtn.onClick = [this] { bubble.setVisible (false); };
     toastView.owner = this; toastView.setInterceptsMouseClicks (false, false); content.addAndMakeVisible (toastView);
     content.addChildComponent (guide);
-    guide.onFinish = [this] { setGuideDone(); setTab (0); grabKeyboardFocus(); };
+    guide.onFinish = [this] { setGuideDone(); setTab (0); if (isShowing()) grabKeyboardFocus(); };
 
     setResizable (true, true);
     if (auto* c = getConstrainer()) { c->setFixedAspectRatio ((double) kW / kH); c->setSizeLimits (kW * 3 / 4, kH * 3 / 4, kW * 2, kH * 2); }

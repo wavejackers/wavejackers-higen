@@ -175,7 +175,7 @@ void DrumPage::Pad::paint (Graphics& g)
 void DrumPage::Pad::mouseDown (const MouseEvent& e)
 {
     if (e.mods.isPopupMenu()) return;
-    grabKeyboardFocus(); owner->proc.engine.drumMachine.audition (index, 112); flash = 1.0f; repaint();
+    if (isShowing()) grabKeyboardFocus(); owner->proc.engine.drumMachine.audition (index, 112); flash = 1.0f; repaint();
 }
 
 bool DrumPage::Pad::keyPressed (const KeyPress& k)

@@ -128,7 +128,7 @@ GuideOverlay::GuideOverlay (LookAndFeel& l) : lnf (l)
 
 void GuideOverlay::start (std::vector<Step> s)
 {
-    steps = std::move (s); setVisible (true); toFront (true); go (0); grabKeyboardFocus();
+    steps = std::move (s); setVisible (true); toFront (true); go (0); if (isShowing()) grabKeyboardFocus();
 }
 
 void GuideOverlay::go (int i)
