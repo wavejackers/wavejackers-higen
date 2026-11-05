@@ -55,6 +55,6 @@ public:
 private:
     juce::AudioBuffer<float> buf; double srcRate = 44100.0, pos = 0.0;
     std::atomic<bool> ready { false }, startReq { false }, stopReq { false }, active { false };
-    float fade = 1.0f; const float gain = 0.6f;   // kaynak tepe -3 dBFS -> çıkışta yaklaşık -7.5 dBFS
+    float fade = 1.0f; const float gain = 0.85f;   // kaynak tepe -4 dBFS -> çıkışta yaklaşık -5.5 dBFS
 };
 }
