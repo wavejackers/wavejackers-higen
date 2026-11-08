@@ -40,6 +40,7 @@ public:
     void startGuide();
     void startIntro();                         // açılış ekranı + sesi (testler doğrudan çağırabilir)
     IntroOverlay& introOverlay() { return intro; }
+    ProjectPage* project() { return projectPage.get(); }
     void advanceIntro (double ms);              // zamanlayıcı her karede çağırır; testler doğrudan
     juce::Rectangle<int> eyeHome() const { return orbHome; }
     juce::Rectangle<int> eyeBounds() const { return orb.getBounds(); }

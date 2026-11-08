@@ -398,6 +398,191 @@ static void testOwnSoundAndEdit (const juce::File& outDir, const FailFn& fail)
     std::cout << "own sound + midi edit ok: pitch " << juce::String (hz, 1) << " Hz, peak " << juce::String (pk, 3) << "\n";
 }
 
+
+// proje iskeleti: süre hesabı, Black Coffee / FRERE kuralları, sample sınıflandırma ve önerileri, proje klasörü, arayüz
+static void testSkeleton (const juce::File& outDir, const FailFn& fail)
+{
+    // 1) süre: her yapı, süre ve tempoda toplam ölçü hedefe yakın, bölümler 8'in katı, buildup en çok 16 ölçü
+    const char* const structs[4][9] = { { "intro", "build", "drop", "break", "build", "drop", "outro" }, { "intro", "drop", "break", "build", "drop", "outro" },
+                                        { "intro", "build", "drop", "break", "groove", "break", "build", "drop", "outro" }, { "intro", "groove", "break", "groove", "outro" } };
+    for (auto& st : structs)
+    {
+        juce::StringArray k; for (auto* x : st) if (x != nullptr) k.add (x);
+        for (int sec : { 240, 300, 360, 420, 480, 540, 600 })
+            for (int bpm : { 118, 120, 122, 124, 126, 128, 132, 138, 145, 150 })
+            {
+                auto b = hg::skBars (k, sec, bpm); int tot = 0;
+                for (int i = 0; i < (int) b.size(); ++i)
+                {
+                    tot += b[(size_t) i];
+                    if (b[(size_t) i] % 8 != 0 || b[(size_t) i] < 8) fail ("skeleton: section not a multiple of 8");
+                    if (k[i] == "build" && b[(size_t) i] > 16) fail ("skeleton: buildup longer than 16 bars");
+                }
+                if (std::abs (tot - sec * bpm / 240.0) > 4.01) fail ("skeleton: " + juce::String (sec) + "s @" + juce::String (bpm) + " -> " + juce::String (tot) + " bars");
+            }
+    }
+    {
+        juce::StringArray k; for (auto* x : structs[0]) if (x != nullptr) k.add (x);
+        int t8 = 0, t6 = 0; for (int x : hg::skBars (k, 480, 120)) t8 += x; for (int x : hg::skBars (k, 360, 124)) t6 += x;
+        if (t8 != 240) fail ("skeleton: 8:00 @120 should be 240 bars (Black Coffee length), got " + juce::String (t8));
+        if (t6 != 184) fail ("skeleton: 6:00 @124 should be 184 bars, got " + juce::String (t6));
+    }
+    // 2) dosya adından tür (Black Coffee ve FRERE projelerindeki gerçek adlar)
+    struct C { const char* n; int cat; int bpm; };
+    const C cases[] = { { "TPS x CamelPhat - Signature Kick 01.wav", hg::kCatKick, 0 }, { "SM_909_Clap_50.wav", hg::kCatClap, 0 }, { "SM_Hi-hat_Main.wav", hg::kCatHat, 0 },
+        { "Open Hat.wav", hg::kCatOpenHat, 0 }, { "Shaker 2.aif", hg::kCatShaker, 0 }, { "Tambourine Low.wav", hg::kCatShaker, 0 }, { "TPS - Astral - Riser 07 (124 BPM).wav", hg::kCatRiser, 124 },
+        { "TPS - Astral - Uplifter 01 (124 BPM).wav", hg::kCatRiser, 124 }, { "PMSG_FX_119_16bars_Sweep_Up.wav", hg::kCatRiser, 119 }, { "TPS - Astral - Impact 09.wav", hg::kCatImpact, 0 },
+        { "KSHMR Sub Drop 03 - Long (F).wav", hg::kCatSubDrop, 0 }, { "Downlifter  R .wav", hg::kCatDownlifter, 0 }, { "TPS - Astral - Downfilter 01 (124 BPM).wav", hg::kCatDownlifter, 124 },
+        { "White Noise.aif", hg::kCatNoise, 0 }, { "LZ_vocal_whisper_wet_go.wav", hg::kCatVocal, 0 }, { "TPS - Astral - Snare Fill 08 (124 BPM).wav", hg::kCatFill, 124 },
+        { "Cymatics - Drum Buildup 27 - 128 BPM.wav", hg::kCatFill, 128 }, { "SM_909_Snare_07.wav", hg::kCatSnare, 0 }, { "TPS - Astral - Tonal Ambience 04 C.wav", hg::kCatAtmos, 0 },
+        { "TPS - Astral - Perc Loop 14 (124 BPM).wav", hg::kCatPerc, 124 }, { "Loop_041_-_(PML_MTD_FR_V1)_vox.wav", hg::kCatVocal, 0 }, { "kick anyma.wav", hg::kCatKick, 0 },
+        { "Cymatics - Riser 14 - 128 BPM E.wav", hg::kCatRiser, 128 }, { "Chords 01.mid", hg::kCatMidi, 0 } };
+    for (auto& c : cases)
+    {
+        int bpm = -1; const int cat = hg::classifySample (c.n, {}, &bpm, nullptr);
+        if (cat != c.cat || bpm != c.bpm) fail (juce::String ("classify: ") + c.n + " -> " + hg::kCatIds[cat] + " " + juce::String (bpm));
+    }
+    // 3) işlemci: 8:00 Black Coffee iskeleti, organik kurallar
+    auto p_h = std::make_unique<HitGenProcessor>(); auto& p = *p_h;
+    const int bc = p.data.styleIndex ("blackcoffee");
+    setP (p, "style", (float) bc); p.applyStyleDefaults(); setP (p, "bpm", 120.0f); p.regenerateNow();
+    p.skSetStructure (0); p.skSetDuration (480);
+    auto sk = p.skeletonNow();
+    if (sk.profile != "organic" || sk.song.bars != 240 || sk.secs.size() != 7) fail ("skeleton: blackcoffee 8:00 -> " + sk.profile + " " + juce::String (sk.song.bars));
+    const auto styleSong = p.midiBytes (5);
+    p.skel.active = true;
+    if (p.midiBytes (5) == styleSong) fail ("skeleton: full-song MIDI does not follow the skeleton");
+    for (auto& x : sk.secs)
+        if (x.kind == "break")
+        {
+            for (auto& n : sk.song.tracks[hg::kBass]) if (n.s >= x.bar * 16 && n.s < (x.bar + x.bars) * 16) { fail ("organic: bass in breakdown"); break; }
+            int kicks = 0;
+            for (auto& n : sk.song.tracks[hg::kDrums]) if (n.s >= x.bar * 16 && n.s < (x.bar + x.bars) * 16) { if (n.n != 36 && n.n != 42) { fail ("organic: breakdown drum " + juce::String (n.n)); break; } if (n.n == 36) ++kicks; }
+            if (kicks == 0) fail ("organic: kick should stay (thinned) in the breakdown");
+        }
+    int reverse = 0, thr = 0; for (auto& c : sk.cues) { if (c.type == "reverse") ++reverse; if (c.type == "reverbThrow") ++thr; }
+    if (reverse != 6 || thr != 2) fail ("organic cues: reverse " + juce::String (reverse) + " throw " + juce::String (thr));
+    // techno: ilk 8 ölçü kicksiz
+    setP (p, "style", (float) p.data.styleIndex ("anyma")); p.applyStyleDefaults(); p.regenerateNow(); p.skSetStructure (2); p.skSetDuration (360);
+    auto tk = p.skeletonNow();
+    if (tk.profile != "techno") fail ("skeleton: anyma profile " + tk.profile);
+    for (auto& n : tk.song.tracks[hg::kDrums]) if (n.s < 8 * 16 && n.n != 42) { fail ("techno: kick in the first 8 bars"); break; }
+    // 4) sample kütüphanesi: geçici klasör, arka planda tarama
+    auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("hitgen-sk-test"); dir.deleteRecursively(); dir.getChildFile ("FX").createDirectory();
+    juce::Random rnd (5);
+    for (auto& c : cases)
+    {
+        if (c.cat == hg::kCatMidi) { dir.getChildFile (c.n).replaceWithText ("x"); continue; }
+        auto f = dir.getChildFile ("FX").getChildFile (juce::String (c.n).replace (".aif", ".wav"));
+        juce::AudioBuffer<float> b (1, 22050); for (int i = 0; i < b.getNumSamples(); ++i) b.setSample (0, i, (rnd.nextFloat() - .5f) * .6f);
+        juce::WavAudioFormat w; std::unique_ptr<juce::FileOutputStream> os (f.createOutputStream()); std::unique_ptr<juce::AudioFormatWriter> wr (w.createWriterFor (os.get(), 44100, 1, 16, {}, 0));
+        if (wr) { os.release(); wr->writeFromAudioSampleBuffer (b, 0, b.getNumSamples()); }
+    }
+    p.setSampleFolders ({ dir.getFullPathName() }, false);
+    for (int i = 0; i < 1000 && ! p.pollLibrary(); ++i) juce::Thread::sleep (10);
+    auto L = p.library();
+    if (L == nullptr || L->items.size() != std::size (cases)) fail ("library: scanned " + juce::String (L ? (int) L->items.size() : -1));
+    else if (L->count (hg::kCatRiser) != 4 || L->count (hg::kCatKick) != 2) fail ("library: riser/kick counts");
+    const auto picks = p.skPicks (tk), picks2 = p.skPicks (tk);
+    int withFile = 0;
+    for (size_t i = 0; i < picks.size(); ++i)
+    {
+        if (picks[i].second != picks2[i].second) fail ("picks: not deterministic");
+        const auto& [c, f] = picks[i];
+        if (f == juce::File()) continue;
+        ++withFile;
+        const int cat = hg::classifySample (f.getFileName(), {}, nullptr, nullptr), want = hg::cueAudio (c.type).cat, fb = hg::cueAudio (c.type).fallback;
+        if (cat != want && cat != fb) fail ("picks: " + c.type + " got " + f.getFileName());
+        if (c.type == "sweep" && ! f.getFileName().containsIgnoreCase ("sweep")) fail ("picks: sweep prefers a sweep sample, got " + f.getFileName());
+    }
+    if (withFile < 10) fail ("picks: only " + juce::String (withFile) + " cues got a sample");
+    const int drums = p.loadSuggestedDrums();
+    if (drums < 5 || p.drumSamplePath (hg::kPadKick).isEmpty()) fail ("suggested drums: loaded " + juce::String (drums));
+    // 5) proje klasörü (arka planda)
+    auto outProj = dir.getChildFile ("Out Project");
+    if (! p.startExport (outProj, "plan")) fail ("export: did not start");
+    hg::ExportResult er; bool got = false;
+    for (int i = 0; i < 6000 && ! got; ++i) { got = p.pollExport (er); if (! got) juce::Thread::sleep (10); }
+    if (! got || ! er.ok) fail ("export: " + er.error);
+    else
+    {
+        for (auto* f : { "MIDI/1 Chords.mid", "MIDI/2 Bass.mid", "MIDI/3 Drums.mid", "MIDI/4 Melody.mid", "Audio/FX Guide.wav", "Plan.txt" })
+            if (! outProj.getChildFile (f).existsAsFile()) fail (juce::String ("export: missing ") + f);
+        if (outProj.findChildFiles (juce::File::findFiles, false, "*Full Song.mid").size() != 1) fail ("export: full song midi");
+        if (er.copied < 8 || er.placed < 10) fail ("export: copied " + juce::String (er.copied) + " placed " + juce::String (er.placed));
+        juce::AudioFormatManager fm; fm.registerBasicFormats();
+        std::unique_ptr<juce::AudioFormatReader> rd (fm.createReaderFor (outProj.getChildFile ("Audio/FX Guide.wav")));
+        if (rd == nullptr || std::abs ((double) rd->lengthInSamples - tk.song.bars * 240.0 / tk.song.P.bpm * rd->sampleRate) > 2) fail ("fx guide: length");
+        else
+        {   // ilk impact'in olduğu ölçüde ses var
+            int ib = -1; for (auto& c : tk.cues) if (c.type == "impact") { ib = c.bar; break; }
+            juce::AudioBuffer<float> b (2, (int) (rd->sampleRate * .5)); rd->read (&b, 0, b.getNumSamples(), (juce::int64) (ib * 240.0 / tk.song.P.bpm * rd->sampleRate), true, true);
+            if (ib < 0 || b.getMagnitude (0, b.getNumSamples()) < .05f) fail ("fx guide: silent at the first impact (bar " + juce::String (ib + 1) + ")");
+            if (b.getMagnitude (0, b.getNumSamples()) > 1.0f) fail ("fx guide: clipping");
+        }
+        if (outProj.getChildFile ("Samples").findChildFiles (juce::File::findFiles, false).size() != er.copied) fail ("export: sample copies");
+    }
+    // 6) kütüphane olmadan: FX kılavuzu HitGen sesleriyle
+    p.setSampleFolders ({}, false);
+    if (! p.skPicks (tk).empty() && p.skPicks (tk)[0].second != juce::File()) fail ("picks: library cleared but files still suggested");
+    {
+        auto g = dir.getChildFile ("synth.wav"); int placed = 0;
+        if (! hg::renderFxGuide (g, tk, p.skPicks (tk), tk.song.P.bpm, 44100, 7, {}, nullptr, &placed) || placed < 10) fail ("fx guide (synth): placed " + juce::String (placed));
+    }
+    // 7) durum: iskelet projeyle saklanır
+    p.skSetBars (2, 40);
+    juce::MemoryBlock stt; p.getStateInformation (stt);
+    {
+        auto q_h = std::make_unique<HitGenProcessor>(); auto& q = *q_h; q.setStateInformation (stt.getData(), (int) stt.getSize()); q.regenerateNow();
+        const auto a = p.skeletonNow(), b = q.skeletonNow();
+        if (! q.skel.active || ! q.skel.custom || a.secs.size() != b.secs.size() || b.secs[2].bars != 40 || a.song.bars != b.song.bars) fail ("skeleton: not restored from state");
+    }
+    // 8) arayüz: Proje sekmesi, üret, bölüm komutları, yerleşim
+    std::unique_ptr<HitGenEditor> ed (dynamic_cast<HitGenEditor*> (p.createEditor()));
+    ed->setTab (5);
+    auto* pg = ed->project();
+    pg->revealAfterExport = false;
+    pg->setStructure (0); pg->setDurationIndex (5);   // 8:00
+    pg->generateProject();
+    if (! p.skel.active || pg->shownSkeleton().secs.size() != 7 || pg->numListRows() < 14) fail ("ui: generate -> rows " + juce::String (pg->numListRows()));
+    const int bars0 = pg->shownSkeleton().song.bars;
+    pg->sectionCommand (2, ProjectPage::cmdLonger);
+    if (pg->shownSkeleton().song.bars != bars0 + 8 || ! p.skel.custom) fail ("ui: lengthen");
+    pg->sectionCommand (3, ProjectPage::cmdDelete);
+    if (pg->shownSkeleton().secs.size() != 6) fail ("ui: delete");
+    pg->sectionCommand (0, ProjectPage::cmdInsert, 2);
+    if (pg->shownSkeleton().secs.size() != 7 || pg->shownSkeleton().secs[1].kind != "drop") fail ("ui: insert");
+    pg->sectionCommand (1, ProjectPage::cmdLeft);
+    if (pg->shownSkeleton().secs[0].kind != "drop") fail ("ui: move left");
+    pg->sectionCommand (0, ProjectPage::cmdType, 0);
+    if (pg->shownSkeleton().secs[0].kind != "intro") fail ("ui: change type");
+    pg->setStructure (0); pg->setDurationIndex (3);
+    if (pg->planText().indexOf ("Buildup 2") < 0) fail ("ui: plan text");
+    {   // yerleşim: sayfadaki görünür denetimler üst üste binmez ve sayfa içinde kalır
+        std::vector<juce::Component*> vis; for (auto* c : pg->getChildren()) if (c->isVisible()) vis.push_back (c);
+        for (size_t i = 0; i < vis.size(); ++i)
+        {
+            if (! pg->getLocalBounds().contains (vis[i]->getBounds())) fail ("ui: outside page " + vis[i]->getTitle() + " " + vis[i]->getBounds().toString());
+            for (size_t j = i + 1; j < vis.size(); ++j)
+                if (vis[i]->getBounds().intersects (vis[j]->getBounds())) fail ("ui: overlap '" + vis[i]->getTitle() + "' / '" + vis[j]->getTitle() + "' " + vis[i]->getBounds().toString() + " " + vis[j]->getBounds().toString());
+        }
+    }
+    for (auto l : { "en", "tr", "ar" })
+    {
+        ed->setLanguage (l); ed->setTab (5); pg->tick();
+        snapPng (ed->contentComponent(), outDir.getChildFile (juce::String ("plugin-") + l + "-skeleton.png"));
+    }
+    ed->setLanguage ("en");
+    pg->exportProject (dir.getChildFile ("UI Export"));
+    for (int i = 0; i < 6000 && p.exporting(); ++i) { pg->tick(); juce::Thread::sleep (10); }
+    pg->tick();
+    if (! dir.getChildFile ("UI Export").getChildFile ("Plan.txt").loadFileAsString().contains ("Buildup")) fail ("ui: export plan");
+    ed.reset();
+    p.setSampleFolders ({}, false);
+    dir.deleteRecursively();
+    std::cout << "skeleton ok: " << sk.song.bars << " bars organic, " << tk.song.bars << " bars techno, " << withFile << " cues with samples, " << er.placed << " FX placed\n";
+}
+
 // açılış: ses çalar ve kendiliğinden biter, dışa aktarımda ve atlamada susar; göz gezip yerine oturur
 static void testIntro (const juce::File& outDir, const FailFn& fail)
 {
@@ -873,6 +1058,7 @@ int main (int argc, char** argv)
     }
     testIntro (outDir, fail);
     testOwnSoundAndEdit (outDir, fail);
+    testSkeleton (outDir, fail);
     testReference (outDir, fail); testSampler (fail); testLibrary (fail); testMidiLearn (outDir, fail);
     testLoudness (outDir, fail, quick); testDrumMachine (outDir, fail); testGuideAndAssistant (outDir, fail);
     std::cout << (failures == 0 ? "ALL PASSED" : "FAILURES: " + std::to_string (failures)) << "\n";

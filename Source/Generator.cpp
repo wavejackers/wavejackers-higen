@@ -443,7 +443,7 @@ Result generate (const Data& data, const GenParams& P)
 // ---- Loop'tan tam parça
 namespace
 {
-struct Mask { int drums = 2; bool bass = true, chords = true, melody = true; int roll = -1; };   // drums: 0 yok, 1 hafif, 2 tam, 3 build
+struct Mask { int drums = 2; bool bass = true, chords = true, melody = true; int roll = -1; };   // drums: 0 yok, 1 hafif, 2 tam, 3 build, 4 yalnızca kapalı hihat
 Mask maskFor (const juce::String& name, int bi, int B)
 {
     auto n = name.toLowerCase(); Mask m;
@@ -458,6 +458,14 @@ Mask maskFor (const juce::String& name, int bi, int B)
 
 Result assemble (const Data& data, const Result& res)
 {
+    std::vector<ArrSec> arr;
+    if (auto* a = data.styleById (res.P.style)["arr"].getArray())
+        for (auto& sec : *a) arr.push_back ({ sec[0].toString(), (int) sec[1], {} });
+    return assembleArr (data, res, arr, {});
+}
+
+Result assembleArr (const Data& data, const Result& res, const std::vector<ArrSec>& arr, const juce::String& profile)
+{
     Result A; A.P = res.P;
     const juce::var& S = data.styleById (res.P.style);
     const int L = res.bars;
@@ -469,14 +477,20 @@ Result assemble (const Data& data, const Result& res)
     }
     const int rollNote = S["drums"]["fill"].toString() == "snare" ? kGM_snare : kGM_clap;
     int off = 0;
-    if (auto* arr = S["arr"].getArray())
-        for (auto& sec : *arr)
+    if (L > 0)
+        for (size_t si = 0; si < arr.size(); ++si)
         {
-            juce::String name = sec[0].toString(); int B = (int) sec[1];
+            const auto& sec = arr[si];
+            const juce::String& name = sec.name; const int B = sec.bars; const juce::String& kind = sec.kind;
+            const juce::String nk = si + 1 < arr.size() ? arr[si + 1].kind : juce::String();
             A.sections.push_back ({ name, off, B });
             for (int bi = 0; bi < B; ++bi)
             {
                 int src = bi % L; auto m = maskFor (name, bi, B); double shift = (off + bi - src) * 16.0;
+                double vel = 1; bool clapIn = false;
+                if (profile == "organic" && kind == "break") { m.drums = 1; vel = .6; }                 // Black Coffee: kick kesilmez, inceltilir
+                if (profile == "techno" && kind == "intro" && B >= 16 && bi < 8) m.drums = 4;           // FRERE: ilk 8 ölçü kicksiz
+                if (profile == "techno" && (kind == "drop" || kind == "groove") && B >= 16 && (nk == "break" || nk == "build") && bi >= B - 8) clapIn = true;
                 A.chords.push_back (res.chords[(size_t) src]);
                 const int melodic[3] = { kChords, kBass, kMelody };
                 const bool on[3] = { m.chords, m.bass, m.melody };
@@ -487,7 +501,17 @@ Result assemble (const Data& data, const Result& res)
                     {
                         if (m.drums == 1 && n.n != kGM_kick && n.n != kGM_chat) continue;
                         if (m.drums == 3 && n.n != kGM_kick && n.n != kGM_chat && n.n != kGM_ohat) continue;
-                        n.s += shift; A.tracks[kDrums].push_back (n);
+                        if (m.drums == 4 && n.n != kGM_chat) continue;
+                        n.s += shift;
+                        if (vel != 1) n.v = (int) clampT (jsRound (n.v * vel), 1.0, 127.0);
+                        A.tracks[kDrums].push_back (n);
+                    }
+                if (clapIn)
+                    for (int st : { 4, 12 })
+                    {
+                        bool has = false;
+                        for (auto& n : perBar[kDrums][(size_t) src]) if (n.n == kGM_clap && n.s - src * 16 == st) has = true;
+                        if (! has) { NoteEv e; e.s = (off + bi) * 16 + st; e.l = 1; e.n = kGM_clap; e.v = 96; A.tracks[kDrums].push_back (e); }
                     }
                 if (m.roll >= 0)
                 {
@@ -500,6 +524,133 @@ Result assemble (const Data& data, const Result& res)
         }
     A.bars = off; A.steps = off * 16;
     return A;
+}
+
+// ---- Proje iskeleti: Black Coffee (Ableton) ve FRERE (FL Studio) projelerinden çıkarılan aranjman kuralları
+const char* const kSkKinds[kNumSkKinds] = { "intro", "build", "drop", "break", "groove", "outro", "verse" };
+static int skWeight (const juce::String& k)
+{
+    if (k == "build") return 2;
+    if (k == "break" || k == "verse") return 3;
+    if (k == "intro" || k == "drop" || k == "groove" || k == "outro") return 4;
+    return 3;
+}
+juce::String skName (const juce::String& k)
+{
+    if (k == "intro") return "Intro";
+    if (k == "build") return "Buildup";
+    if (k == "drop") return "Drop";
+    if (k == "break") return "Breakdown";
+    if (k == "groove") return "Groove";
+    if (k == "outro") return "Outro";
+    if (k == "verse") return "Verse";
+    return k;
+}
+juce::String skProfile (const juce::var& style)
+{
+    const auto g = style["grp"].toString();
+    if (g == "afro" || g == "house") return "organic";
+    if (g == "techno" || g == "trance" || g == "hard") return "techno";
+    return "edm";
+}
+std::vector<int> skBars (const juce::StringArray& kinds, int sec, int bpm)
+{
+    const int n = kinds.size(); if (n == 0) return {};
+    const long long P = std::max<long long> (n, ((long long) sec * bpm + 960) / 1920), rem = P - n;
+    std::vector<long long> w, ph, fr; long long W = 0;
+    for (auto& k : kinds) { w.push_back (skWeight (k)); W += w.back(); }
+    long long sum = 0;
+    for (int i = 0; i < n; ++i) { ph.push_back (1 + rem * w[(size_t) i] / W); fr.push_back ((rem * w[(size_t) i]) % W); sum += ph.back(); }
+    long long left = P - sum; std::vector<bool> used ((size_t) n, false);
+    while (left > 0)
+    {
+        int bi = -1;
+        for (int i = 0; i < n; ++i) if (! used[(size_t) i] && (bi < 0 || fr[(size_t) i] > fr[(size_t) bi])) bi = i;
+        if (bi < 0) break;
+        used[(size_t) bi] = true; ++ph[(size_t) bi]; --left;
+    }
+    for (int i = 0; i < n; ++i)
+        if (kinds[i] == "build" && ph[(size_t) i] > 2)
+        {
+            int j = -1;
+            for (int k = i + 1; k < n && j < 0; ++k) if (kinds[k] != "build") j = k;
+            for (int k = i - 1; k >= 0 && j < 0; --k) if (kinds[k] != "build") j = k;
+            if (j >= 0) { ph[(size_t) j] += ph[(size_t) i] - 2; ph[(size_t) i] = 2; }
+        }
+    std::vector<int> out; for (auto x : ph) out.push_back ((int) (x * 8));
+    return out;
+}
+std::vector<SkSection> skSections (const juce::StringArray& kinds, const std::vector<int>& bars)
+{
+    std::map<juce::String, int> tot, c; for (auto& k : kinds) ++tot[k];
+    std::vector<SkSection> out; int off = 0;
+    for (int i = 0; i < kinds.size() && i < (int) bars.size(); ++i)
+    {
+        const auto& k = kinds[i]; ++c[k];
+        out.push_back ({ k, skName (k) + (tot[k] > 1 ? " " + juce::String (c[k]) : juce::String()), off, bars[(size_t) i] });
+        off += bars[(size_t) i];
+    }
+    return out;
+}
+std::vector<SkCue> skCues (const std::vector<SkSection>& secs, const juce::String& profile)
+{
+    std::vector<SkCue> C;
+    const int total = secs.empty() ? 0 : secs.back().bar + secs.back().bars;
+    auto add = [&] (int bar, int len, const char* type, int i) { if (bar >= 0 && bar < total && len > 0) C.push_back ({ bar, std::min (len, total - bar), type, i }); };
+    int drops = 0;
+    if (profile == "organic") add (0, total, "pad", 0);
+    for (int i = 0; i < (int) secs.size(); ++i)
+    {
+        const auto& x = secs[(size_t) i];
+        const int s = x.bar, B = x.bars; const auto& k = x.kind;
+        const juce::String pk = i > 0 ? secs[(size_t) i - 1].kind : juce::String(), nk = i + 1 < (int) secs.size() ? secs[(size_t) i + 1].kind : juce::String();
+        const bool main = k == "drop" || k == "groove";
+        if (k == "drop") ++drops;
+        if (profile == "organic")
+        {
+            if (s > 0) { if (s >= 4) add (s - 4, 4, "reverse", i); add (s, 4, "downlifter", i); }
+            if (k == "intro") { add (s, B, "kickIn", i); if (B >= 16) add (s + B / 2, B / 2, "perc", i); }
+            if (k == "build") { add (s, B, "noise", i); add (s, B, "filterOpen", i); }
+            if (main && (pk == "build" || pk == "break")) add (s - 1, 1, "reverbThrow", i);
+            if (k == "break") { add (s, B, "kickHpf", i); add (s, B, "bassOut", i); add (s, B, "chordsFilter", i); if (B >= 16) add (s + B / 2, B / 2, "topMelody", i); }
+            if (main) { add (s, B, "percUp", i); if (B >= 16) add (s + B / 2, B / 2, "leadVar", i); }
+            if (k == "outro") { add (s + B / 4, B - B / 4, "percOut", i); add (s + B / 2, B / 2, "filterClose", i); }
+        }
+        else if (profile == "techno")
+        {
+            if (k == "intro") { add (s, B, "atmos", i); if (B >= 16) { add (s, 8, "hatsOnly", i); add (s + 8, B - 8, "kickIn", i); } else add (s, B, "kickIn", i); }
+            if (main)
+            {
+                if (s > 0) add (s, 1, "impact", i);
+                for (int m = s + 4; m + 4 <= s + B; m += 8) add (m, 4, "uplifter", i);
+                if (B >= 16 && (nk == "break" || nk == "build")) add (s + B - 8, 8, "clapIn", i);
+                if (k == "drop" && drops >= 2 && pk == "build") add (s - 1, 1, "gap", i);
+            }
+            if (k == "break") { add (s, 1, "impact", i); add (s, 4, "subDrop", i); add (s, std::min (8, B), "downlifter", i); }
+            if (k == "build") { add (s, B, "riser", i); add (s, B, "sweep", i); add (s, B, "drumBuild", i); add (s + B - 1, 1, "vocal", i); }
+            if (k == "outro") { add (s, std::min (8, B), "downlifter", i); add (s + B / 2, B / 2, "percOut", i); }
+        }
+        else
+        {
+            if (k == "intro") add (s, B, "kickIn", i);
+            if (k == "build") { add (s, B, "riser", i); add (s + B - 4, 4, "roll", i); add (s + B - 1, 1, "fill", i); }
+            if (main && s > 0) { add (s, 1, "impact", i); if (k == "drop") add (s, 4, "subDrop", i); }
+            if (k == "break") { add (s, 4, "downlifter", i); add (s, B, "atmos", i); }
+            if (k == "outro") add (s + B / 2, B / 2, "percOut", i);
+        }
+    }
+    std::stable_sort (C.begin(), C.end(), [] (const SkCue& a, const SkCue& b) { return a.bar < b.bar; });
+    return C;
+}
+Skeleton skeleton (const Data& data, const Result& res, const juce::StringArray& kinds, int sec, const std::vector<int>* bars)
+{
+    Skeleton k;
+    const auto b = bars != nullptr ? *bars : skBars (kinds, sec, res.P.bpm);
+    k.secs = skSections (kinds, b); k.profile = skProfile (data.styleById (res.P.style));
+    k.cues = skCues (k.secs, k.profile);
+    std::vector<ArrSec> arr; for (auto& x : k.secs) arr.push_back ({ x.name, x.bars, x.kind });
+    k.song = assembleArr (data, res, arr, k.profile);
+    return k;
 }
 
 KeyInfo keyInfo (const Data& data, int key, const juce::String& scale)
@@ -559,6 +710,7 @@ juce::MemoryBlock midiFile (const Data& data, const Result& res, const std::vect
         std::vector<MEv> ev { meta (0, 0x03, str (title)), meta (0, 0x51, { (uint8_t) ((us >> 16) & 255), (uint8_t) ((us >> 8) & 255), (uint8_t) (us & 255) }),
                               meta (0, 0x58, { 4, 2, 24, 8 }), meta (0, 0x59, { (uint8_t) (ki.sf & 255), (uint8_t) ki.mi }) };
         for (const auto& sc : res.sections) ev.push_back (meta (sc.bar * 16 * STEP, 0x06, str (sc.name)));   // bölüm işaretçileri (tam parça)
+        for (const auto& mk : res.marks) ev.push_back (meta (mk.bar * 16 * STEP, 0x06, str (mk.name)));       // iskelet ipuçları (yalnızca eklenti dışa aktarımı)
         for (size_t b = 0; b < res.chords.size(); ++b) ev.push_back (meta ((int) b * 16 * STEP, 0x06, str (res.chords[b].name)));
         return ev;
     };

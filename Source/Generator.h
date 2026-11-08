@@ -37,6 +37,7 @@ struct Result
     int bars = 0, steps = 0;
     struct Section { juce::String name; int bar = 0, bars = 0; };
     std::vector<Section> sections;   // yalnızca tam parça aranjmanında dolu
+    std::vector<Section> marks;      // ek işaretçiler (iskelet ipuçları); web sürümünde yok, eşlik testine girmez
 };
 
 // Mulberry32: JS sürümündeki MB.rng ile aynı diziyi üretir
@@ -58,6 +59,23 @@ class Data;   // JSON veri kümesi (Data.h)
 
 Result generate (const Data& data, const GenParams& p);
 Result assemble (const Data& data, const Result& loop);
+
+// Aranjman: bölüm adı (maske adı belirler), uzunluk ve iskelet türü (profil kuralları için; boş = stil aranjmanı)
+struct ArrSec { juce::String name; int bars = 0; juce::String kind; };
+Result assembleArr (const Data& data, const Result& loop, const std::vector<ArrSec>& arr, const juce::String& profile);
+
+// Proje iskeleti (web: HG.skBars / skSections / skCues / skeleton ile birebir)
+constexpr int kNumSkKinds = 7;
+extern const char* const kSkKinds[kNumSkKinds];   // intro, build, drop, break, groove, outro, verse
+struct SkSection { juce::String kind, name; int bar = 0, bars = 0; };
+struct SkCue { int bar = 0, len = 0; juce::String type; int sec = 0; };
+struct Skeleton { std::vector<SkSection> secs; juce::String profile; std::vector<SkCue> cues; Result song; };
+juce::String skName (const juce::String& kind);
+juce::String skProfile (const juce::var& style);
+std::vector<int> skBars (const juce::StringArray& kinds, int sec, int bpm);
+std::vector<SkSection> skSections (const juce::StringArray& kinds, const std::vector<int>& bars);
+std::vector<SkCue> skCues (const std::vector<SkSection>& secs, const juce::String& profile);
+Skeleton skeleton (const Data& data, const Result& loop, const juce::StringArray& kinds, int sec, const std::vector<int>* bars = nullptr);
 
 struct KeyInfo { juce::String cam; juce::StringArray compat; int sf = 0, mi = 0; juce::StringArray notes; };
 KeyInfo keyInfo (const Data& data, int key, const juce::String& scale);

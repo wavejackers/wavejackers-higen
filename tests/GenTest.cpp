@@ -59,6 +59,36 @@ int main (int argc, char** argv)
                 ++n;
             }
     }
+    // Proje iskeleti (yapı x süre) ve uç durumlar
+    {
+        const std::vector<juce::StringArray> SKX {
+            { "intro", "build", "drop", "break", "build", "drop", "outro" },
+            { "intro", "drop", "break", "build", "drop", "outro" },
+            { "intro", "build", "drop", "break", "groove", "break", "build", "drop", "outro" },
+            { "intro", "groove", "break", "groove", "outro" },
+            { "build", "build", "drop" }, { "intro" }, { "verse", "drop", "break", "outro" }, { "break", "build", "groove", "build" } };
+        auto strH = [] (const juce::String& s) { juce::MemoryBlock m (s.toRawUTF8(), s.getNumBytesAsUTF8()); return fnv (m); };
+        for (int si = 0; si < D.numStyles(); ++si)
+        {
+            const auto& S = D.style (si);
+            for (int st = 0; st < (int) SKX.size(); ++st)
+                for (int sec : { 60, 360, 480 })
+                {
+                    hg::GenParams p;
+                    p.style = S["id"].toString(); p.vi = st % 4; p.seed = 7; p.bars = 8; p.key = (int) S["key"];
+                    p.orig = 30; p.energy = 60; p.human = 20; p.sevenths = false; p.thick = 70;
+                    p.bpm = (int) S["bpmDef"]; p.swing = (double) S["swing"];
+                    auto r = hg::generate (D, p);
+                    auto sk = hg::skeleton (D, r, SKX[(size_t) st], sec);
+                    juce::StringArray bars, cues;
+                    for (auto& x : sk.secs) bars.add (juce::String (x.bars));
+                    for (auto& c : sk.cues) cues.add (juce::String (c.bar) + ":" + juce::String (c.len) + ":" + c.type + ":" + juce::String (c.sec));
+                    std::cout << p.style << " sk" << st << ' ' << sec << ' ' << sk.profile << ' ' << bars.joinIntoString (",") << ' '
+                              << strH (cues.joinIntoString (";")) << ' ' << fnv (hg::midiFile (D, sk.song, all, false)) << '\n';
+                    ++n;
+                }
+        }
+    }
     std::cerr << n << " cases\n";
     return 0;
 }

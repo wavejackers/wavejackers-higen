@@ -9,6 +9,9 @@
 #include "Import.h"
 #include "RefEngine.h"
 #include "MidiLearn.h"
+#include "SampleLib.h"
+#include <mutex>
+#include <optional>
 
 // Ses iş parçacığının çaldığı desen: PPQ (çeyrek nota) cinsinden olaylar
 struct SeqEvent { double ppq = 0, len = 0; int track = 0, note = 0, vel = 0; };
@@ -102,6 +105,39 @@ public:
     bool loadDrumKit (const juce::File& f, juce::StringArray& missing);
     juce::StringArray missingSamples;                          // proje yüklenirken bulunamayan örnekler (arayüz bildirir)
 
+    // ---- proje iskeleti (Proje sekmesi): yapı, hedef süre, bölüm başına MIDI ve sample önerileri
+    struct SkelState { juce::StringArray kinds; std::vector<int> bars; int durSec = 360; int structIdx = 0; bool custom = false; bool active = false; };
+    SkelState skel;
+    static constexpr int kNumSkStructs = 5;                    // 0..3 hazır yapılar (web: HG.SK_STRUCT), 4 = stilin kendi yapısı
+    static const int kSkDurations[8];                          // 0 = stil uzunluğu, sonra 4:00..10:00
+    juce::StringArray skStructKinds (int idx) const;
+    void skSetStructure (int idx);
+    void skSetDuration (int sec);
+    void skSetKinds (const juce::StringArray& kinds, bool keepBars = false);   // bölüm ekle/sil/taşı/tür değiştir
+    void skSetBars (int section, int bars);                    // elle uzunluk: "özel" süre
+    hg::Skeleton skeletonNow() const;                          // güncel fikir + iskelet ayarları (ileti iş parçacığı)
+    hg::Skeleton skeletonFor (const hg::Result& loop) const;
+    hg::Result fullSong() const;                               // iskelet etkinse onun aranjmanı (ipucu işaretçileriyle), değilse stilin
+    std::vector<std::pair<hg::SkCue, juce::File>> skPicks (const hg::Skeleton& sk) const;   // ipucu başına önerilen sample (boş = HitGen sesi)
+    juce::MemoryBlock sectionMidi (int section) const;
+    // ---- sample kütüphanesi (klasörler tüm projeler için ortak saklanır)
+    std::shared_ptr<const hg::SampleLib> library() const { return lib; }
+    juce::StringArray sampleFolders() const { return folders; }
+    void setSampleFolders (const juce::StringArray& f, bool persist = true);   // taramayı arka planda başlatır
+    void ensureLibrary();                                      // ilk açılışta kayıtlı klasörleri tara
+    bool scanning() const { return scanBusy.load(); }
+    bool pollLibrary();                                        // ileti iş parçacığı: biten taramayı al (değiştiyse true)
+    std::atomic<int> scanProgress { 0 };
+    int libRevision = 0;
+    int loadSuggestedDrums();                                  // kütüphaneden kick, clap, hat... Davul Makinesi pad'lerine
+    // ---- proje klasörü dışa aktarımı (arka planda)
+    bool startExport (const juce::File& dir, const juce::String& planText);
+    bool exporting() const { return exportBusy.load(); }
+    std::atomic<int> exportProgress { 0 };
+    bool pollExport (hg::ExportResult& out);
+    static juce::File projectsFolder();
+    static juce::File sampleFoldersFile();
+
     std::atomic<bool> previewPlaying { false };
     std::atomic<double> playPpq { 0 }, hostBpm { 0 };
     std::atomic<bool> hostPlaying { false };
@@ -156,5 +192,11 @@ private:
     juce::CriticalSection drumLock;
     std::atomic<float>* pLoud = nullptr, *pCreative = nullptr;
     std::atomic<float>* pQuality = nullptr, *pThick = nullptr, *pPump = nullptr, *pMaster = nullptr, *pBpm = nullptr, *pPattern = nullptr, *pMidiOut = nullptr, *pKeysTo = nullptr;
+    // iskelet arka plan işleri
+    juce::StringArray folders; bool libRequested = false;
+    std::shared_ptr<const hg::SampleLib> lib;
+    std::mutex jobMx; std::optional<hg::SampleLib> doneLib; std::optional<hg::ExportResult> doneExport;
+    std::atomic<bool> scanBusy { false }, exportBusy { false }, rescan { false };
+    juce::ThreadPool pool { juce::ThreadPoolOptions{}.withThreadName ("HitGen jobs").withNumberOfThreads (1) };   // en son üye: önce o yok edilir, işler biter
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HitGenProcessor)
 };

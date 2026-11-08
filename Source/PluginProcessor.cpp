@@ -111,6 +111,7 @@ HitGenProcessor::HitGenProcessor()
     for (int t = 0; t < 4; ++t) loadPatch (t);
     applyStyleDefaults();
     presets.rescan();
+    skel.kinds = skStructKinds (0);
     regenerateNow();
     midiLearn.init (*this); midiLearn.loadDefault();      // proje durumu gelirse kendi eşlemesi geçerli olur
     startTimerHz (30);
@@ -551,8 +552,13 @@ juce::MemoryBlock HitGenProcessor::midiBytes (int which) const
     hg::Result res = *r;
     const double hb = hostBpm.load(); res.P.bpm = hb > 0 ? (int) std::lround (hb) : (int) p ("bpm")->load();
     const std::vector<int> all { hg::kChords, hg::kBass, hg::kDrums, hg::kMelody };
-    if (which == 6) return hg::midiFile (data, hg::assemble (data, res), all, true);    // tam parça, tek iz (Format 0)
-    if (which == 5) return hg::midiFile (data, hg::assemble (data, res), all, false);
+    if (which == 5 || which == 6)
+    {
+        hg::Result song;
+        if (skel.active) { auto sk = skeletonFor (res); song = std::move (sk.song); }
+        else song = hg::assemble (data, res);
+        return hg::midiFile (data, song, all, which == 6);   // 6: tam parça, tek iz (Format 0)
+    }
     if (which == 4) return hg::midiFile (data, res, all, false);
     return hg::midiFile (data, res, { which }, false);
 }
@@ -579,6 +585,14 @@ juce::ValueTree HitGenProcessor::stateTree()
     if (ref.hasPath() || ref.sampler.enabled.load() || ref.sampler.enabled.load()) extra.setProperty ("ref", juce::JSON::toString (ref.stateToVar(), true), nullptr);
     for (int pad = 0; pad < hg::kNumPads; ++pad) { const auto sp = drumSamplePath (pad); if (sp.isNotEmpty()) extra.setProperty (juce::String ("dmSample_") + hg::kPadIds[pad], sp, nullptr); }
     for (int pt = 0; pt < 3; ++pt) { const auto sp = instSamplePath (pt); if (sp.isNotEmpty()) extra.setProperty ("instSample_" + juce::String (pt), sp, nullptr); }
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("kinds", skel.kinds.joinIntoString (","));
+        juce::StringArray b; for (int x : skel.bars) b.add (juce::String (x));
+        o->setProperty ("bars", b.joinIntoString (",")); o->setProperty ("dur", skel.durSec); o->setProperty ("struct", skel.structIdx);
+        o->setProperty ("custom", skel.custom); o->setProperty ("active", skel.active);
+        extra.setProperty ("skeleton", juce::JSON::toString (juce::var (o), true), nullptr);
+    }
     if (editActive && current != nullptr)
     {
         juce::Array<juce::var> trs;
@@ -660,6 +674,21 @@ void HitGenProcessor::restoreFromTree (const juce::ValueTree& source, bool inclu
                                     (*e)[(size_t) t].push_back ({ (double) (*a)[0], (double) (*a)[1], (int) (*a)[2], (int) (*a)[3] });
                     savedEdit = std::move (e); savedEditKey = v["key"].toString();
                 }
+            }
+        }
+        {
+            skel = SkelState{}; skel.kinds = skStructKinds (0);
+            const auto js = extra.getProperty ("skeleton").toString();
+            if (js.isNotEmpty() && js.length() < 20000)
+            {
+                const auto v = juce::JSON::parse (js);
+                juce::StringArray k; k.addTokens (v["kinds"].toString(), ",", "");
+                juce::StringArray valid; for (auto& x : k) for (int i = 0; i < hg::kNumSkKinds; ++i) if (x == hg::kSkKinds[i]) valid.add (x);
+                if (! valid.isEmpty() && valid.size() <= 24) skel.kinds = valid;
+                juce::StringArray b; b.addTokens (v["bars"].toString(), ",", "");
+                skel.bars.clear(); for (auto& x : b) skel.bars.push_back (juce::jlimit (8, 256, x.getIntValue() / 8 * 8));
+                skel.durSec = juce::jlimit (0, 1200, (int) v["dur"]); skel.structIdx = juce::jlimit (0, kNumSkStructs - 1, (int) v["struct"]);
+                skel.custom = (bool) v["custom"] && (int) skel.bars.size() == skel.kinds.size(); skel.active = (bool) v["active"];
             }
         }
         userArtist = extra.getProperty ("userArtist").toString().substring (0, 80);
@@ -892,3 +921,223 @@ juce::AudioProcessorEditor* HitGenProcessor::createEditor() { return new HitGenE
 #if ! HITGEN_TEST_BUILD
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new HitGenProcessor(); }
 #endif
+
+
+// ================================================================ proje iskeleti
+const int HitGenProcessor::kSkDurations[8] = { 0, 240, 300, 360, 420, 480, 540, 600 };
+
+juce::StringArray HitGenProcessor::skStructKinds (int idx) const
+{
+    static const char* const S[4][9] = {
+        { "intro", "build", "drop", "break", "build", "drop", "outro" },
+        { "intro", "drop", "break", "build", "drop", "outro" },
+        { "intro", "build", "drop", "break", "groove", "break", "build", "drop", "outro" },
+        { "intro", "groove", "break", "groove", "outro" } };
+    juce::StringArray k;
+    if (idx >= 0 && idx < 4) { for (auto* x : S[idx]) if (x != nullptr) k.add (x); return k; }
+    // stilin kendi yapısı: bölüm adlarından tür
+    const auto& St = data.style (juce::jlimit (0, data.numStyles() - 1, (int) p ("style")->load()));
+    if (auto* arr = St["arr"].getArray())
+        for (auto& sec : *arr)
+        {
+            const auto n = sec[0].toString().toLowerCase();
+            k.add (n.contains ("intro") ? "intro" : n.contains ("outro") ? "outro" : n.contains ("build") ? "build" : n.contains ("break") ? "break"
+                   : n.contains ("verse") ? "verse" : n.contains ("groove") ? "groove" : "drop");
+        }
+    return k;
+}
+
+void HitGenProcessor::skSetStructure (int idx)
+{
+    skel.structIdx = juce::jlimit (0, kNumSkStructs - 1, idx);
+    skel.kinds = skStructKinds (skel.structIdx); skel.custom = false; skel.bars.clear();
+}
+void HitGenProcessor::skSetDuration (int sec) { skel.durSec = juce::jlimit (0, 1200, sec); skel.custom = false; skel.bars.clear(); }
+
+void HitGenProcessor::skSetKinds (const juce::StringArray& kinds, bool keepBars)
+{
+    if (kinds.isEmpty() || kinds.size() > 24) return;
+    if (keepBars && skel.custom && (int) skel.bars.size() == kinds.size()) { skel.kinds = kinds; return; }
+    if (keepBars && ! skel.custom) { skel.kinds = kinds; return; }   // uzunluklar yine süreden hesaplanır
+    skel.kinds = kinds; skel.custom = false; skel.bars.clear();
+}
+
+void HitGenProcessor::skSetBars (int section, int bars)
+{
+    auto sk = skeletonNow();
+    if (section < 0 || section >= (int) sk.secs.size()) return;
+    skel.bars.clear(); for (auto& x : sk.secs) skel.bars.push_back (x.bars);
+    skel.bars[(size_t) section] = juce::jlimit (8, 256, bars / 8 * 8);
+    skel.custom = true;
+}
+
+static hg::Skeleton skeletonOf (const hg::Data& data, const HitGenProcessor::SkelState& sk, const hg::Result& res, const juce::StringArray& kinds)
+{
+    std::vector<int> bars;
+    if (sk.custom && (int) sk.bars.size() == kinds.size()) bars = sk.bars;
+    else if (sk.durSec > 0) bars = hg::skBars (kinds, sk.durSec, res.P.bpm);
+    else if (sk.structIdx == HitGenProcessor::kNumSkStructs - 1)
+    {   // stil uzunluğu + stilin yapısı: stilin kendi ölçüleri
+        if (auto* arr = data.styleById (res.P.style)["arr"].getArray()) for (auto& sec : *arr) bars.push_back ((int) sec[1]);
+        if ((int) bars.size() != kinds.size()) bars = hg::skBars (kinds, 360, res.P.bpm);
+    }
+    else
+    {   // stil uzunluğu: stil aranjmanının süresi kadar
+        int tb = 0; if (auto* arr = data.styleById (res.P.style)["arr"].getArray()) for (auto& sec : *arr) tb += (int) sec[1];
+        bars = hg::skBars (kinds, juce::jmax (60, (int) std::lround (tb * 240.0 / juce::jmax (1, res.P.bpm))), res.P.bpm);
+    }
+    return hg::skeleton (data, res, kinds, 0, &bars);
+}
+
+hg::Skeleton HitGenProcessor::skeletonFor (const hg::Result& res) const
+{
+    auto kinds = skel.kinds.isEmpty() ? skStructKinds (skel.structIdx) : skel.kinds;
+    auto sk = skeletonOf (data, skel, res, kinds);
+    for (auto& c : sk.cues) sk.song.marks.push_back ({ "> " + c.type, c.bar, c.len });   // DAW'da ipucu işaretçileri
+    return sk;
+}
+
+hg::Skeleton HitGenProcessor::skeletonNow() const
+{
+    auto r = current;
+    if (r == nullptr) return {};
+    hg::Result res = *r;
+    const double hb = hostBpm.load(); res.P.bpm = hb > 0 ? (int) std::lround (hb) : (int) p ("bpm")->load();
+    return skeletonFor (res);
+}
+
+hg::Result HitGenProcessor::fullSong() const
+{
+    if (skel.active) return skeletonNow().song;
+    auto r = current; if (r == nullptr) return {};
+    return hg::assemble (data, *r);
+}
+
+juce::MemoryBlock HitGenProcessor::sectionMidi (int section) const
+{
+    const auto sk = skeletonNow();
+    if (section < 0 || section >= (int) sk.secs.size()) return {};
+    const auto& x = sk.secs[(size_t) section];
+    return hg::midiFile (data, hg::sliceResult (sk.song, x.bar, x.bars), { hg::kChords, hg::kBass, hg::kDrums, hg::kMelody }, false);
+}
+
+std::vector<std::pair<hg::SkCue, juce::File>> HitGenProcessor::skPicks (const hg::Skeleton& sk) const
+{
+    std::vector<std::pair<hg::SkCue, juce::File>> out;
+    auto L = lib; const int bpm = sk.song.P.bpm; const auto seed = (juce::uint32) sk.song.P.seed;
+    for (auto& c : sk.cues)
+    {
+        if (hg::cueAudio (c.type).cat < 0) continue;
+        const hg::SampleEntry* e = L != nullptr ? L->pick (c.type, bpm, seed, c.bar) : nullptr;
+        out.push_back ({ c, e != nullptr ? e->file : juce::File() });
+    }
+    return out;
+}
+
+juce::File HitGenProcessor::projectsFolder()
+{
+    return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("Wavejackers HitGen").getChildFile ("Projects");
+}
+juce::File HitGenProcessor::sampleFoldersFile()
+{
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("Wavejackers").getChildFile ("HitGen").getChildFile ("sample-folders.txt");
+}
+
+namespace
+{
+struct ScanJob : juce::ThreadPoolJob
+{
+    ScanJob (juce::StringArray f, std::function<void (hg::SampleLib)> d, std::atomic<int>& pr) : ThreadPoolJob ("scan"), folders (std::move (f)), done (std::move (d)), progress (pr) {}
+    JobStatus runJob() override
+    {
+        auto L = hg::SampleLib::scan (folders, [this] { return shouldExit(); }, &progress);
+        if (! shouldExit()) done (std::move (L)); else done ({});
+        return jobHasFinished;
+    }
+    juce::StringArray folders; std::function<void (hg::SampleLib)> done; std::atomic<int>& progress;
+};
+struct ExportJob : juce::ThreadPoolJob
+{
+    ExportJob (hg::ExportJobInput in_, std::function<void (hg::ExportResult)> d, std::atomic<int>& pr) : ThreadPoolJob ("export"), in (std::move (in_)), done (std::move (d)), progress (pr) {}
+    JobStatus runJob() override { done (hg::exportProject (in, [this] { return shouldExit(); }, &progress)); return jobHasFinished; }
+    hg::ExportJobInput in; std::function<void (hg::ExportResult)> done; std::atomic<int>& progress;
+};
+}
+
+void HitGenProcessor::setSampleFolders (const juce::StringArray& f, bool persist)
+{
+    folders.clear();
+    for (auto& x : f) if (x.isNotEmpty() && ! folders.contains (x)) folders.add (x);
+    libRequested = true;
+    if (persist)
+    {
+        auto file = sampleFoldersFile(); file.getParentDirectory().createDirectory();
+        file.replaceWithText (folders.joinIntoString ("\n"));
+    }
+    if (folders.isEmpty()) { lib = std::make_shared<const hg::SampleLib>(); ++libRevision; return; }
+    if (scanBusy.exchange (true)) { rescan.store (true); return; }   // bitince yeniden taranır
+    scanProgress.store (0);
+    pool.addJob (new ScanJob (folders, [this] (hg::SampleLib L) { const std::lock_guard<std::mutex> g (jobMx); doneLib = std::move (L); }, scanProgress), true);
+}
+
+void HitGenProcessor::ensureLibrary()
+{
+    if (libRequested) return;
+    libRequested = true;
+    juce::StringArray f; f.addLines (sampleFoldersFile().loadFileAsString());
+    f.removeEmptyStrings();
+    if (! f.isEmpty()) setSampleFolders (f, false);
+}
+
+bool HitGenProcessor::pollLibrary()
+{
+    std::optional<hg::SampleLib> L;
+    { const std::lock_guard<std::mutex> g (jobMx); L.swap (doneLib); }
+    if (! L) return false;
+    scanBusy.store (false);
+    if (rescan.exchange (false)) { setSampleFolders (folders, false); return false; }
+    L->folders = folders;
+    lib = std::make_shared<const hg::SampleLib> (std::move (*L)); ++libRevision;
+    return true;
+}
+
+int HitGenProcessor::loadSuggestedDrums()
+{
+    auto L = lib; if (L == nullptr) return 0;
+    struct P { int pad, cat; const char* pref; };
+    const P map[] = { { hg::kPadKick, hg::kCatKick, "" }, { hg::kPadSnare, hg::kCatSnare, "" }, { hg::kPadClap, hg::kCatClap, "" }, { hg::kPadHat, hg::kCatHat, "" },
+                      { hg::kPadOpenHat, hg::kCatOpenHat, "" }, { hg::kPadRim, hg::kCatPerc, "rim" }, { hg::kPadPerc, hg::kCatShaker, "" } };
+    int n = 0; auto r = current; const int bpm = (int) p ("bpm")->load(); const auto seed = (juce::uint32) (r ? r->P.seed : 7);
+    for (auto& m : map)
+        if (auto* e = L->pickCat (m.cat, m.pref, bpm, seed, m.pad * 131, true))
+        {
+            juce::String err;
+            if (loadDrumSample (m.pad, e->file, err, true)) ++n;
+        }
+    return n;
+}
+
+bool HitGenProcessor::startExport (const juce::File& dir, const juce::String& planText)
+{
+    if (exportBusy.exchange (true)) return false;
+    hg::ExportJobInput in;
+    in.dir = dir; in.planText = planText; in.baseName = baseName();
+    in.sk = skeletonNow(); in.bpm = in.sk.song.P.bpm; in.seed = (juce::uint32) in.sk.song.P.seed;
+    in.sampleRate = sr >= 44100 ? sr : 44100;
+    const std::vector<int> all { hg::kChords, hg::kBass, hg::kDrums, hg::kMelody };
+    in.midis.push_back (hg::midiFile (data, in.sk.song, all, false));
+    for (int t : all) { auto one = in.sk.song; one.marks.clear(); in.midis.push_back (hg::midiFile (data, one, { t }, false)); }
+    in.picks = skPicks (in.sk);
+    exportProgress.store (0);
+    pool.addJob (new ExportJob (std::move (in), [this] (hg::ExportResult R) { const std::lock_guard<std::mutex> g (jobMx); doneExport = std::move (R); }, exportProgress), true);
+    return true;
+}
+
+bool HitGenProcessor::pollExport (hg::ExportResult& out)
+{
+    std::optional<hg::ExportResult> R;
+    { const std::lock_guard<std::mutex> g (jobMx); R.swap (doneExport); }
+    if (! R) return false;
+    exportBusy.store (false); out = std::move (*R);
+    return true;
+}

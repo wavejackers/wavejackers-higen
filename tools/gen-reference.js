@@ -16,4 +16,12 @@ for (const S of HG.STYLES) for (let vi = 0; vi < 4; vi++) ALTS.forEach((alt, ai)
   const r = HG.generate(P), a = HG.assemble(r);
   out.push([S.id, 'alt' + ai, vi, fnv(MB.midiFile(r, K)), fnv(MB.midiFile(a, K))].join(' '));
 });
+// Proje iskeleti (yapı x süre) ve uç durumlar
+const str = s => fnv(Array.from(s, c => c.charCodeAt(0)));
+const SKX = HG.SK_STRUCT.concat([['build', 'build', 'drop'], ['intro'], ['verse', 'drop', 'break', 'outro'], ['break', 'build', 'groove', 'build']]);
+for (const S of HG.STYLES) for (let st = 0; st < SKX.length; st++) for (const sec of [60, 360, 480]) {
+  const P = { style: S.id, vi: st % 4, seed: 7, bars: 8, key: S.key, orig: 30, energy: 60, human: 20, sevenths: false, thick: 70, bpm: S.bpmDef, swing: S.swing };
+  const r = HG.generate(P), sk = HG.skeleton(r, SKX[st], sec);
+  out.push([S.id, 'sk' + st, sec, sk.profile, sk.secs.map(x => x.bars).join(','), str(sk.cues.map(c => c.bar + ':' + c.len + ':' + c.type + ':' + c.sec).join(';')), fnv(MB.midiFile(sk.song, K))].join(' '));
+}
 process.stdout.write(out.join('\\n') + '\\n');`)();

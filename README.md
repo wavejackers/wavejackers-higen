@@ -1,4 +1,4 @@
-# Wavejackers HitGen 2.8
+# Wavejackers HitGen 2.9
 
 MIDI üretici ve synth eklentisi. VST3 (FL Studio, Ableton Live, Cubase, Reaper, Bitwig, Studio One), AU (Logic Pro, GarageBand) ve tek başına uygulama (Standalone) olarak çalışır.
 
@@ -67,6 +67,13 @@ MIDI üretici ve synth eklentisi. VST3 (FL Studio, Ableton Live, Cubase, Reaper,
 - **MIDI'yi sürükle bırak.** İz kutularını (Akor .mid, Bas .mid…, Döngü, Tam parça) doğrudan DAW'a sürükle. Kutunun üzerinde Enter'a basarak ya da tıklayarak dosyaya da kaydedebilirsin.
 - **MIDI çıkışı.** Üretilen notalar kanal 1 (akor), 2 (bas), 3 (melodi) ve 10'dan (davul) dışarı verilir. FL Studio'da MIDI çıkışı başka enstrümanlara yönlendirilebilir.
 - **Klavye ile çalma.** DAW'dan gelen MIDI notaları seçili izin sesini çalar ("Klavye çalar" ayarı).
+- **Proje iskeleti (Proje sekmesi, "Proje üret"):**
+  - Yapı seçilir ya da elle kurulur: Intro, Buildup, Drop, Breakdown, Buildup, Drop, Outro varsayılandır. Bölüme tıklayınca türü değişir, 8 ölçü uzar ya da kısalır, taşınır, çoğaltılır ya da silinir.
+  - Hedef süre seçilir (4:00 ile 10:00 arası ya da stil uzunluğu). Bölümler 8 ölçülük cümlelere dağıtılır; buildup en çok 16 ölçüdür. 8:00 ve 120 BPM tam 240 ölçü verir (Black Coffee projesinin uzunluğu).
+  - Kurallar iki gerçek projeden çıkarıldı: Black Coffee "The Rapture Pt.III" Ableton remake (organik house: kick hiç kesilmez, breakdown'da high-pass ile incelir, bas çıkar, her bölüm sınırında ters ve düz downlifter, drop'tan önce reverb atışı, outro'da perküsyon katman katman çıkar) ve FRERE "Powerful" ile "Tiger" FL Studio projeleri (melodik techno: ilk 8 ölçü kicksiz, drop'ta her 8 ölçüde 4 ölçülük uplifter, breakdown başında impact ve sub drop, 16 ölçülük riser + sweep + davul buildup'ı, drop'tan önceki ölçüde vokal "go", son drop öncesi bir ölçü boşluk). Stilin türü (afro/house, techno/trance/hard, festival) hangi kuralların kullanılacağını seçer.
+  - Her bölüm için MIDI ve her an için sample önerisi: sample klasörleri eklenince dosya adları okunur (kick, clap, hat, riser, uplifter, sweep, impact, sub drop, downlifter, noise, fill, vocal, ambience ve "124 BPM" gibi tempo bilgisi) ve tempoya yakın olanlar tercih edilir. Satırdaki çip sample'ı ya da bölümün MIDI'sini DAW'a sürükler. "Önerilen davulları yükle" Davul Makinesi pad'lerini doldurur.
+  - "Proje klasörü oluştur": tam parça MIDI (bölüm ve ipucu işaretçileriyle), iz başına tam boy MIDI, bütün riser/impact/downlifter'ların yerleştiği FX Guide.wav (sample yoksa HitGen kendi sesleriyle üretir), önerilen sample'ların ölçü numarasıyla adlandırılmış kopyaları ve Plan.txt. Arka planda yazılır.
+  - İskelet projeyle saklanır. Algoritma web sürümüyle birebir aynıdır (eşlik testinde 576 iskelet durumu).
 - **Ses motoru:**
   - 98 ses ve 10 davul kiti.
   - Bant sınırlı wavetable osilatörler, unison, 12/24 dB SVF filtre, formant ve LFO'lar.
@@ -162,3 +169,6 @@ Artist styles are inspiration only. No notes from any track are used, and there 
 
 ### Celestial character theme
 The whole editor uses the Wavejackers character art (sage with staff, two angels): night-blue background, ivory text, one gold accent, slightly translucent panels with the figures faintly behind them, a gold "staff orb" for the main sphere and the assistant, and a sage portrait in the header whose halo follows the output level (static when motion is off). High-contrast mode stays fully opaque and shows no figures. Art is owned by Wavejackers; transparent PNG cut-outs (~750 KB total) live in `Resources/characters/` and are scaled once when the editor opens, so painting does no resampling. Audio code is unchanged.
+
+### Project skeleton
+"Generate project" on the Project tab builds a full track from an editable section list (default Intro, Buildup, Drop, Breakdown, Buildup, Drop, Outro) and a target length (4:00 to 10:00, or the style's length). Sections are 8-bar phrases; 8:00 at 120 BPM is exactly 240 bars. Arrangement rules come from two real projects: Black Coffee "The Rapture Pt.III" (Ableton remake, organic house) and FRERE "Powerful" / "Tiger" (FL Studio, melodic techno). Every moment gets MIDI and, when sample folders are added, a sample suggestion picked from file names and tempo. "Create project folder" writes full-song and per-part MIDI, an FX guide WAV with every riser, impact and downlifter in place, copies of the suggested samples and a plan.

@@ -220,23 +220,32 @@ HG.maskFor = function (name, bi, B) {
   if (/verse/.test(n)) return { drums: 'full', bass: true, chords: true, melody: false };
   return { drums: 'full', bass: true, chords: true, melody: true };
 };
-HG.assemble = function (res) {
+HG.assemble = function (res) { return HG.assembleArr(res, res.style.arr.map(([name, B]) => ({ name, bars: B, kind: '' })), ''); };
+// arr: [{name, bars, kind}]; profile: '' (stilin aranjmanı) | 'organic' | 'techno' | 'edm' (proje iskeleti)
+HG.assembleArr = function (res, arr, profile) {
   const S = res.style, L = res.bars, G = MB.GM;
   const perBar = {}; HGK.forEach(k => { perBar[k] = Array.from({ length: L }, () => []); res.tracks[k].forEach(n => { const b = Math.floor(n.s / 16); if (b < L) perBar[k][b].push(n); }); });
   const T = { chords: [], bass: [], drums: [], melody: [] }, chords = [], sections = [];
   const rollNote = S.drums.fill === 'snare' ? G.snare : G.clap;
   let off = 0;
-  S.arr.forEach(([name, B]) => {
+  arr.forEach((sec, si) => {
+    const name = sec.name, B = sec.bars, kind = sec.kind, nk = si + 1 < arr.length ? arr[si + 1].kind : '';
     sections.push({ name, bar: off, bars: B });
     for (let bi = 0; bi < B; bi++) {
       const src = bi % L, m = HG.maskFor(name, bi, B), shift = (off + bi - src) * 16;
+      let vel = 1, clapIn = false;
+      if (profile === 'organic' && kind === 'break') { m.drums = 'light'; vel = .6; }          // Black Coffee: kick kesilmez, inceltilir
+      if (profile === 'techno' && kind === 'intro' && B >= 16 && bi < 8) m.drums = 'hats';     // FRERE: ilk 8 ölçü kicksiz
+      if (profile === 'techno' && (kind === 'drop' || kind === 'groove') && B >= 16 && (nk === 'break' || nk === 'build') && bi >= B - 8) clapIn = true;
       chords.push(res.chords[src]);
       ['chords', 'bass', 'melody'].forEach(k => { if (m[k]) perBar[k][src].forEach(n => T[k].push(Object.assign({}, n, { s: n.s + shift }))); });
       if (m.drums !== 'none') perBar.drums[src].forEach(n => {
         if (m.drums === 'light' && n.n !== G.kick && n.n !== G.chat) return;
         if (m.drums === 'build' && n.n !== G.kick && n.n !== G.chat && n.n !== G.ohat) return;
-        T.drums.push(Object.assign({}, n, { s: n.s + shift }));
+        if (m.drums === 'hats' && n.n !== G.chat) return;
+        T.drums.push(Object.assign({}, n, { s: n.s + shift }, vel !== 1 ? { v: clamp(Math.round(n.v * vel), 1, 127) } : {}));
       });
+      if (clapIn) [4, 12].forEach(st => { if (!perBar.drums[src].some(n => n.n === G.clap && n.s - src * 16 === st)) T.drums.push({ s: (off + bi) * 16 + st, l: 1, n: G.clap, v: 96 }); });
       if (m.roll != null && m.roll >= 0) {
         const steps = m.roll === 0 ? [0, 4, 8, 12] : m.roll === 1 ? [0, 2, 4, 6, 8, 10, 12, 14] : [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15];
         steps.forEach(s => T.drums.push({ s: (off + bi) * 16 + s, l: .9, n: rollNote, v: clamp(Math.round(58 + ((m.roll * 16 + s) / 64) * 66), 1, 127) }));
@@ -245,4 +254,76 @@ HG.assemble = function (res) {
     off += B;
   });
   return { P: res.P, chords, tracks: T, steps: off * 16, bars: off, style: S, variation: res.variation, sections, loopBars: L };
+};
+
+// ---- Proje iskeleti: Black Coffee (Ableton) ve FRERE (FL Studio) projelerinden çıkarılan aranjman kuralları
+HG.SK_W = { intro: 4, build: 2, drop: 4, break: 3, groove: 4, outro: 4, verse: 3 };
+HG.SK_NAME = { intro: 'Intro', build: 'Buildup', drop: 'Drop', break: 'Breakdown', groove: 'Groove', outro: 'Outro', verse: 'Verse' };
+HG.SK_STRUCT = [
+  ['intro', 'build', 'drop', 'break', 'build', 'drop', 'outro'],
+  ['intro', 'drop', 'break', 'build', 'drop', 'outro'],
+  ['intro', 'build', 'drop', 'break', 'groove', 'break', 'build', 'drop', 'outro'],
+  ['intro', 'groove', 'break', 'groove', 'outro']];
+HG.skProfile = S => (S.grp === 'afro' || S.grp === 'house') ? 'organic' : (S.grp === 'techno' || S.grp === 'trance' || S.grp === 'hard') ? 'techno' : 'edm';
+// Hedef süreye göre bölüm uzunlukları (8 ölçülük cümleler; buildup en çok 16 ölçü)
+HG.skBars = function (kinds, sec, bpm) {
+  const n = kinds.length; if (!n) return [];
+  const P = Math.max(n, Math.floor((sec * bpm + 960) / 1920)), rem = P - n;
+  const w = kinds.map(k => HG.SK_W[k] || 3), W = w.reduce((a, b) => a + b, 0);
+  const ph = w.map(x => 1 + Math.floor(rem * x / W)), fr = w.map(x => (rem * x) % W), used = kinds.map(() => false);
+  let left = P - ph.reduce((a, b) => a + b, 0);
+  while (left > 0) { let bi = -1; for (let i = 0; i < n; i++) if (!used[i] && (bi < 0 || fr[i] > fr[bi])) bi = i; if (bi < 0) break; used[bi] = true; ph[bi]++; left--; }
+  for (let i = 0; i < n; i++) if (kinds[i] === 'build' && ph[i] > 2) {
+    let j = -1;
+    for (let k = i + 1; k < n && j < 0; k++) if (kinds[k] !== 'build') j = k;
+    for (let k = i - 1; k >= 0 && j < 0; k--) if (kinds[k] !== 'build') j = k;
+    if (j >= 0) { ph[j] += ph[i] - 2; ph[i] = 2; }
+  }
+  return ph.map(x => x * 8);
+};
+HG.skSections = function (kinds, bars) {
+  const tot = {}, c = {}; kinds.forEach(k => tot[k] = (tot[k] || 0) + 1);
+  let off = 0;
+  return kinds.map((k, i) => { c[k] = (c[k] || 0) + 1; const s = { kind: k, name: (HG.SK_NAME[k] || k) + (tot[k] > 1 ? ' ' + c[k] : ''), bar: off, bars: bars[i] }; off += bars[i]; return s; });
+};
+HG.skCues = function (secs, profile) {
+  const C = [], last = secs[secs.length - 1], total = last ? last.bar + last.bars : 0;
+  const add = (bar, len, type, i) => { if (bar >= 0 && bar < total && len > 0) C.push({ bar, len: Math.min(len, total - bar), type, sec: i }); };
+  let drops = 0;
+  if (profile === 'organic') add(0, total, 'pad', 0);
+  secs.forEach((x, i) => {
+    const s = x.bar, B = x.bars, k = x.kind, pk = i ? secs[i - 1].kind : '', nk = i + 1 < secs.length ? secs[i + 1].kind : '', main = k === 'drop' || k === 'groove';
+    if (k === 'drop') drops++;
+    if (profile === 'organic') {
+      if (s > 0) { if (s >= 4) add(s - 4, 4, 'reverse', i); add(s, 4, 'downlifter', i); }
+      if (k === 'intro') { add(s, B, 'kickIn', i); if (B >= 16) add(s + B / 2, B / 2, 'perc', i); }
+      if (k === 'build') { add(s, B, 'noise', i); add(s, B, 'filterOpen', i); }
+      if (main && (pk === 'build' || pk === 'break')) add(s - 1, 1, 'reverbThrow', i);
+      if (k === 'break') { add(s, B, 'kickHpf', i); add(s, B, 'bassOut', i); add(s, B, 'chordsFilter', i); if (B >= 16) add(s + B / 2, B / 2, 'topMelody', i); }
+      if (main) { add(s, B, 'percUp', i); if (B >= 16) add(s + B / 2, B / 2, 'leadVar', i); }
+      if (k === 'outro') { add(s + B / 4, B - B / 4, 'percOut', i); add(s + B / 2, B / 2, 'filterClose', i); }
+    } else if (profile === 'techno') {
+      if (k === 'intro') { add(s, B, 'atmos', i); if (B >= 16) { add(s, 8, 'hatsOnly', i); add(s + 8, B - 8, 'kickIn', i); } else add(s, B, 'kickIn', i); }
+      if (main) {
+        if (s > 0) add(s, 1, 'impact', i);
+        for (let m = s + 4; m + 4 <= s + B; m += 8) add(m, 4, 'uplifter', i);
+        if (B >= 16 && (nk === 'break' || nk === 'build')) add(s + B - 8, 8, 'clapIn', i);
+        if (k === 'drop' && drops >= 2 && pk === 'build') add(s - 1, 1, 'gap', i);
+      }
+      if (k === 'break') { add(s, 1, 'impact', i); add(s, 4, 'subDrop', i); add(s, Math.min(8, B), 'downlifter', i); }
+      if (k === 'build') { add(s, B, 'riser', i); add(s, B, 'sweep', i); add(s, B, 'drumBuild', i); add(s + B - 1, 1, 'vocal', i); }
+      if (k === 'outro') { add(s, Math.min(8, B), 'downlifter', i); add(s + B / 2, B / 2, 'percOut', i); }
+    } else {
+      if (k === 'intro') add(s, B, 'kickIn', i);
+      if (k === 'build') { add(s, B, 'riser', i); add(s + B - 4, 4, 'roll', i); add(s + B - 1, 1, 'fill', i); }
+      if (main && s > 0) { add(s, 1, 'impact', i); if (k === 'drop') add(s, 4, 'subDrop', i); }
+      if (k === 'break') { add(s, 4, 'downlifter', i); add(s, B, 'atmos', i); }
+      if (k === 'outro') add(s + B / 2, B / 2, 'percOut', i);
+    }
+  });
+  return C.sort((a, b) => a.bar - b.bar);
+};
+HG.skeleton = function (res, kinds, sec, bars) {
+  const b = bars || HG.skBars(kinds, sec, res.P.bpm), secs = HG.skSections(kinds, b), profile = HG.skProfile(res.style);
+  return { secs, profile, cues: HG.skCues(secs, profile), song: HG.assembleArr(res, secs, profile) };
 };
