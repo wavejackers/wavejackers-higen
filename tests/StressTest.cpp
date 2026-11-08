@@ -440,7 +440,8 @@ static void checkFlp (const juce::File& f, const hg::Skeleton& sk, const FailFn&
     if (markers != (int) sk.secs.size()) fail ("flp: markers " + juce::String (markers));
     if (tracks != 500) fail ("flp: track data " + juce::String (tracks));
     if (plBytes == 0 || plBytes % 32 != 0) fail ("flp: playlist size");
-    if (notesEv < (int) sk.secs.size() * 3 || patItems != notesEv) fail ("flp: patterns " + juce::String (notesEv) + " items " + juce::String (patItems));
+    if (plBytes % 60 == 0) fail ("flp: playlist size is ambiguous (multiple of 60)");
+    if (notesEv < (int) sk.secs.size() * 3 || (patItems != notesEv && patItems != notesEv + 1)) fail ("flp: patterns " + juce::String (notesEv) + " items " + juce::String (patItems));
     if (clips < 8) fail ("flp: audio clips " + juce::String (clips));
     if (maxEnd < sk.song.bars * 384 - 384 || maxEnd > sk.song.bars * 384) fail ("flp: playlist length " + juce::String (maxEnd / 384) + " bars, song " + juce::String (sk.song.bars));
     if (kick != 1 || ! names.contains ("Bass") || ! names.contains ("Chords")) fail ("flp: channel names " + names.joinIntoString (","));
@@ -633,6 +634,8 @@ static void testSkeleton (const juce::File& outDir, const FailFn& fail)
     }
     ed.reset();
     p.setSampleFolders ({}, false);
+    for (auto* sub : { "UI Export", "Out Project" })   // incelemek için çıktı klasörüne kopya (FL projesi dahil)
+    { auto dst = outDir.getChildFile (juce::String ("flp-") + juce::String (sub).replace (" ", "-")); dst.deleteRecursively(); dir.getChildFile (sub).copyDirectoryTo (dst); }
     dir.deleteRecursively();
     std::cout << "skeleton ok: " << sk.song.bars << " bars organic, " << tk.song.bars << " bars techno, " << withFile << " cues with samples, " << er.placed << " FX placed\n";
 }

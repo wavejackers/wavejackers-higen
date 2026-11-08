@@ -1230,7 +1230,17 @@ void HitGenProcessor::renderExportSounds (hg::ExportJobInput& in)
     {
         if (in.sk.song.tracks[(size_t) pd.t].empty()) continue;
         const double dur = juce::jlimit (pd.lo, pd.hi, median (pd.t) * stepSec);
-        in.partRenders[(size_t) pd.t] = renderFor (dur + 1.2, [&] { E->noteOn (pd.t, 60, 104, dur, 0); });
+        const bool pad = pd.t == hg::kChords;
+        auto r = renderFor (dur + (pad ? 1.0 : .35), [&] { E->noteOn (pd.t, 60, 104, dur, 0); });
+        // FL Sampler örneği sonuna dek çalar: notadan sonra kısa bir sönüm, bas ve melodide kuyruklar üst üste binmesin
+        const int from = (int) (rsr * dur), rel = (int) (rsr * (pad ? .6 : .12));
+        if (r.getNumSamples() > from + 8)
+        {
+            const int n = juce::jmin (rel, r.getNumSamples() - from);
+            for (int c = 0; c < r.getNumChannels(); ++c) r.applyGainRamp (c, from, n, 1.0f, 0.0f);
+            r.setSize (r.getNumChannels(), from + n, true);
+        }
+        in.partRenders[(size_t) pd.t] = std::move (r);
     }
     for (int gm : { 36, 37, 38, 39, 42, 46, 64 })
     {

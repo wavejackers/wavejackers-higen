@@ -157,13 +157,14 @@ juce::MemoryBlock writeFlp (const FlpProject& P)
     for (int k = 0; k < kInserts; ++k)
     {
         const bool edge = k == 0 || k == kInserts - 1;
+        // FL, bir kanalın rengini ve adını o kanalın bayraklarından (236) önce yazar
+        if (auto it = named.find (k); it != named.end()) { o.ev (149, it->second->colour); o.text (204, it->second->name); }
         std::vector<uint8_t> fl (12, 0); fl[4] = edge ? 0x0c : 0x4c;
         o.data (236, fl);
         for (int s = 0; s < 10; ++s) o.ev (98, (juce::uint32) s);
         std::vector<uint8_t> route (127, 0); if (! edge) route[0] = 1;
         o.data (235, route);
         o.ev (165, 3); o.ev (166, 1); o.ev (154, 0xffffffffu); o.ev (147, k == 0 ? 0u : 0xffffffffu);
-        if (auto it = named.find (k); it != named.end()) { o.ev (149, it->second->colour); o.text (204, it->second->name); }
     }
     // ---- dosya: FLhd + FLdt
     juce::MemoryOutputStream f;
@@ -287,6 +288,15 @@ FlpProject buildFlp (const Skeleton& sk, const FlpSources& src, const juce::Stri
         if (it.len > 0) P.items.push_back (it);
     }
     for (auto& s : sk.secs) P.markers.push_back ({ s.bar * bar, s.name });
+    // FL 21 playlist öğeleri 60 bayt, FL 20.9 öğeleri 32 bayt: toplam bayt 60'a bölünürse bazı okuyucular boyu yanlış tahmin eder.
+    // Belirsizlik kalmasın: gerekirse boş, 1 ölçülük bir bilgi klibi eklenir (ses üretmez).
+    if (P.items.size() % 15 == 0)
+    {
+        FlpPattern info; info.name = "Wavejackers HitGen"; info.colour = rgb (227, 187, 98); info.lengthTicks = bar; info.channel = 0;
+        P.patterns.push_back (info);
+        P.tracks.push_back ({ "HitGen", rgb (227, 187, 98) });
+        P.items.push_back ({ true, (int) P.patterns.size(), 0, bar, (int) P.tracks.size() - 1 });
+    }
     return P;
 }
 }

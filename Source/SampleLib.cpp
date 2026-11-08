@@ -370,6 +370,7 @@ bool writeFlpProject (const ExportJobInput& in, ExportResult& R, juce::String& e
 {
     juce::AudioFormatManager fm; fm.registerBasicFormats();
     const auto hgDir = in.dir.getChildFile ("Samples").getChildFile ("HitGen");
+    if (! hgDir.createDirectory()) { err = "mkdir " + hgDir.getFullPathName(); return false; }
     FlpSources src;
     static const std::map<int, const char*> drumNames { { 36, "Kick" }, { 37, "Rim" }, { 38, "Snare" }, { 39, "Clap" }, { 42, "Hat" }, { 46, "Open Hat" }, { 64, "Perc" } };
     for (auto& [gm, nm] : drumNames)
