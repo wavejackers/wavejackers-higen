@@ -430,9 +430,10 @@ static void checkBridges (const hg::ExportResult& er, const hg::Skeleton& sk, co
         const auto v = juce::JSON::parse (er.manifest.loadFileAsString());
         if ((int) v["bpm"] != sk.song.P.bpm || (int) v["bars"] != sk.song.bars || v["sections"].size() != (int) sk.secs.size() || v["tracks"].size() != (int) arr.lanes.size())
             fail ("bridges: manifest fields");
-        if (v["files"]["stem_bass"].toString().isEmpty() || v["files"]["flStudioProject"].toString().isEmpty() || v["files"]["midiArrangement"].toString().isEmpty()) fail ("bridges: manifest files");
+        const bool stems = ! quickRun();
+        if ((stems && v["files"]["stem_bass"].toString().isEmpty()) || v["files"]["flStudioProject"].toString().isEmpty() || v["files"]["midiArrangement"].toString().isEmpty()) fail ("bridges: manifest files");
         for (auto& k : { "stem_drums", "stem_bass", "midiArrangement", "flStudioProject", "plan" })
-            if (! er.dir.getChildFile (v["files"][k].toString()).exists()) fail (juce::String ("bridges: manifest points to a missing file: ") + k);
+            if ((stems || ! juce::String (k).startsWith ("stem")) && ! er.dir.getChildFile (v["files"][k].toString()).exists()) fail (juce::String ("bridges: manifest points to a missing file: ") + k);
     }
     {
         auto scripts = er.dir.getChildFile ("FL Piano Roll Scripts").findChildFiles (juce::File::findFiles, false, "*.pyscript");
