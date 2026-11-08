@@ -270,7 +270,8 @@ ProjectPage::ProjectPage (HitGenProcessor& p, hgui::LookAndFeel& l) : proc (p), 
     {
         PopupMenu m;
         for (int i = 0; i < hg::kNumSkKinds; ++i) m.addItem (i + 1, kindName (hg::kSkKinds[i]));
-        m.showMenuAsync (PopupMenu::Options().withTargetComponent (addSecBtn), [this, sp = Component::SafePointer<ProjectPage> (this)] (int r)
+        Component::SafePointer<ProjectPage> sp (this);   // MSVC: iç içe lambda'da "this" ile ilklendirme derlenmiyor
+        m.showMenuAsync (PopupMenu::Options().withTargetComponent (addSecBtn), [this, sp] (int r)
         {
             if (sp == nullptr || r <= 0) return;
             const int at = selSec >= 0 ? selSec : (int) sk.secs.size() - 1;

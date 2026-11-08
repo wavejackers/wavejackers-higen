@@ -66,7 +66,7 @@ jobs:
       - name: pluginval (katılık 7)
         shell: bash
         run: |
-          curl -L -o pv.zip "${{ matrix.pluginval }}"
+          curl -fL --retry 5 --retry-delay 10 --retry-all-errors -o pv.zip "${{ matrix.pluginval }}"
           7z x pv.zip -opv > /dev/null
           vst3=$(find build -type d -name "Wavejackers HitGen.vst3" | head -1)
           if [ "$RUNNER_OS" == "macOS" ]; then pv="pv/pluginval.app/Contents/MacOS/pluginval"; elif [ "$RUNNER_OS" == "Windows" ]; then pv="pv/pluginval.exe"; else pv="pv/pluginval"; fi
