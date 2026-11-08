@@ -125,3 +125,23 @@ HG.BP.rumble = [[2,1,1,104],[3,1,1,84],[6,1,1,104],[7,1,1,84],[10,1,1,104],[11,1
     var: [{ prog: [0, 3, 0, 3] }, { scale: 'dorian', prog: [0, 3, 6, 3] }, { prog: [0, 5, 3, 4], cm: 'sustain', cp: 'long', md: .6 }, { prog: [0, 6, 5, 6], mm: 'arp', arp: 'gate', md: .6 }] });
   HG.GROUPS = ['all', 'techno', 'house', 'main', 'trance', 'hard', 'afro'];
 })();
+// ---- HitGen 3.0: tür stilleri (sanatçıya değil türe göre; Auto Producer'ın Progressive House ve Indie Dance seçenekleri)
+(function () {
+  const S = HG.STYLE, add = s => { HG.STYLES.push(s); S[s.id] = s; };
+  add({ id: 'prog', artist: 'Progressive House', grp: 'main', accent: '#5fb7ff', bpm: [122, 126], bpmDef: 124, key: 2, scales: ['minor', 'major'], swing: 0,
+    chord: { mode: 'sustain', pats: ['whole', 'long'] }, bass: { pats: ['offbeat8'], oct: 36 },
+    drums: { kick: K4, clap: C24, chat: H8O, ohat: OFF, perc: '..x.......x.....', fill: 'snare' },
+    mel: { mode: 'hook', hr: ['h3', 'h1', 'h6'], dens: .4, oct: 72, rep: .45 },
+    sound: { chords: 'mq-prog-pad', bass: 'mg-prog-bass', melody: 'mg-pluck-lead', drums: 'club' },
+    pump: { chords: [.5, .22], bass: [.5, .2], melody: [.25, .2] },
+    arr: [['Intro', 32], ['Build', 16], ['Drop', 32], ['Breakdown', 32], ['Build', 16], ['Drop', 32], ['Outro', 32]],
+    var: [{ prog: [0, 5, 2, 6] }, { prog: [0, 6, 3, 4], cm: 'arp' }, { scale: 'major', prog: [0, 4, 5, 3] }, { prog: [5, 3, 0, 4], mm: 'arp', arp: 'pp', md: .6 }] });
+  add({ id: 'indie', artist: 'Indie Dance', grp: 'house', accent: '#ff8a5c', bpm: [112, 122], bpmDef: 118, key: 9, scales: ['minor', 'dorian'], swing: 8,
+    chord: { mode: 'stab', pats: ['sparse', 'push'] }, bass: { pats: ['rubber'], oct: 36 },
+    drums: { kick: K4, clap: C24, chat: H8, ohat: OFF, rim: '.......x.......x', perc: 'x.....x...x.....', fill: 'snare' },
+    mel: { mode: 'riff', dens: .4, oct: 72 },
+    sound: { chords: 'cl-deep-chord-stab', bass: 'cl-indie-bass', melody: 'cl-indie-lead', drums: 'indie' },
+    pump: { chords: [.35, .2], bass: [.35, .18], melody: [.15, .2] },
+    arr: [['Intro', 16], ['Groove', 32], ['Break', 16], ['Build', 8], ['Drop', 32], ['Outro', 16]],
+    var: [{ prog: [0, 6, 5, 6] }, { scale: 'dorian', prog: [0, 3, 0, 3] }, { prog: [0, 5, 3, 4], mm: 'hook', hr: ['h2'], md: .4 }, { prog: [0, 0, 6, 5], cm: 'sustain', cp: 'long', md: .5 }] });
+})();

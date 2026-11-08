@@ -1,4 +1,4 @@
-# Wavejackers HitGen 2.9
+# Wavejackers HitGen 3.0
 
 MIDI üretici ve synth eklentisi. VST3 (FL Studio, Ableton Live, Cubase, Reaper, Bitwig, Studio One), AU (Logic Pro, GarageBand) ve tek başına uygulama (Standalone) olarak çalışır.
 
@@ -93,6 +93,42 @@ MIDI üretici ve synth eklentisi. VST3 (FL Studio, Ableton Live, Cubase, Reaper,
   - Yüksek kontrast teması, %75–200 arayüz boyutu ve piyano rulosunun metin özeti bulunur.
   - Kısayollar: Boşluk çal/durdur, N yeni fikir, Ctrl/Cmd+S döngüyü kaydet, Ctrl/Cmd+1/2/3 sekmeler.
 
+## HitGen 3.0: AI Producer
+
+### Auto Producer (Proje sekmesi > "Auto Producer…")
+Tür (Afro House, Melodic Techno, Progressive House, Indie Dance, Deep House), BPM, ton, makam, süre (4:00–10:00) ve enerji seçilir; "Parçayı üret" tek tıkla iskeleti, fikri, sesleri ve FX ipuçlarını kurar. Afro House → Black Coffee kuralları, Melodic Techno → FRERE kuralları; Progressive House ve Indie Dance için yeni tür stilleri eklendi (web sürümüyle birebir).
+
+### Co-Producer (Proje sekmesi > "Co-Producer…")
+Kendi MIDI'ni yükle ya da panele sürükle (melodi, akor veya bas; davul kanalı alınmaz). HitGen:
+- rolünü tahmin eder (aynı anda çalan nota sayısı ve perde aralığı),
+- ton adaylarını bulur: önce notaların makam içi oranı, eşitlikte Krumhansl-Kessler profili. Kısa döngülerde göreli majör/minör ayırt edilemeyebilir; bu yüzden en çok 4 aday tutulur,
+- her aday tonda 48 fikir dener ve akorları notalarına en çok uyanı seçer (melodi: akor tonu oranı, akor: perde sınıfı örtüşmesi, bas: kök/akor tonu),
+- eksik izleri tamamlar. Senin notaların kilitlidir: stil, tohum, uzunluk değişse ve proje yeniden açılsa da aynı kalır; tam parçada drop ve breakdown'larda çalar. "Başka uyum" sıradaki adayı, "Kilidi aç" HitGen'in kendi izini geri getirir.
+
+### DAW çıktıları ("FL Studio projesi oluştur")
+Proje klasörüne yazılanlar:
+- `<ad>.flp`: dolu FL Studio projesi (Sampler kanalları, bölüm başına pattern'ler, FX klipleri, işaretçiler, adlı mikser kanalları)
+- `HitGen Arrangement.mid`: Type-1 çok izli MIDI, iz başına ad (Kick, Clap, Hat, Bass, Chords, Melody…), bölüm ve ipucu işaretçileri, tempo/ölçü/ton
+- `Stems/`: tam şarkı WAV stem'leri (davul, bas, akor, melodi; 24 bit, diğer izler susturularak render; pump ve efektler karışımdakiyle aynı)
+- `FL Piano Roll Scripts/*.pyscript`: Image-Line'ın resmi Piano Roll Scripting API'siyle iz başına notaları ve bölüm işaretçilerini açık piyano rulosuna yazar (`Belgeler\Image-Line\FL Studio\Settings\Piano roll scripts` klasörüne kopyala, Tools > Scripting)
+- `manifest.json`: tempo, ton, bölümler (ölçü ve saniye), ipuçları, izler ve dosya eşlemesi (DAW köprüleri için tek kaynak)
+- `MIDI/`, `Audio/FX Guide.wav`, `Samples/`, `Plan.txt`
+
+Ableton Live için: `HitGen Arrangement.mid` dosyasını aranjmana sürükle (her iz ayrı MIDI izi olur) ve `Stems/` klasöründeki WAV'ları 1. ölçüye bırak.
+
+### Doğrulama durumu (dürüst liste)
+| Özellik | Otomatik test | Gerçek DAW'da denendi mi |
+|---|---|---|
+| Çok izli MIDI (iz adları, nota sayıları, işaretçiler) | Evet (JUCE ile geri okunur) | Hayır |
+| Stem'ler (uzunluk, 24 bit, breakdown'da bas sessiz / drop'ta sesli) | Evet | Hayır |
+| manifest.json (alanlar, işaret ettiği dosyalar var) | Evet | — |
+| FL Piano Roll script'leri | Python sözdizimi + sahte flpianoroll modülüyle çalıştırma | Hayır (FL Studio'da çalıştırılmadı) |
+| .flp projesi | Kendi okuyucumuz + PyFLP (FL 20.9 biçimi) | Hayır (FL Studio 2024/2025/2026'da açılmadı) |
+| Co-Producer ton bulma | 98 durum: perde kümesi 98/98, gerçek ton adaylarda 98/98, tam ton (majör/minör) 62/98 | — |
+| Co-Producer kilit (stil/tohum/uzunluk/proje yükleme) | Evet | — |
+| Auto Producer (5 tür) | Evet (stil, tempo, ton, süre) | Dinlenerek değerlendirilmedi |
+| Ableton Max for Live köprüsü, FL MIDI scripting, çok çıkışlı bus | Yok (henüz yapılmadı) | — |
+
 ## Kurulum
 
 GitHub Actions bu depo her güncellendiğinde Windows, macOS ve Linux sürümlerini derler. **Actions → son çalıştırma → Artifacts** bölümünden indirebilirsin.
@@ -173,3 +209,6 @@ The whole editor uses the Wavejackers character art (sage with staff, two angels
 
 ### Project skeleton
 "Generate project" on the Project tab builds a full track from an editable section list (default Intro, Buildup, Drop, Breakdown, Buildup, Drop, Outro) and a target length (4:00 to 10:00, or the style's length). Sections are 8-bar phrases; 8:00 at 120 BPM is exactly 240 bars. Arrangement rules come from two real projects: Black Coffee "The Rapture Pt.III" (Ableton remake, organic house) and FRERE "Powerful" / "Tiger" (FL Studio, melodic techno). Every moment gets MIDI and, when sample folders are added, a sample suggestion picked from file names and tempo. "Create FL Studio project" writes a filled FL Studio project (.flp: Sampler channels with HitGen sounds or your samples, a pattern per part and section, FX audio clips at their cue bars, section markers, named mixer inserts), plus full-song and per-part MIDI, an FX guide WAV with every riser, impact and downlifter in place, copies of the suggested samples and a plan.
+
+### HitGen 3.0 (English summary)
+Auto Producer (genre, tempo, key, length, energy → a full track in one click; Afro House, Melodic Techno, Progressive House, Indie Dance, Deep House) and Co-Producer (load your MIDI; HitGen finds candidate keys, searches its ideas for the chords that fit your notes best, completes the other parts and keeps your notes locked). "Create FL Studio project" now also writes a Type-1 multi-track MIDI with named tracks and markers, full-song WAV stems, FL Piano Roll scripts and manifest.json. The .flp and the scripts follow FL Studio's documented/observed formats but have not been opened in FL Studio yet; see the verification table above.

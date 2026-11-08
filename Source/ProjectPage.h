@@ -7,6 +7,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "PluginProcessor.h"
 #include "Ui.h"
+#include "ProducerPanels.h"
 
 class ProjectPage : public juce::Component
 {
@@ -33,6 +34,8 @@ public:
     int numListRows() const { return (int) rows.size(); }
     juce::String statusText() const { return status.getText(); }
     juce::Component* skeletonView() const;
+    std::unique_ptr<juce::Component> makePanel (bool autoProducer);   // testler: paneli kutusuz oluştur
+    void openPanel (bool autoProducer);
 
 private:
     struct Model;      // iki liste modeli (şablonlar, projelerim)
@@ -43,7 +46,7 @@ private:
     juce::String lang = "en"; bool rtl = false; int shownRev = -1, pendingDelete = -1;
     juce::Label help, status, skHint, libInfo, exportInfo;
     juce::TextEditor nameEd;
-    juce::TextButton startBtn, saveBtn, openBtn, deleteBtn, genBtn, addSecBtn, libBtn, drumsBtn, exportBtn;
+    juce::TextButton startBtn, saveBtn, openBtn, deleteBtn, genBtn, addSecBtn, libBtn, drumsBtn, exportBtn, autoBtn, coBtn;
     juce::ComboBox structBox, lenBox;
     juce::ListBox tmplList, mineList, cueList;
     hgui::DragTile fullTile, full0Tile, loopTile;   // DAW'a sürüklenen MIDI: tam parça (çok izli), tam parça (Format 0), tüm izler (döngü)

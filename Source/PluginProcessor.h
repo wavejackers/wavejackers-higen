@@ -10,6 +10,7 @@
 #include "RefEngine.h"
 #include "MidiLearn.h"
 #include "SampleLib.h"
+#include "CoProducer.h"
 #include <mutex>
 #include <optional>
 
@@ -136,6 +137,13 @@ public:
     bool exporting() const { return exportBusy.load(); }
     std::atomic<int> exportProgress { 0 };
     bool pollExport (hg::ExportResult& out);
+    // ---- Co-Producer: kullanıcının MIDI'si kilitli iz olarak (yeniden üretimde korunur)
+    void coLock (const hg::UserMidi& um, const hg::CoCandidate& c);
+    void coUnlock();
+    int coLockedRole() const noexcept { return coRole; }
+    juce::String coLockedName() const { return coName; }
+    const std::vector<hg::NoteEv>& coLockedNotes() const noexcept { return coNotes; }
+    hg::GenParams generatorParams() const { return currentParams(); }
     static juce::File projectsFolder();
     void renderExportSounds (hg::ExportJobInput& in);       // FL projesi için HitGen sesleri (ayrı motor örneği)
     static juce::File sampleFoldersFile();
@@ -194,6 +202,7 @@ private:
     juce::CriticalSection drumLock;
     std::atomic<float>* pLoud = nullptr, *pCreative = nullptr;
     std::atomic<float>* pQuality = nullptr, *pThick = nullptr, *pPump = nullptr, *pMaster = nullptr, *pBpm = nullptr, *pPattern = nullptr, *pMidiOut = nullptr, *pKeysTo = nullptr;
+    int coRole = -1, coBars = 8; std::vector<hg::NoteEv> coNotes; juce::String coName;
     // iskelet arka plan işleri
     juce::StringArray folders; bool libRequested = false;
     std::shared_ptr<const hg::SampleLib> lib;

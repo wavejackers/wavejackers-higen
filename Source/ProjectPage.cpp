@@ -234,7 +234,7 @@ ProjectPage::ProjectPage (HitGenProcessor& p, hgui::LookAndFeel& l) : proc (p), 
     help.setJustificationType (Justification::topLeft); status.setJustificationType (Justification::topLeft);
     addAndMakeVisible (nameEd); nameEd.setFont (lnf.font (16)); nameEd.setInputRestrictions (80); nameEd.setIndents (8, 6);
     nameEd.onReturnKey = [this] { save(); };
-    for (auto* b : { &startBtn, &saveBtn, &openBtn, &deleteBtn, &genBtn, &addSecBtn, &libBtn, &drumsBtn, &exportBtn }) addAndMakeVisible (*b);
+    for (auto* b : { &startBtn, &saveBtn, &openBtn, &deleteBtn, &genBtn, &addSecBtn, &libBtn, &drumsBtn, &exportBtn, &autoBtn, &coBtn }) addAndMakeVisible (*b);
     for (auto* c : { &structBox, &lenBox }) addAndMakeVisible (*c);
     const int which[3] = { 5, 6, 4 };
     hgui::DragTile* tiles[3] = { &fullTile, &full0Tile, &loopTile };
@@ -288,6 +288,8 @@ ProjectPage::ProjectPage (HitGenProcessor& p, hgui::LookAndFeel& l) : proc (p), 
         if (n > 0 && onLoaded) onLoaded();
     };
     exportBtn.onClick = [this] { exportProject(); };
+    autoBtn.onClick = [this] { openPanel (true); };
+    coBtn.onClick = [this] { openPanel (false); };
     nameEd.setText (proc.userPreset, false);
     proc.ensureLibrary();
     refreshSkeleton();
@@ -524,7 +526,7 @@ String ProjectPage::planText() const
     const auto& P = sk.song.P;
     const auto styleName = data.styleById (P.style)["artist"].toString();
     t << "Wavejackers HitGen - " << (proc.userPreset.isNotEmpty() ? proc.userPreset : proc.baseName()) << "\n";
-    t << styleName << " | " << data.noteNames[jlimit (0, 11, P.key)] << " " << data.scale (P.scale)["n"].toString() << " | " << P.bpm << " BPM | "
+    t << styleName << " | " << data.noteNames[jlimit (0, 11, P.key)] << " " << T (P.scale) << " | " << P.bpm << " BPM | "
       << T ("pjBars").replace ("{n}", String (sk.song.bars)) << " | " << timeOf (sk.song.bars) << "\n";
     t << T ("skP_" + sk.profile) << "\n\n";
     t << T ("skPlanSections") << "\n";
@@ -613,6 +615,8 @@ void ProjectPage::setLanguage (const String& l, bool r)
     fullTile.label = T ("pjFull"); full0Tile.label = T ("pjFull0"); loopTile.label = T ("pjLoop");
     for (auto* t : { &fullTile, &full0Tile, &loopTile }) { t->setTitle (t->label); t->setTooltip (T ("pDragHint")); t->setHelpText (T ("pDragHint")); }
     startBtn.setButtonText (T ("pjStart")); saveBtn.setButtonText (T ("pjSave")); openBtn.setButtonText (T ("prLoad")); deleteBtn.setButtonText (T ("prDelete"));
+    autoBtn.setButtonText (T ("skAuto")); coBtn.setButtonText (T ("skCo"));
+    autoBtn.setTooltip (T ("apHint")); coBtn.setTooltip (T ("coHint"));
     addSecBtn.setButtonText (T ("skAdd")); libBtn.setButtonText (T ("skLib")); drumsBtn.setButtonText (T ("skDrums")); exportBtn.setButtonText (T ("skExport"));
     genBtn.setTooltip (T ("skGenHint")); exportBtn.setTooltip (T ("skExportHint")); drumsBtn.setTooltip (T ("skDrumsHint")); libBtn.setTooltip (T ("skLibHint"));
     skHint.setText (T ("skHint"), dontSendNotification);
@@ -653,6 +657,7 @@ void ProjectPage::resized()
         { &openBtn, { 20, 552, 128, 32 } }, { &deleteBtn, { 156, 552, 128, 32 } },
         { &status, { 20, 588, 410, 62 } },
         // sağ: proje iskeleti
+        { &autoBtn, { 650, 8, 150, 30 } }, { &coBtn, { 808, 8, 150, 30 } },
         { &structBox, { 468, 44, 330, 32 } }, { &lenBox, { 806, 44, 118, 32 } }, { &genBtn, { 932, 44, 212, 32 } },
         { skView.get(), { 468, 84, 676, 98 } },
         { &addSecBtn, { 468, 188, 120, 28 } }, { &skHint, { 596, 188, 548, 28 } },
@@ -671,15 +676,37 @@ void ProjectPage::paint (Graphics& g)
     g.setColour (P.ink); g.setFont (lnf.font (17, true));
     g.drawText (T ("pjTemplates"), mir ({ 20, 10, 410, 30 }), j);
     g.drawText (T ("pjMine"), mir ({ 20, 344, 410, 30 }), j);
-    g.drawText (T ("skTitle"), mir ({ 468, 10, 300, 30 }), j);
+    g.drawText (T ("skTitle"), mir ({ 468, 10, 176, 30 }), j);
     // durum: profil, uzunluk, etkin mi
     g.setFont (lnf.font (12.5f)); g.setColour (proc.skel.active ? P.accent : P.mute);
     const String info = T ("skInfo").replace ("{b}", String (sk.song.bars)).replace ("{t}", timeOf (sk.song.bars)).replace ("{bpm}", String (sk.song.P.bpm))
                         + "  |  " + T ("skP_" + sk.profile) + (proc.skel.active ? String() : "  |  " + T ("skPreview"));
-    g.drawFittedText (info, mir ({ 700, 10, 444, 30 }), rtl ? Justification::centredLeft : Justification::centredRight, 1, .7f);
+    g.setFont (lnf.font (11.5f));
+    g.drawFittedText (info, mir ({ 966, 6, 178, 36 }), rtl ? Justification::centredLeft : Justification::centredRight, 2, .7f);
     if (proc.presets.items().isEmpty())
     {
         g.setColour (P.mute); g.setFont (lnf.font (14));
         g.drawFittedText (T ("pjEmpty"), mir ({ 30, 426, 390, 80 }), rtl ? Justification::topRight : Justification::topLeft, 3);
     }
+}
+
+std::unique_ptr<Component> ProjectPage::makePanel (bool autoProducer)
+{
+    auto done = [this, sp = Component::SafePointer<ProjectPage> (this)] (const String& msg)
+    {
+        if (sp == nullptr) return;
+        nameEd.setText (proc.userPreset, false);
+        shownRes = nullptr; refreshSkeleton(); say (msg);
+        if (onLoaded) onLoaded();
+    };
+    if (autoProducer) return std::make_unique<AutoProducerPanel> (proc, lnf, lang, done);
+    return std::make_unique<CoProducerPanel> (proc, lnf, lang, done);
+}
+
+void ProjectPage::openPanel (bool autoProducer)
+{
+    auto& anchor = autoProducer ? autoBtn : coBtn;
+    auto* top = getTopLevelComponent();   // eklenti penceresinin içinde aç (bazı DAW'larda masaüstü pencereleri sorun çıkarır)
+    if (top == nullptr) return;
+    CallOutBox::launchAsynchronously (makePanel (autoProducer), top->getLocalArea (&anchor, anchor.getLocalBounds()), top);
 }

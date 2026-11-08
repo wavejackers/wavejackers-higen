@@ -6,6 +6,9 @@
 #include "../Source/PluginProcessor.h"
 #include "../Source/FlpWriter.h"
 #include "../Source/Arrangement.h"
+#include "../Source/CoProducer.h"
+#include "../Source/ProducerPanels.h"
+#include "../Source/ProjectPage.h"
 #include "../Source/PluginEditor.h"
 #include <BinaryData.h>
 #include "../Source/SoundParams.h"
@@ -717,6 +720,112 @@ static void testSkeleton (const juce::File& outDir, const FailFn& fail)
     std::cout << "skeleton ok: " << sk.song.bars << " bars organic, " << tk.song.bars << " bars techno, " << withFile << " cues with samples, " << er.placed << " FX placed\n";
 }
 
+
+// HitGen 3.0: Co-Producer (MIDI okuma, ton, rol, uyum araması, kilit) ve Auto Producer (5 tür, tek tık)
+static void writeTestMidi (const juce::File& f, const std::vector<hg::NoteEv>& notes, int ch)
+{
+    juce::MidiFile mf; mf.setTicksPerQuarterNote (96); juce::MidiMessageSequence s;
+    s.addEvent (juce::MidiMessage::tempoMetaEvent (500000), 0);
+    for (auto& n : notes) { s.addEvent (juce::MidiMessage::noteOn (ch, n.n, (juce::uint8) n.v), n.s * 24.0); s.addEvent (juce::MidiMessage::noteOff (ch, n.n), (n.s + n.l) * 24.0 - 1); }
+    s.sort(); s.updateMatchedPairs(); mf.addTrack (s);
+    f.deleteFile(); juce::FileOutputStream os (f); mf.writeTo (os, 1);
+}
+
+static void testProducer (const juce::File& outDir, const FailFn& fail)
+{
+    const auto& D = hg::Data::get();
+    auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("hitgen-co-test"); dir.deleteRecursively(); dir.createDirectory();
+    // 1) ton bulma: HitGen'in kendi melodi+akor içeriği bilinen tonlarda
+    int exact = 0, close = 0, total = 0, cand = 0;
+    for (auto* st : { "anyma", "blackcoffee", "solomun", "tiesto", "fisher", "prog", "indie" })
+        for (int key : { 0, 2, 4, 5, 7, 9, 11 })
+            for (auto* sc : { "minor", "major" })
+            {
+                hg::GenParams P; P.style = st; P.key = key; P.scale = sc; P.seed = 11 + key; P.bars = 8; P.bpm = 124;
+                const auto r = hg::generate (D, P);
+                std::vector<hg::NoteEv> all = r.tracks[hg::kMelody]; all.insert (all.end(), r.tracks[hg::kChords].begin(), r.tracks[hg::kChords].end());
+                const auto k = hg::detectKey (all);
+                const bool minor = juce::String (sc) == "minor";
+                ++total;
+                if (k.key == key && k.minor == minor) ++exact;
+                const int rel = minor ? (key + 3) % 12 : (key + 9) % 12;   // göreli majör/minör aynı notaları paylaşır
+                if ((k.key == key && k.minor == minor) || (k.key == rel && k.minor != minor)) ++close;
+                bool inCands = false; for (auto& c : hg::keyCandidates (all, 4)) if (c.key == key && c.minor == minor) inCands = true;
+                if (inCands) ++cand;
+            }
+    // doğru perde kümesi (ton ya da göreli tonu) her durumda, gerçek ton aday listesinde her durumda; tam ton (majör/minör ayrımı) yalnızca raporlanır
+    if (close != total || cand != total) fail ("co: key detection pitch set " + juce::String (close) + "/" + juce::String (total) + ", true key in candidates " + juce::String (cand));
+    // 2) MIDI okuma + rol tahmini + uyum
+    hg::GenParams P; P.style = "anyma"; P.key = 2; P.scale = "minor"; P.seed = 77; P.bars = 8; P.bpm = 124;
+    const auto src = hg::generate (D, P);
+    auto mel = dir.getChildFile ("melody.mid"), chd = dir.getChildFile ("chords.mid"), bas = dir.getChildFile ("bass.mid");
+    writeTestMidi (mel, src.tracks[hg::kMelody], 1); writeTestMidi (chd, src.tracks[hg::kChords], 2); writeTestMidi (bas, src.tracks[hg::kBass], 3);
+    hg::UserMidi um; juce::String err;
+    if (! hg::readUserMidi (chd, um, err) || um.role != hg::kChords) fail ("co: chords role " + juce::String (um.role) + " " + err);
+    if (! hg::readUserMidi (bas, um, err) || um.role != hg::kBass) fail ("co: bass role " + juce::String (um.role) + " " + err);
+    if (! hg::readUserMidi (mel, um, err) || um.role != hg::kMelody || um.bars != 8 || std::abs (um.bpm - 120) > .5) fail ("co: melody read role " + juce::String (um.role) + " bars " + juce::String (um.bars) + " bpm " + juce::String (um.bpm) + " " + err);
+    const double selfFit = hg::chordFit (src, um.notes, hg::kMelody);
+    auto base = P; base.seed = 4242; base.vi = 0;
+    const auto cands = hg::coSearch (D, base, um, 12, 5, hg::keyCandidates (um.notes, 4));
+    hg::GenParams rnd = base; rnd.seed = 31337; const double rndFit = hg::chordFit (hg::generate (D, rnd), um.notes, hg::kMelody);
+    if (cands.size() != 5 || cands[0].fit < rndFit || cands[0].fit < .5 || selfFit < .6) fail ("co: fit best " + juce::String (cands.empty() ? -1 : cands[0].fit, 2) + " random " + juce::String (rndFit, 2) + " self " + juce::String (selfFit, 2));
+    // 3) kilit: notalar her yeniden üretimde, stil değişiminde ve proje yüklemesinde aynı
+    auto p_h = std::make_unique<HitGenProcessor>(); auto& p = *p_h; p.regenerateNow();
+    p.coLock (um, cands[0]);
+    auto sameAsUser = [&] (const hg::Result& r) { const auto want = hg::fitLocked (um.notes, um.bars, r.bars); const auto& got = r.tracks[hg::kMelody]; if (got.size() != want.size()) return false;
+                                                   for (size_t i = 0; i < got.size(); ++i) if (got[i].n != want[i].n || std::abs (got[i].s - want[i].s) > 1e-9 || got[i].v != want[i].v) return false; return true; };
+    if (p.coLockedRole() != hg::kMelody || ! sameAsUser (*p.result())) fail ("co: lock not applied");
+    setP (p, "style", (float) D.styleIndex ("blackcoffee")); p.regenerateNow();
+    setP (p, "seed", 999.0f); p.regenerateNow();
+    if (! sameAsUser (*p.result())) fail ("co: locked notes changed after style/seed change");
+    setP (p, "bars", 2.0f); p.regenerateNow();   // 16 ölçü: 8 ölçülük kullanıcı döngüsü iki kez
+    if (p.result()->bars != 16 || ! sameAsUser (*p.result())) fail ("co: lock at 16 bars");
+    setP (p, "bars", 1.0f); p.regenerateNow();
+    juce::MemoryBlock st; p.getStateInformation (st);
+    { auto q_h = std::make_unique<HitGenProcessor>(); auto& q = *q_h; q.setStateInformation (st.getData(), (int) st.getSize()); q.regenerateNow();
+      if (q.coLockedRole() != hg::kMelody || ! sameAsUser (*q.result())) fail ("co: lock not restored from state"); }
+    p.skel.active = true;
+    { const auto sk = p.skeletonNow(); int inDrop = 0; for (auto& n : sk.song.tracks[hg::kMelody]) for (auto& x : sk.secs) if (x.kind == "drop" && n.s >= x.bar * 16 && n.s < (x.bar + x.bars) * 16) ++inDrop;
+      if (inDrop == 0) fail ("co: user melody missing from the drops of the full song"); }
+    p.coUnlock();
+    if (p.coLockedRole() >= 0 || sameAsUser (*p.result())) fail ("co: unlock");
+    // 4) Auto Producer: her tür tek tıkla
+    std::unique_ptr<HitGenEditor> ed (dynamic_cast<HitGenEditor*> (p.createEditor()));
+    ed->setTab (5);
+    for (int gi = 0; gi < 5; ++gi)
+    {
+        auto panel = ed->project()->makePanel (true);
+        auto* ap = dynamic_cast<AutoProducerPanel*> (panel.get());
+        ap->genre.setSelectedItemIndex (gi, juce::sendNotificationSync);
+        ap->key.setSelectedItemIndex (5, juce::dontSendNotification);
+        ap->produce();
+        const auto& g = kHgGenres[gi];
+        const auto sty = D.styleId ((int) p.apvts.getRawParameterValue ("style")->load());
+        const auto sk = p.skeletonNow();
+        const double secs = sk.song.bars * 240.0 / sk.song.P.bpm;
+        if (sty != g.style || ! p.skel.active || sk.song.P.bpm != g.bpm || sk.song.P.key != 5 || std::abs (secs - g.seconds) > 10.0 || sk.song.tracks[hg::kDrums].empty())
+            fail (juce::String ("auto: ") + g.name + " style " + sty + " bpm " + juce::String (sk.song.P.bpm) + " secs " + juce::String (secs, 1));
+    }
+    // 5) Co-Producer paneli: dosya yükle, tamamla, başka seçenek
+    {
+        auto panel = ed->project()->makePanel (false);
+        auto* cp = dynamic_cast<CoProducerPanel*> (panel.get());
+        if (! cp->loadFile (mel) || cp->infoText().isEmpty()) fail ("co ui: load");
+        cp->complete();
+        const auto first = p.generatorParams().seed;
+        cp->next();
+        if (p.coLockedRole() != hg::kMelody || p.generatorParams().seed == first && p.generatorParams().vi == cands[0].P.vi) fail ("co ui: complete / next");
+        panel->setSize (440, 352); auto img = panel->createComponentSnapshot (panel->getLocalBounds(), true, 1.0f);
+        auto f = outDir.getChildFile ("plugin-coproducer.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os);
+        auto pa = ed->project()->makePanel (true); auto img2 = pa->createComponentSnapshot (pa->getLocalBounds(), true, 1.0f);
+        auto f2 = outDir.getChildFile ("plugin-autoproducer.png"); f2.deleteFile(); juce::FileOutputStream os2 (f2); png.writeImageToStream (img2, os2);
+    }
+    snapPng (ed->contentComponent(), outDir.getChildFile ("plugin-en-project3.png"));
+    ed.reset(); p.coUnlock();
+    dir.deleteRecursively();
+    std::cout << "producer ok: key exact " << exact << "/" << total << ", pitch set " << close << ", in candidates " << cand << ", best fit " << juce::String (cands[0].fit, 2) << " vs random " << juce::String (rndFit, 2) << "\n";
+}
+
 // açılış: ses çalar ve kendiliğinden biter, dışa aktarımda ve atlamada susar; göz gezip yerine oturur
 static void testIntro (const juce::File& outDir, const FailFn& fail)
 {
@@ -1193,6 +1302,7 @@ int main (int argc, char** argv)
     testIntro (outDir, fail);
     testOwnSoundAndEdit (outDir, fail);
     testSkeleton (outDir, fail);
+    testProducer (outDir, fail);
     testReference (outDir, fail); testSampler (fail); testLibrary (fail); testMidiLearn (outDir, fail);
     testLoudness (outDir, fail, quick); testDrumMachine (outDir, fail); testGuideAndAssistant (outDir, fail);
     std::cout << (failures == 0 ? "ALL PASSED" : "FAILURES: " + std::to_string (failures)) << "\n";

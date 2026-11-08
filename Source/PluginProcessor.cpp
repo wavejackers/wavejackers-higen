@@ -288,6 +288,8 @@ void HitGenProcessor::regenerateNow()
     }
     auto r = std::make_shared<hg::Result> (hg::generate (data, currentParams()));
     if (r->tracks[hg::kDrums].empty()) return;   // savunma: boş sonuç gelirse eskisini koru
+    if (coRole >= 0 && coRole < hg::kNumTracks && coRole != hg::kDrums)   // Co-Producer: kullanıcının notaları kilitli
+        r->tracks[(size_t) coRole] = hg::fitLocked (coNotes, coBars, r->bars);
     if (savedEdit != nullptr)   // projeyle kaydedilmiş elle düzenleme: aynı ayarlarsa geri yükle
     {
         if (savedEditKey == paramsKey())
@@ -593,6 +595,13 @@ juce::ValueTree HitGenProcessor::stateTree()
         o->setProperty ("custom", skel.custom); o->setProperty ("active", skel.active);
         extra.setProperty ("skeleton", juce::JSON::toString (juce::var (o), true), nullptr);
     }
+    if (coRole >= 0)
+    {
+        auto* o = new juce::DynamicObject(); juce::Array<juce::var> ns;
+        for (auto& n : coNotes) ns.add (juce::Array<juce::var> { n.s, n.l, n.n, n.v });
+        o->setProperty ("role", coRole); o->setProperty ("bars", coBars); o->setProperty ("name", coName); o->setProperty ("notes", ns);
+        extra.setProperty ("coLock", juce::JSON::toString (juce::var (o), true), nullptr);
+    }
     if (editActive && current != nullptr)
     {
         juce::Array<juce::var> trs;
@@ -689,6 +698,22 @@ void HitGenProcessor::restoreFromTree (const juce::ValueTree& source, bool inclu
                 skel.bars.clear(); for (auto& x : b) skel.bars.push_back (juce::jlimit (8, 256, x.getIntValue() / 8 * 8));
                 skel.durSec = juce::jlimit (0, 1200, (int) v["dur"]); skel.structIdx = juce::jlimit (0, kNumSkStructs - 1, (int) v["struct"]);
                 skel.custom = (bool) v["custom"] && (int) skel.bars.size() == skel.kinds.size(); skel.active = (bool) v["active"];
+            }
+        }
+        {
+            coRole = -1; coNotes.clear(); coName.clear();
+            const auto js = extra.getProperty ("coLock").toString();
+            if (js.isNotEmpty() && js.length() < 2000000)
+            {
+                const auto v = juce::JSON::parse (js);
+                const int role = (int) v["role"], bars = (int) v["bars"];
+                if ((role == hg::kChords || role == hg::kBass || role == hg::kMelody) && (bars == 4 || bars == 8 || bars == 16))
+                    if (const auto* ns = v["notes"].getArray())
+                    {
+                        for (auto& n : *ns) if (const auto* a = n.getArray(); a != nullptr && a->size() == 4)
+                            coNotes.push_back ({ (double) (*a)[0], (double) (*a)[1], juce::jlimit (0, 127, (int) (*a)[2]), juce::jlimit (1, 127, (int) (*a)[3]) });
+                        if (! coNotes.empty()) { coRole = role; coBars = bars; coName = v["name"].toString().substring (0, 120); }
+                    }
             }
         }
         userArtist = extra.getProperty ("userArtist").toString().substring (0, 80);
@@ -1260,4 +1285,25 @@ void HitGenProcessor::renderExportSounds (hg::ExportJobInput& in)
     E->collectGarbage();
     E->quality = hg::Quality { 4, 16, true };   // stem'ler: tam şarkı, dengeli kalite
     in.stemEngine = E;
+}
+
+// ================================================================ Co-Producer
+void HitGenProcessor::coLock (const hg::UserMidi& um, const hg::CoCandidate& c)
+{
+    auto setP = [this] (const char* id, float plain) { if (auto* pr = apvts.getParameter (id)) { pr->beginChangeGesture(); pr->setValueNotifyingHost (pr->convertTo0to1 (plain)); pr->endChangeGesture(); } };
+    coRole = um.role; coNotes = um.notes; coBars = um.bars; coName = um.name;
+    editActive = false; editKey.clear(); savedEdit.reset();
+    setP ("key", (float) c.P.key);
+    const int si = data.scaleOrder.indexOf (c.P.scale); setP ("scale", (float) (si >= 0 ? si + 1 : 0));
+    setP ("bars", (float) (um.bars == 4 ? 0 : um.bars == 16 ? 2 : 1));
+    setP ("seed", (float) c.P.seed); setP ("variation", (float) c.P.vi);
+    for (auto* a : { "altC", "altB", "altD", "altM" }) setP (a, 0.0f);
+    if (um.bpm >= 60 && um.bpm <= 190) setP ("bpm", (float) juce::roundToInt (um.bpm));
+    regenerateNow();
+}
+
+void HitGenProcessor::coUnlock()
+{
+    coRole = -1; coNotes.clear(); coName.clear();
+    regenerateNow();
 }
