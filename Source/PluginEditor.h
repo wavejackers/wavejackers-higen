@@ -25,6 +25,7 @@ public:
 
     // testler için
     juce::Component& contentComponent() { return content; }
+    hgui::PianoRoll& pianoRoll() { return roll; }
     void setLanguage (const juce::String& l);
     void setTab (int t);
     void setWorkspace (int w);   // 0 Reference, 1 Smart Detect, 2 DNA Engine, 3 Generate
@@ -94,6 +95,11 @@ private:
     std::array<juce::TextButton, 4> varBtns;
     std::array<hgui::Knob, 6> genKnobs;
     hgui::ChordStrip chords; hgui::PianoRoll roll;
+    juce::TextButton editBtn, undoBtn, redoBtn, revertBtn; std::array<juce::TextButton, 4> laneBtns;   // MIDI düzenleme araç çubuğu
+    std::unique_ptr<juce::FileChooser> ownChooser;
+    void updateEditBar();
+    void chooseOwnSound (int track);      // "Kendi sesini yükle": davulda davul makinesine, diğerlerinde dosya/preset seçimine yönlendirir
+    static int partOfTrack (int t) noexcept { return t == 0 ? 0 : t == 1 ? 1 : t == 3 ? 2 : -1; }
     std::array<juce::TextButton, 4> muteBtns; std::array<juce::ComboBox, 4> soundBoxes; std::array<hgui::DragTile, 4> tiles; std::array<juce::Label, 4> trackLabels;
     std::array<juce::StringArray, 4> soundIds;
     std::array<juce::TextButton, 3> partBtns; int part = 0;

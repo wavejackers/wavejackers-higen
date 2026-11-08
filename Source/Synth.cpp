@@ -149,12 +149,14 @@ void Engine::prepare (double sampleRate, int maxBlock)
     juce::dsp::ProcessSpec spec { sr, (juce::uint32) maxBlockSize, 2 };
     comp.prepare (spec); comp.setThreshold (-16); comp.setRatio (6); comp.setAttack (3); comp.setRelease (160);
     drumMachine.prepare (sr); loudness.prepare (sr, maxBlockSize);
+    for (auto& s : inst) s.prepare (sr);
     reset();
 }
 
 void Engine::reset()
 {
     for (auto& v : voices) v.active = false;
+    for (auto& s : inst) s.reset();
     drumMachine.reset(); loudness.reset();
     for (int t = 0; t < 3; ++t) for (int c = 0; c < 2; ++c) std::fill (chorusBuf[t][c].begin(), chorusBuf[t][c].end(), 0.0f);
     for (int c = 0; c < 2; ++c) std::fill (dlBuf[c].begin(), dlBuf[c].end(), 0.0f);
@@ -195,6 +197,7 @@ void Engine::retireNow (Patch* p)
 void Engine::collectGarbage()
 {
     drumMachine.collectGarbage();
+    for (auto& s : inst) s.collectGarbage();
     int s1, n1, s2, n2; trashFifo.prepareToRead (trashFifo.getNumReady(), s1, n1, s2, n2);
     for (int i = 0; i < n1; ++i) delete trash[(size_t) (s1 + i)];
     for (int i = 0; i < n2; ++i) delete trash[(size_t) (s2 + i)];
@@ -218,6 +221,7 @@ void Engine::noteOn (int track, int note, int vel, double durSec, int)
 {
     if (track == 2) { drumHit (note, vel, 0); return; }
     const int ti = track == 3 ? 2 : track;   // patch dizisi: 0 akor, 1 bas, 2 melodi
+    if (inst[(size_t) ti].active()) { inst[(size_t) ti].noteOn (note, vel, durSec); return; }
     Patch* p = cur[(size_t) ti]; if (p == nullptr) return;
     if (auto* v = findVoice (ti)) { startVoice (*v, *p, ti, note, vel, durSec); }
 }
@@ -226,6 +230,7 @@ void Engine::noteOff (int track, int note, int)
 {
     if (track == 2) return;   // davul pedleri tek vuruşludur
     const int ti = track == 3 ? 2 : track;
+    if (inst[(size_t) ti].active()) { inst[(size_t) ti].noteOff (note); return; }
     const float R = cur[(size_t) ti] ? cur[(size_t) ti]->R * std::pow (2.0f, macros[(size_t) (ti == 2 ? 3 : ti)].release * 3) : .3f;
     for (auto& v : voices) if (v.active && v.track == ti && v.gate && v.note == note && ! v.released) { v.gate = false; v.relT = v.t; v.endT = v.t + juce::jmax (.02f, R) * 2.5 + .05; }
 }
@@ -233,6 +238,7 @@ void Engine::noteOff (int track, int note, int)
 void Engine::allNotesOff()
 {
     for (auto& v : voices) if (v.active && ! v.released) { v.released = true; v.relT = v.t; v.gate = false; v.endT = v.t + 3.0; }
+    for (auto& s : inst) s.allOff();
 }
 
 void Engine::startVoice (Voice& v, const Patch& p, int track, int note, int vel, double durSec)
@@ -416,6 +422,7 @@ void Engine::render (juce::AudioBuffer<float>& out, int start, int num)
 {
     juce::ScopedNoDenormals nd;
     const auto t0 = juce::Time::getHighResolutionTicks();
+    for (auto& s : inst) s.swapIfPending();
     // bekleyen yamaları ve kiti al
     for (size_t t = 0; t < 4; ++t)
         if (auto* p = pending[t].exchange (nullptr))
@@ -452,6 +459,7 @@ void Engine::render (juce::AudioBuffer<float>& out, int start, int num)
                 const int mi = v.track == 2 ? 3 : v.track;
                 renderVoice (v, *v.patch, macros[(size_t) mi], partBuf.getWritePointer (v.track * 2, 0), partBuf.getWritePointer (v.track * 2 + 1, 0), n);
             }
+        for (int t = 0; t < 3; ++t) inst[t].render (partBuf.getWritePointer (t * 2), partBuf.getWritePointer (t * 2 + 1), n);
         drumMachine.render (drumBuf.getWritePointer (0), drumBuf.getWritePointer (1), n);
         lastActive = active;
 
@@ -466,8 +474,9 @@ void Engine::render (juce::AudioBuffer<float>& out, int start, int num)
             float* L = partBuf.getWritePointer (t * 2); float* R = partBuf.getWritePointer (t * 2 + 1);
             const float inG = (t == 0 && p->chordsHalf) ? .6f : 1.0f;
             if (inG != 1.0f) { juce::FloatVectorOperations::multiply (L, inG, n); juce::FloatVectorOperations::multiply (R, inG, n); }
-            if (p->ch > 0 && quality.chorus) applyChorus (t, p->ch, L, R, n);
-            if (p->dr > 0) for (int i = 0; i < n; ++i) { L[i] = sat (L[i], p->dr); R[i] = sat (R[i], p->dr); }
+            const bool own = inst[t].active();   // kendi sesi: sentezleyicinin koro/sürüşü uygulanmaz
+            if (! own && p->ch > 0 && quality.chorus) applyChorus (t, p->ch, L, R, n);
+            if (! own && p->dr > 0) for (int i = 0; i < n; ++i) { L[i] = sat (L[i], p->dr); R[i] = sat (R[i], p->dr); }
             const float bus = m.mute ? 0.0f : m.volume;
             const float rv = juce::jlimit (0.0f, 1.0f, p->rv + m.reverb), dl = juce::jlimit (0.0f, 1.0f, p->dl + m.delay);
             const int pt = trackMacro[t]; float g = pumpG[(size_t) pt]; int wait = pumpWait[(size_t) pt];

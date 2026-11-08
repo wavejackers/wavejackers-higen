@@ -82,6 +82,21 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
     auto fontFn = [this] (float h, bool b) { return lnf.font (h, b); };
     chords.palette = palFn; chords.font = fontFn; addC (chords); chords.setAccessible (false);
     roll.palette = palFn; addC (roll);
+    roll.noteName = [this] (int n) { return data.noteNames[n % 12] + String (n / 12 - 1); };
+    roll.onEdit = [this] (std::shared_ptr<hg::Result> r) { proc.applyEditedResult (std::move (r)); };
+    roll.onHistoryChanged = [this] { updateEditBar(); };
+    addC (editBtn); editBtn.setClickingTogglesState (true);
+    editBtn.onClick = [this] { roll.setEditing (editBtn.getToggleState(), roll.editTrack()); updateEditBar(); if (editBtn.getToggleState() && roll.isShowing()) roll.grabKeyboardFocus(); };
+    static const int laneTrack[4] = { hg::kChords, hg::kBass, hg::kDrums, hg::kMelody };
+    for (int i = 0; i < 4; ++i)
+    {
+        auto& b = laneBtns[(size_t) i]; addC (b); b.setRadioGroupId (7301); b.setClickingTogglesState (true);
+        b.onClick = [this, i] { if (laneBtns[(size_t) i].getToggleState()) { roll.setEditing (true, laneTrack[i]); editBtn.setToggleState (true, dontSendNotification); updateEditBar(); } };
+    }
+    laneBtns[3].setToggleState (true, dontSendNotification);
+    addC (undoBtn); undoBtn.onClick = [this] { roll.undo(); };
+    addC (redoBtn); redoBtn.onClick = [this] { roll.redo(); };
+    addC (revertBtn); revertBtn.onClick = [this] { proc.revertEdits(); updateEditBar(); };
     for (int t = 0; t < 4; ++t)
     {
         addC (trackLabels[(size_t) t]); trackLabels[(size_t) t].setFont (lnf.font (14, true)); trackLabels[(size_t) t].setColour (Label::textColourId, lnf.pal().track[t]);
@@ -89,7 +104,7 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
         muteBa.push_back (std::make_unique<BA> (A, String ("mute_") + kPart[t], m));
         auto& ab = altBtns[(size_t) t]; addC (ab); ab.setButtonText (juce::String (juce::CharPointer_UTF8 ("\xe2\x86\xbb"))); ab.onClick = [this, t] { proc.suggestAlternative (t); };
         auto& sb = soundBoxes[(size_t) t]; addC (sb);
-        sb.onChange = [this, t] { const int i = soundBoxes[(size_t) t].getSelectedId() - 1; if (i >= 0 && i < soundIds[(size_t) t].size() && soundIds[(size_t) t][i] != proc.soundId (t)) { proc.setSound (t, soundIds[(size_t) t][i], true); shownSounds[(size_t) t] = soundIds[(size_t) t][i]; } };
+        sb.onChange = [this, t] { if (soundBoxes[(size_t) t].getSelectedId() >= 900) { chooseOwnSound (t); return; } const int i = soundBoxes[(size_t) t].getSelectedId() - 1; if (i >= 0 && i < soundIds[(size_t) t].size() && soundIds[(size_t) t][i] != proc.soundId (t)) { proc.setSound (t, soundIds[(size_t) t][i], true); shownSounds[(size_t) t] = soundIds[(size_t) t][i]; } };
         auto& tl = tiles[(size_t) t]; addC (tl); tl.palette = palFn; tl.font = fontFn; tl.colour = lnf.pal().track[t];
         tl.makeFile = [this, t] { return proc.writeMidi (t); };
         tl.onSaved = [this] (const File& f) { status.setText (fill (T ("pSavedTo"), "f", f.getFullPathName()), sendNotificationAsync); };
@@ -114,7 +129,7 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
     drumPage->onKitChanged = [this] { fillSoundBoxes(); };
     presetPage->onLoaded = [this] { shownStyle = -1; shownVar = -1; fillSoundBoxes(); refreshStyleList(); applyPalette(); };
     projectPage->onLoaded = presetPage->onLoaded;
-    for (auto* c : std::initializer_list<Component*> { &styleList, &varLabel, &keyLabel, &keyBox, &scaleLabel, &scaleBox, &barsLabel, &barsBox, &chords, &roll, &soundLabel,
+    for (auto* c : std::initializer_list<Component*> { &styleList, &varLabel, &keyLabel, &keyBox, &scaleLabel, &scaleBox, &barsLabel, &barsBox, &chords, &roll, &editBtn, &undoBtn, &redoBtn, &revertBtn, &soundLabel,
                                                      &patternBtn, &midiOutBtn, &keysToLabel, &keysToBox, &seventhsBtn, &loopTile, &fullTile, &status, &disclaimer })
         genComps.push_back (c);
     for (auto& b : groupBtns) genComps.push_back (&b);
@@ -122,6 +137,7 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
     for (auto& k : genKnobs) genComps.push_back (&k);
     for (int t = 0; t < 4; ++t) { genComps.push_back (&trackLabels[(size_t) t]); genComps.push_back (&muteBtns[(size_t) t]); genComps.push_back (&altBtns[(size_t) t]); genComps.push_back (&soundBoxes[(size_t) t]); genComps.push_back (&tiles[(size_t) t]); }
     for (auto& b : partBtns) genComps.push_back (&b);
+    for (auto& b : laneBtns) genComps.push_back (&b);
     for (auto& k : partKnobs) genComps.push_back (&k);
     lang = proc.lang; rtl = data.isRtl (lang);
     langBox.setSelectedId (data.langCodes.indexOf (lang) + 1, dontSendNotification);
@@ -164,7 +180,7 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
         if (guideAfterIntro) { guideAfterIntro = false; startGuide(); }
         else if (isShowing()) grabKeyboardFocus();
     };
-    addC (introBtn); introBtn.setToggleState (introEnabled(), dontSendNotification); introBtn.onClick = [this] { setIntroEnabled (introBtn.getToggleState()); };
+    addC (introBtn); introBtn.setVisible (settingsOpen); introBtn.setToggleState (introEnabled(), dontSendNotification); introBtn.onClick = [this] { setIntroEnabled (introBtn.getToggleState()); };
     MessageManager::callAsync ([sp = Component::SafePointer<HitGenEditor> (this)]
     {
         if (sp == nullptr || ! sp->isShowing()) return;
@@ -309,6 +325,11 @@ void HitGenEditor::relabel()
     sizeLabel.setText (T ("pUiSize"), dontSendNotification); sizeBox.setTitle (T ("pUiSize"));
     contrastBtn.setButtonText (T ("pContrast")); motionBtn.setButtonText (T ("pMotion")); midiBtn.setButtonText (T ("mlAll")); midiBtn.setTooltip (T ("mlHint"));
     loudBtn.setButtonText (T ("pLoud")); loudBtn.setTooltip (T ("pLoudHint"));
+    editBtn.setButtonText (T ("edMidi")); editBtn.setTooltip (T ("edHint")); roll.setHelpText (T ("edHint"));
+    { static const char* lk[4] = { "chords", "bass", "drums", "melody" }; for (int i = 0; i < 4; ++i) laneBtns[(size_t) i].setButtonText (T (lk[i])); }
+    undoBtn.setButtonText (juce::String (juce::CharPointer_UTF8 ("\xe2\x86\xb6"))); undoBtn.setTooltip (T ("edUndo")); undoBtn.setTitle (T ("edUndo"));
+    redoBtn.setButtonText (juce::String (juce::CharPointer_UTF8 ("\xe2\x86\xb7"))); redoBtn.setTooltip (T ("edRedo")); redoBtn.setTitle (T ("edRedo"));
+    revertBtn.setButtonText (T ("edRevert")); revertBtn.setTooltip (T ("edRevertHint"));
     introBtn.setButtonText (T ("pIntro")); introBtn.setTooltip (T ("pIntroHint"));
     orb.setTitle (T ("asName")); orb.setTooltip (T ("asTip")); orb.setHelpText (T ("asTip"));
     bubble.footer = T ("asFooter"); bubble.rtl = rtl; bubble.nextBtn.setButtonText (T ("asNext")); bubble.guideBtn.setButtonText (T ("gdStart")); bubble.closeBtn.setTitle (T ("asClose"));
@@ -430,6 +451,48 @@ String HitGenEditor::StyleModel::getNameForRow (int row)
     return s + ". " + tx[1].toString();
 }
 
+void HitGenEditor::updateEditBar()
+{
+    const bool on = roll.isEditing();
+    editBtn.setToggleState (on, dontSendNotification);
+    for (auto& b : laneBtns) b.setEnabled (true);
+    undoBtn.setEnabled (on && roll.canUndo()); redoBtn.setEnabled (on && roll.canRedo()); revertBtn.setEnabled (proc.hasEdits());
+}
+
+void HitGenEditor::chooseOwnSound (int t)
+{
+    const int pt = partOfTrack (t);
+    if (t == hg::kDrums)   // davul: davul makinesi sekmesine yönlendir, yaratıcı modu aç
+    {
+        fillSoundBoxes();
+        if (auto* pr = proc.apvts.getParameter ("drumCreative")) if (pr->getValue() < .5f) { pr->beginChangeGesture(); pr->setValueNotifyingHost (1.0f); pr->endChangeGesture(); }
+        setTab (4); toast (T ("ownDrumsHint"), 7000); return;
+    }
+    PopupMenu m;
+    m.addItem (1, T ("ownFile"));
+    m.addItem (2, T ("ownPreset"));
+    if (proc.instSamplePath (pt).isNotEmpty()) { m.addSeparator(); m.addItem (3, T ("ownRemove")); }
+    m.showMenuAsync (PopupMenu::Options().withTargetComponent (&soundBoxes[(size_t) t]), [this, t, pt] (int r)
+    {
+        fillSoundBoxes();
+        if (r == 1)
+        {
+            ownChooser = std::make_unique<FileChooser> (T ("ownFile"), File::getSpecialLocation (File::userMusicDirectory), "*.wav;*.aif;*.aiff;*.flac;*.mp3;*.ogg");
+            ownChooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles, [this, t, pt] (const FileChooser& fc)
+            {
+                const auto f = fc.getResult(); if (! f.existsAsFile()) return;
+                String err; int root = 60;
+                if (proc.loadInstSample (pt, f, err, &root))
+                    toast (fill (fill (fill (T ("ownLoaded"), "n", f.getFileNameWithoutExtension()), "p", T (kPart[t])), "r", data.noteNames[root % 12] + String (root / 12 - 1)), 7000);
+                else toast (T (err), 6000);
+                fillSoundBoxes();
+            });
+        }
+        else if (r == 2) { setTab (1); soundPage->setPart (pt); soundPage->startImport(); }
+        else if (r == 3) { proc.clearInstSample (pt); fillSoundBoxes(); }
+    });
+}
+
 void HitGenEditor::fillSoundBoxes()
 {
     const char roleOf[4] = { 'c', 'b', 0, 'm' };
@@ -453,8 +516,12 @@ void HitGenEditor::fillSoundBoxes()
                 }
             }
         }
+        sb.addSeparator();
+        const int pt = partOfTrack (t); const auto own = pt >= 0 ? proc.instSamplePath (pt) : String();
+        if (own.isNotEmpty()) sb.addItem (fill (T ("ownActive"), "n", File (own).getFileNameWithoutExtension()), 901);
+        sb.addItem (t == hg::kDrums ? T ("ownDrums") : T ("ownLoad"), 900);
         const int cur = ids.indexOf (proc.soundId (t));
-        sb.setSelectedId (cur + 1, dontSendNotification);
+        sb.setSelectedId (own.isNotEmpty() ? 901 : cur + 1, dontSendNotification);
         shownSounds[(size_t) t] = proc.soundId (t);
     }
 }
@@ -481,7 +548,7 @@ void HitGenEditor::refreshResult()
     }
     StringArray chordNames; for (auto& c : r->chords) chordNames.add (c.name);
     summary << T ("chords") << ": " << chordNames.joinIntoString (", ");
-    roll.setResult (r, { T ("chords"), T ("bass"), T ("drums"), T ("melody") }, summary); roll.setRtl (rtl);
+    roll.setResult (r, { T ("chords"), T ("bass"), T ("drums"), T ("melody") }, summary); roll.setRtl (rtl); updateEditBar();
     chords.setResult (r, T ("bar")); chords.setRtl (rtl);
     auto ki = hg::keyInfo (data, r->P.key, r->P.scale);
     auto tx = data.styleText (lang, r->P.style); auto vv = tx[2 + jlimit (0, 3, r->P.vi)];
@@ -681,7 +748,10 @@ void HitGenEditor::layoutContent()
         place (trackLabels[(size_t) t], { 362, y0 + 2, 84, 22 }); place (altBtns[(size_t) t], { 452, y0 + 1, 32, 26 }); place (muteBtns[(size_t) t], { 486, y0 + 2, 102, 24 });
         place (soundBoxes[(size_t) t], { 362, y0 + 28, 226, 24 }); place (tiles[(size_t) t], { 362, y0 + 54, 226, 22 });
     }
-    place (roll, { 596, 158, 566, 320 });
+    place (roll, { 596, 158, 566, 288 });
+    place (editBtn, { 596, 450, 128, 28 });
+    for (int i = 0; i < 4; ++i) place (laneBtns[(size_t) i], { 728 + i * 66, 450, 64, 28 });
+    place (undoBtn, { 994, 450, 40, 28 }); place (redoBtn, { 1036, 450, 40, 28 }); place (revertBtn, { 1080, 450, 82, 28 });
     place (soundLabel, { 362, 496, 180, 26 });
     for (int i = 0; i < 3; ++i) place (partBtns[(size_t) i], { 546 + i * 112, 494, 106, 28 });
     for (int i = 0; i < 8; ++i) place (partKnobs[(size_t) i], { 362 + i * 100, 528, 100, 86 });

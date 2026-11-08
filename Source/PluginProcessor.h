@@ -87,6 +87,14 @@ public:
     bool loadDrumSample (int pad, const juce::File& f, juce::String& errKey, bool enableCreative = true);
     void clearDrumSample (int pad);
     void resetDrumPad (int pad);
+    // kullanıcının kendi sesi (akor/bas/melodi izine, part: 0 akor, 1 bas, 2 melodi): ses dosyası örnekleyicide çalar
+    bool loadInstSample (int part, const juce::File& f, juce::String& err, int* rootOut = nullptr);
+    void clearInstSample (int part);
+    juce::String instSamplePath (int part) const { const juce::ScopedLock sl (drumLock); return instSamples[(size_t) juce::jlimit (0, 2, part)]; }
+    // MIDI düzenleme: düzenlenmiş sonucu çalmaya ve dışa aktarmaya uygula (ileti iş parçacığı)
+    void applyEditedResult (std::shared_ptr<hg::Result> r);
+    bool hasEdits() const noexcept { return editActive; }
+    void revertEdits();
     juce::String drumSamplePath (int pad) const { const juce::ScopedLock sl (drumLock); return drumSamples[(size_t) juce::jlimit (0, hg::kNumPads - 1, pad)]; }
     static juce::File drumKitFolder();
     static juce::Array<juce::File> drumKitFiles();
@@ -140,6 +148,10 @@ private:
     struct PartPtrs { std::atomic<float>* vol = nullptr, *mute = nullptr, *cut = nullptr, *res = nullptr, *atk = nullptr, *rel = nullptr, *drv = nullptr, *rev = nullptr, *dly = nullptr; };
     std::array<PartPtrs, 4> pp {};
     std::array<std::array<std::atomic<float>*, kDmCtl>, hg::kNumPads> dmPtr {};
+    std::array<juce::String, 3> instSamples;
+    bool editActive = false; juce::String editKey;
+    std::unique_ptr<std::array<std::vector<hg::NoteEv>, hg::kNumTracks>> savedEdit; juce::String savedEditKey;   // projeden gelen düzenleme   // düzenleme hangi üretim ayarlarına ait (tempo hariç)
+    juce::String paramsKey() const;
     std::array<juce::String, hg::kNumPads> drumSamples;      // arayüz ve durum yükleme (sunucu başka iş parçacığından çağırabilir); ses iş parçacığı dokunmaz
     juce::CriticalSection drumLock;
     std::atomic<float>* pLoud = nullptr, *pCreative = nullptr;

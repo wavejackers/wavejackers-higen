@@ -69,8 +69,40 @@ public:
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
     std::function<const Palette&()> palette;
     std::array<juce::Rectangle<int>, 4> laneBounds() const;
+
+    // ---- düzenleme: bir izi tam yükseklikte gösterir; tıkla = nota ekle, sürükle = taşı, sağ kenar = uzat,
+    // sağ tık / çift tık / Delete = sil, tekerlek = şiddet, oklar = taşı, Ctrl+Z / Ctrl+Y = geri al / yinele
+    void setEditing (bool on, int track);
+    bool isEditing() const noexcept { return editing; }
+    int editTrack() const noexcept { return lane; }
+    bool undo(); bool redo();
+    bool canUndo() const noexcept { return ! undoStack.empty(); }
+    bool canRedo() const noexcept { return ! redoStack.empty(); }
+    std::function<void (std::shared_ptr<hg::Result>)> onEdit;   // her tamamlanan düzenlemede yeni sonuç
+    std::function<void()> onHistoryChanged;
+    std::function<juce::String (int)> noteName;                 // nota adı (dil ve ton)
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
+    void mouseMove (const juce::MouseEvent&) override;
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+    bool keyPressed (const juce::KeyPress&) override;
+
 private:
     std::shared_ptr<const hg::Result> res; juce::StringArray names; double ph = -1; bool rtl = false;
+    bool editing = false; int lane = 3, lo = 48, hi = 72; double view0 = 0;   // düzenlemede görünen pencere: 4 ölçü, tekerlekle kaydırılır
+    double viewLen() const noexcept { return work ? std::min (64.0, work->bars * 16.0) : 64.0; }
+    std::shared_ptr<hg::Result> work;               // düzenlenen kopya
+    int sel = -1; enum class Drag { none, move, resize } drag = Drag::none; hg::NoteEv orig; bool changed = false; double grabOff = 0;
+    std::vector<std::shared_ptr<const hg::Result>> undoStack, redoStack;
+    juce::Rectangle<float> editArea() const;
+    int rows() const noexcept;
+    double stepAt (float x) const; int noteAtY (float y) const; float xOf (double s) const; float yOf (int note) const; float rowH() const;
+    int hitNote (juce::Point<float> p, bool& onEdge) const;
+    void fitRange();
+    void beginChange(); void commit();
+    void paintEditor (juce::Graphics&);
 };
 
 class ChordStrip : public juce::Component

@@ -2,6 +2,7 @@
 // sidechain pump, chorus/delay/reverb, master kompresör + yumuşak limiter.
 // Ses iş parçacığında bellek ayırma yoktur; yamalar ve desenler hazır nesneler olarak değiştirilir.
 #pragma once
+#include "InstSampler.h"
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_dsp/juce_dsp.h>
 #include <array>
@@ -108,6 +109,7 @@ public:
     std::array<Macros, 4> macros;
     float bpm = 126, thick = .7f, pumpAmt = 1, master = 1;
     bool loudnessOn = true;                     // -14 LUFS normalleştirme + -1 dBFS sınırlayıcı (kapalıyken eski yumuşak limiter)
+    InstSampler inst[3];                        // kullanıcının kendi sesi: 0 akor, 1 bas, 2 melodi (yüklüyse sentezleyicinin yerine çalar)
     DrumMachine drumMachine;                    // davul pedleri: analog sentez ya da kullanıcı örnekleri
     LoudnessNormalizer loudness;
     Quality quality;

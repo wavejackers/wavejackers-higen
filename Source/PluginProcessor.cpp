@@ -276,8 +276,26 @@ hg::GenParams HitGenProcessor::currentParams() const
 
 void HitGenProcessor::regenerateNow()
 {
+    if (editActive && current != nullptr)
+    {
+        if (paramsKey() == editKey)   // yalnızca tempo değişti: elle düzenlenen notaları koru
+        {
+            auto e = std::make_shared<hg::Result> (*current); e->P.bpm = currentParams().bpm;
+            current = e; if (onResultChanged) onResultChanged(); return;
+        }
+        editActive = false; editKey.clear();   // müzikal bir ayar değişti: yeni fikir (geri al ile düzenlemeye dönülebilir)
+    }
     auto r = std::make_shared<hg::Result> (hg::generate (data, currentParams()));
     if (r->tracks[hg::kDrums].empty()) return;   // savunma: boş sonuç gelirse eskisini koru
+    if (savedEdit != nullptr)   // projeyle kaydedilmiş elle düzenleme: aynı ayarlarsa geri yükle
+    {
+        if (savedEditKey == paramsKey())
+        {
+            r->tracks = *savedEdit; savedEdit.reset();
+            applyEditedResult (r); return;
+        }
+        savedEdit.reset();
+    }
     pushPattern (*r);
     current = r;
     if (onResultChanged) onResultChanged();
@@ -560,6 +578,14 @@ juce::ValueTree HitGenProcessor::stateTree()
     extra.setProperty ("userArtist", userArtist, nullptr); extra.setProperty ("userPreset", userPreset, nullptr);
     if (ref.hasPath() || ref.sampler.enabled.load() || ref.sampler.enabled.load()) extra.setProperty ("ref", juce::JSON::toString (ref.stateToVar(), true), nullptr);
     for (int pad = 0; pad < hg::kNumPads; ++pad) { const auto sp = drumSamplePath (pad); if (sp.isNotEmpty()) extra.setProperty (juce::String ("dmSample_") + hg::kPadIds[pad], sp, nullptr); }
+    for (int pt = 0; pt < 3; ++pt) { const auto sp = instSamplePath (pt); if (sp.isNotEmpty()) extra.setProperty ("instSample_" + juce::String (pt), sp, nullptr); }
+    if (editActive && current != nullptr)
+    {
+        juce::Array<juce::var> trs;
+        for (auto& tr : current->tracks) { juce::Array<juce::var> ns; for (auto& n : tr) ns.add (juce::Array<juce::var> { n.s, n.l, n.n, n.v }); trs.add (ns); }
+        auto* o = new juce::DynamicObject(); o->setProperty ("key", editKey); o->setProperty ("tracks", trs);
+        extra.setProperty ("midiEdit", juce::JSON::toString (juce::var (o), true), nullptr);
+    }
     state.removeChild (state.getChildWithName ("extra"), nullptr);
     state.removeChild (state.getChildWithName ("midimap"), nullptr);     // MIDI eşlemeleri preset'e girmez
     state.appendChild (extra, nullptr);
@@ -610,6 +636,31 @@ void HitGenProcessor::restoreFromTree (const juce::ValueTree& source, bool inclu
             juce::String err;
             if (path.isEmpty()) { if (drumSamplePath (pad).isNotEmpty()) clearDrumSample (pad); }
             else if (path != drumSamplePath (pad) && ! loadDrumSample (pad, juce::File (path), err, false)) { missingSamples.add (juce::File (path).getFileName()); clearDrumSample (pad); }
+        }
+        for (int pt = 0; pt < 3; ++pt)
+        {
+            const auto path = extra.getProperty ("instSample_" + juce::String (pt)).toString();
+            juce::String err;
+            if (path.isEmpty()) { if (instSamplePath (pt).isNotEmpty()) clearInstSample (pt); }
+            else if (path != instSamplePath (pt) && ! loadInstSample (pt, juce::File (path), err)) { missingSamples.add (juce::File (path).getFileName()); clearInstSample (pt); }
+        }
+        editActive = false; editKey.clear(); savedEdit.reset();
+        {
+            const auto js = extra.getProperty ("midiEdit").toString();
+            if (js.isNotEmpty() && js.length() < 4000000)
+            {
+                const auto v = juce::JSON::parse (js); const auto* trs = v["tracks"].getArray();
+                if (trs != nullptr && trs->size() == hg::kNumTracks)
+                {
+                    auto e = std::make_unique<std::array<std::vector<hg::NoteEv>, hg::kNumTracks>>();
+                    for (int t = 0; t < hg::kNumTracks; ++t)
+                        if (const auto* ns = (*trs)[t].getArray())
+                            for (const auto& n : *ns)
+                                if (const auto* a = n.getArray(); a != nullptr && a->size() == 4)
+                                    (*e)[(size_t) t].push_back ({ (double) (*a)[0], (double) (*a)[1], (int) (*a)[2], (int) (*a)[3] });
+                    savedEdit = std::move (e); savedEditKey = v["key"].toString();
+                }
+            }
         }
         userArtist = extra.getProperty ("userArtist").toString().substring (0, 80);
         userPreset = extra.getProperty ("userPreset").toString().substring (0, 80);
@@ -687,6 +738,85 @@ bool HitGenProcessor::loadDrumSample (int pad, const juce::File& f, juce::String
     { const juce::ScopedLock sl (drumLock); drumSamples[(size_t) pad] = f.getFullPathName(); }
     if (enableCreative) if (auto* pr = apvts.getParameter ("drumCreative")) if (pr->getValue() < .5f) { pr->beginChangeGesture(); pr->setValueNotifyingHost (1.0f); pr->endChangeGesture(); }
     return true;
+}
+
+bool HitGenProcessor::loadInstSample (int part, const juce::File& f, juce::String& err, int* rootOut)
+{
+    if (part < 0 || part > 2) return false;
+    if (! f.existsAsFile()) { err = "dmNoFile"; return false; }
+    juce::AudioFormatManager fm; fm.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (f));
+    if (r == nullptr || r->sampleRate < 8000 || r->lengthInSamples < 64) { err = "dmBadFile"; return false; }
+    const int len = (int) std::min<juce::int64> (r->lengthInSamples, (juce::int64) (r->sampleRate * 30.0));   // en çok 30 sn
+    auto s = std::make_unique<hg::InstSample>();
+    const int ch = juce::jlimit (1, 2, (int) r->numChannels);
+    s->buf.setSize (ch, len); s->buf.clear();
+    if (! r->read (&s->buf, 0, len, 0, true, ch > 1)) { err = "dmBadFile"; return false; }
+    int start = 0; const float thr = s->buf.getMagnitude (0, len) * 0.02f;
+    while (start < len - 64) { bool loud = false; for (int c = 0; c < ch; ++c) if (std::abs (s->buf.getSample (c, start)) > thr) loud = true; if (loud) break; ++start; }
+    if (start > 0) { juce::AudioBuffer<float> t (ch, len - start); for (int c = 0; c < ch; ++c) t.copyFrom (c, 0, s->buf, c, start, len - start); s->buf = std::move (t); }
+    const float pk = s->buf.getMagnitude (0, s->buf.getNumSamples());
+    if (pk < 1e-5f) { err = "dmSilent"; return false; }
+    s->buf.applyGain (0.9f / pk);
+    // dosya adında nota varsa (ör. "Pad_C3", "bass-F#1") onu, yoksa perde bulucuyu, o da yoksa C3 (60)
+    int root = -1;
+    {
+        static const char* nm[] = { "C#", "Db", "D#", "Eb", "F#", "Gb", "G#", "Ab", "A#", "Bb", "C", "D", "E", "F", "G", "A", "B" };
+        static const int pc[] = { 1, 1, 3, 3, 6, 6, 8, 8, 10, 10, 0, 2, 4, 5, 7, 9, 11 };
+        const auto base = f.getFileNameWithoutExtension();
+        for (int i = 0; i < 17 && root < 0; ++i)
+        {
+            const juce::String n (nm[i]);
+            for (int pos = base.indexOf (n); pos >= 0 && root < 0; pos = base.indexOf (pos + 1, n))
+            {
+                const bool leftOk = pos == 0 || ! juce::CharacterFunctions::isLetter (base[pos - 1]);
+                const auto rest = base.substring (pos + n.length());
+                const bool oneDigit = rest.isNotEmpty() && juce::CharacterFunctions::isDigit (rest[0]) && (rest.length() == 1 || ! juce::CharacterFunctions::isDigit (rest[1]));
+                if (leftOk && oneDigit)
+                    root = juce::jlimit (0, 127, (rest.getIntValue() + 1) * 12 + pc[i]);   // bilimsel adlandırma: C4 = 60
+            }
+        }
+    }
+    if (root < 0) root = hg::detectRootNote (s->buf, r->sampleRate);
+    if (root < 0) root = 60;
+    s->root = root; s->rate = r->sampleRate; s->path = f.getFullPathName(); s->name = f.getFileNameWithoutExtension();
+    engine.inst[part].setSample (std::move (s));
+    { const juce::ScopedLock sl (drumLock); instSamples[(size_t) part] = f.getFullPathName(); }
+    if (rootOut != nullptr) *rootOut = root;
+    return true;
+}
+
+void HitGenProcessor::clearInstSample (int part)
+{
+    if (part < 0 || part > 2) return;
+    engine.inst[part].setSample (nullptr); const juce::ScopedLock sl (drumLock); instSamples[(size_t) part].clear();
+}
+
+juce::String HitGenProcessor::paramsKey() const
+{
+    auto g = currentParams();
+    return g.style + "|" + juce::String (g.vi) + "|" + juce::String (g.seed) + "|" + juce::String (g.key) + "|" + g.scale + "|" + juce::String (g.bars) + "|"
+         + juce::String (g.orig) + "|" + juce::String (g.energy) + "|" + juce::String (g.human) + "|" + juce::String (g.swing) + "|" + juce::String (g.thick) + "|"
+         + juce::String ((int) g.sevenths) + "|" + juce::String (g.alt[0]) + "," + juce::String (g.alt[1]) + "," + juce::String (g.alt[2]) + "," + juce::String (g.alt[3]);
+}
+
+void HitGenProcessor::applyEditedResult (std::shared_ptr<hg::Result> r)
+{
+    if (r == nullptr) return;
+    for (auto& tr : r->tracks)
+    {
+        for (auto& n : tr) { n.s = juce::jlimit (0.0, r->bars * 16.0 - 0.25, n.s); n.l = juce::jlimit (0.25, r->bars * 16.0 - n.s, n.l); n.n = juce::jlimit (0, 127, n.n); n.v = juce::jlimit (1, 127, n.v); }
+        std::stable_sort (tr.begin(), tr.end(), [] (const hg::NoteEv& a, const hg::NoteEv& b) { return a.s < b.s; });
+    }
+    pushPattern (*r);
+    current = r; editActive = true; editKey = paramsKey();
+    if (onResultChanged) onResultChanged();
+}
+
+void HitGenProcessor::revertEdits()
+{
+    editActive = false; editKey.clear();
+    regenerateNow();
 }
 
 void HitGenProcessor::clearDrumSample (int pad)

@@ -233,8 +233,254 @@ PianoRoll::PianoRoll() { setTitle ("Piano roll"); setWantsKeyboardFocus (false);
 
 void PianoRoll::setResult (std::shared_ptr<const hg::Result> r, const StringArray& trackNames, const String& summary)
 {
-    res = std::move (r); names = trackNames; setTitle (summary); setDescription (summary); repaint();
+    hg::NoteEv keep; const bool hadSel = editing && work && sel >= 0 && sel < (int) work->tracks[(size_t) lane].size();
+    if (hadSel) keep = work->tracks[(size_t) lane][(size_t) sel];
+    res = std::move (r); names = trackNames; setTitle (summary); setDescription (summary);
+    if (editing && res)
+    {
+        work = std::make_shared<hg::Result> (*res); sel = -1;
+        if (hadSel) { const auto& v = work->tracks[(size_t) lane]; for (int i = 0; i < (int) v.size(); ++i) if (v[(size_t) i].s == keep.s && v[(size_t) i].n == keep.n) { sel = i; break; } }
+        fitRange();
+    }
+    repaint();
     if (auto* h = getAccessibilityHandler()) h->notifyAccessibilityEvent (AccessibilityEvent::titleChanged);
+}
+
+// ---------------------------------------------------------------- düzenleme
+namespace
+{
+const int kDrumRows[7] = { 46, 42, 64, 37, 39, 38, 36 };
+const char* const kDrumRowNames[7] = { "Open hat", "Hat", "Perc", "Rim", "Clap", "Snare", "Kick" };
+int drumRowOf (int note) { for (int k = 0; k < 7; ++k) if (kDrumRows[k] == note) return k; return -1; }
+}
+
+void PianoRoll::setEditing (bool on, int track)
+{
+    editing = on; lane = jlimit (0, 3, track); sel = -1; drag = Drag::none; view0 = 0;
+    work = (on && res) ? std::make_shared<hg::Result> (*res) : nullptr;
+    setWantsKeyboardFocus (on); setMouseCursor (on ? MouseCursor::CrosshairCursor : MouseCursor::NormalCursor);
+    if (on) fitRange();
+    repaint();
+}
+
+void PianoRoll::fitRange()
+{
+    if (lane == hg::kDrums || ! work) return;
+    int a = 127, b = 0; for (auto& n : work->tracks[(size_t) lane]) { a = jmin (a, n.n); b = jmax (b, n.n); }
+    if (a > b) { a = 55; b = 72; }
+    a -= 5; b += 5; if (b - a < 23) { const int m = (23 - (b - a) + 1) / 2; a -= m; b += m; }
+    lo = jlimit (0, 104, a); hi = jlimit (lo + 23, 127, b);
+}
+
+Rectangle<float> PianoRoll::editArea() const
+{
+    auto r = getLocalBounds().toFloat().reduced (4);
+    return rtl ? r.withTrimmedRight (54) : r.withTrimmedLeft (54);
+}
+int PianoRoll::rows() const noexcept { return lane == hg::kDrums ? 7 : hi - lo + 1; }
+float PianoRoll::rowH() const { return editArea().getHeight() / (float) rows(); }
+float PianoRoll::xOf (double st) const
+{
+    const auto a = editArea(); const float f = (float) ((st - view0) / viewLen());
+    return rtl ? a.getRight() - a.getWidth() * f : a.getX() + a.getWidth() * f;
+}
+double PianoRoll::stepAt (float x) const
+{
+    const auto a = editArea(); float f = (x - a.getX()) / a.getWidth(); if (rtl) f = 1.0f - f;
+    return jlimit (0.0, (double) (work ? work->bars * 16 : 16), view0 + (double) f * viewLen());
+}
+float PianoRoll::yOf (int note) const
+{
+    const int row = lane == hg::kDrums ? drumRowOf (note) : hi - note;
+    return editArea().getY() + row * rowH();
+}
+int PianoRoll::noteAtY (float y) const
+{
+    const int row = jlimit (0, rows() - 1, (int) ((y - editArea().getY()) / rowH()));
+    return lane == hg::kDrums ? kDrumRows[row] : hi - row;
+}
+int PianoRoll::hitNote (Point<float> p, bool& onEdge) const
+{
+    onEdge = false; if (! work) return -1;
+    const auto& v = work->tracks[(size_t) lane];
+    for (int i = (int) v.size() - 1; i >= 0; --i)
+    {
+        const auto& n = v[(size_t) i]; if (lane == hg::kDrums && drumRowOf (n.n) < 0) continue;
+        if (n.s + n.l <= view0 || n.s >= view0 + viewLen()) continue;
+        float x1 = xOf (n.s), x2 = xOf (n.s + n.l); if (x1 > x2) std::swap (x1, x2);
+        const Rectangle<float> r (x1, yOf (n.n), jmax (6.0f, x2 - x1), rowH());
+        if (r.contains (p)) { onEdge = rtl ? p.x < x1 + 6 : p.x > r.getRight() - 6; return i; }
+    }
+    return -1;
+}
+
+void PianoRoll::beginChange()
+{
+    if (res) undoStack.push_back (res);
+    if (undoStack.size() > 64) undoStack.erase (undoStack.begin());
+    changed = false;
+}
+void PianoRoll::commit()
+{
+    if (! changed) { if (! undoStack.empty()) undoStack.pop_back(); return; }
+    redoStack.clear(); changed = false;
+    if (onEdit) onEdit (std::make_shared<hg::Result> (*work));
+    if (onHistoryChanged) onHistoryChanged();
+}
+bool PianoRoll::undo()
+{
+    if (undoStack.empty() || ! res) return false;
+    redoStack.push_back (res); auto prev = undoStack.back(); undoStack.pop_back();
+    if (onEdit) onEdit (std::make_shared<hg::Result> (*prev));
+    if (onHistoryChanged) onHistoryChanged();
+    return true;
+}
+bool PianoRoll::redo()
+{
+    if (redoStack.empty() || ! res) return false;
+    undoStack.push_back (res); auto nx = redoStack.back(); redoStack.pop_back();
+    if (onEdit) onEdit (std::make_shared<hg::Result> (*nx));
+    if (onHistoryChanged) onHistoryChanged();
+    return true;
+}
+
+void PianoRoll::mouseMove (const MouseEvent& e)
+{
+    if (! editing) return;
+    bool edge = false; const int i = hitNote (e.position, edge);
+    setMouseCursor (i >= 0 ? (edge ? MouseCursor::LeftRightResizeCursor : MouseCursor::DraggingHandCursor) : MouseCursor::CrosshairCursor);
+}
+void PianoRoll::mouseDown (const MouseEvent& e)
+{
+    if (! editing || ! work || ! editArea().contains (e.position)) return;
+    grabKeyboardFocus();
+    auto& v = work->tracks[(size_t) lane];
+    bool edge = false; int i = hitNote (e.position, edge);
+    if (e.mods.isPopupMenu())   // sağ tık: sil
+    {
+        if (i >= 0) { beginChange(); v.erase (v.begin() + i); sel = -1; changed = true; commit(); repaint(); }
+        return;
+    }
+    beginChange();
+    if (i < 0)   // boş yere tıkla: nota ekle (davulda 1, diğerlerinde 2 adım), sürüklersen uzar
+    {
+        hg::NoteEv n; n.s = std::floor (stepAt (e.position.x)); n.l = lane == hg::kDrums ? 1.0 : 2.0; n.n = noteAtY (e.position.y); n.v = 100;
+        if (n.s >= work->bars * 16) n.s = work->bars * 16 - 1;
+        v.push_back (n); i = (int) v.size() - 1; changed = true; drag = lane == hg::kDrums ? Drag::none : Drag::resize;
+    }
+    else drag = edge ? Drag::resize : Drag::move;
+    sel = i; orig = v[(size_t) i]; grabOff = stepAt (e.position.x) - orig.s;
+    repaint();
+}
+void PianoRoll::mouseDrag (const MouseEvent& e)
+{
+    if (! editing || ! work || sel < 0 || drag == Drag::none) return;
+    auto& n = work->tracks[(size_t) lane][(size_t) sel]; const double total = work->bars * 16.0; const auto before = n;
+    if (drag == Drag::move)
+    {
+        n.s = jlimit (0.0, total - 1.0, std::round (stepAt (e.position.x) - grabOff));
+        n.n = noteAtY (e.position.y);
+        if (n.s + n.l > total) n.l = total - n.s;
+    }
+    else n.l = jlimit (1.0, total - n.s, std::ceil (stepAt (e.position.x) - n.s));
+    if (n.s != before.s || n.n != before.n || n.l != before.l) { changed = true; repaint(); }
+}
+void PianoRoll::mouseUp (const MouseEvent&)
+{
+    if (! editing || drag == Drag::none) { if (editing && changed) commit(); drag = Drag::none; return; }
+    drag = Drag::none; commit();
+}
+void PianoRoll::mouseDoubleClick (const MouseEvent& e)
+{
+    if (! editing || ! work) return;
+    bool edge = false; const int i = hitNote (e.position, edge); if (i < 0) return;
+    beginChange(); auto& v = work->tracks[(size_t) lane]; v.erase (v.begin() + i); sel = -1; changed = true; commit(); repaint();
+}
+void PianoRoll::mouseWheelMove (const MouseEvent& e, const MouseWheelDetails& w)
+{
+    if (! editing || ! work) { Component::mouseWheelMove (e, w); return; }
+    bool edge = false; const int i = hitNote (e.position, edge);
+    if (i < 0 || e.mods.isShiftDown())   // boş yerde tekerlek: ölçüler arasında kaydır
+    {
+        const double total = work->bars * 16.0, d = (w.deltaY + w.deltaX) > 0 ? -16.0 : 16.0;
+        view0 = jlimit (0.0, jmax (0.0, total - viewLen()), view0 + d); repaint(); return;
+    }
+    beginChange(); auto& n = work->tracks[(size_t) lane][(size_t) i];
+    const int nv = jlimit (1, 127, n.v + (w.deltaY > 0 ? 8 : -8)); if (nv != n.v) { n.v = nv; changed = true; } sel = i;
+    commit(); repaint();
+}
+bool PianoRoll::keyPressed (const KeyPress& k)
+{
+    if (! editing || ! work) return false;
+    const auto mods = k.getModifiers(); const int code = k.getKeyCode();
+    if (mods.isCommandDown() && (code == 'z' || code == 'Z')) return mods.isShiftDown() ? redo() || true : undo() || true;
+    if (mods.isCommandDown() && (code == 'y' || code == 'Y')) { redo(); return true; }
+    auto& v = work->tracks[(size_t) lane];
+    if (v.empty()) return false;
+    if (sel < 0 || sel >= (int) v.size()) { if (code == KeyPress::leftKey || code == KeyPress::rightKey) { sel = 0; repaint(); return true; } return false; }
+    if (mods.isAltDown() && (code == KeyPress::leftKey || code == KeyPress::rightKey)) { sel = jlimit (0, (int) v.size() - 1, sel + (code == KeyPress::rightKey ? 1 : -1)); repaint(); return true; }
+    const double total = work->bars * 16.0;
+    beginChange(); auto& n = v[(size_t) sel]; const auto before = n;
+    if (code == KeyPress::deleteKey || code == KeyPress::backspaceKey) { v.erase (v.begin() + sel); sel = -1; changed = true; }
+    else if (code == KeyPress::leftKey || code == KeyPress::rightKey) { const double d = (code == KeyPress::rightKey) != rtl ? 1.0 : -1.0; n.s = jlimit (0.0, total - n.l, n.s + d); }
+    else if (code == KeyPress::upKey || code == KeyPress::downKey)
+    {
+        const int d = code == KeyPress::upKey ? 1 : -1;
+        if (lane == hg::kDrums) { const int r = drumRowOf (n.n); if (r >= 0) n.n = kDrumRows[jlimit (0, 6, r - d)]; }
+        else n.n = jlimit (0, 127, n.n + d * (mods.isShiftDown() ? 12 : 1));
+    }
+    else { commit(); return false; }
+    if (sel >= 0 && (n.s != before.s || n.n != before.n)) changed = true;
+    if (sel >= 0 && sel < (int) v.size()) { const double s = v[(size_t) sel].s; if (s < view0 || s >= view0 + viewLen()) view0 = jlimit (0.0, jmax (0.0, work->bars * 16.0 - viewLen()), std::floor (s / 16.0) * 16.0); }
+    commit(); repaint(); return true;
+}
+
+void PianoRoll::paintEditor (Graphics& g)
+{
+    const auto& P = palette(); const auto a = editArea(); const float rh = rowH();
+    g.setColour (P.bg); g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (2), 8);
+    const auto gut = rtl ? Rectangle<float> (a.getRight() + 2, a.getY(), 50, a.getHeight()) : Rectangle<float> (a.getX() - 52, a.getY(), 50, a.getHeight());
+    g.setFont (FontOptions (jlimit (8.0f, 11.0f, rh * 0.8f)));
+    for (int r = 0; r < rows(); ++r)
+    {
+        const float y = a.getY() + r * rh; const int note = lane == hg::kDrums ? kDrumRows[r] : hi - r;
+        const bool black = lane != hg::kDrums && (note % 12 == 1 || note % 12 == 3 || note % 12 == 6 || note % 12 == 8 || note % 12 == 10);
+        g.setColour (black ? P.grid : P.panel); g.fillRect (a.getX(), y, a.getWidth(), rh);
+        g.setColour (P.grid); g.drawHorizontalLine ((int) (y + rh), a.getX(), a.getRight());
+        const bool label = lane == hg::kDrums || note % 12 == 0 || rh >= 9.0f;
+        if (label)
+        {
+            g.setColour (note % 12 == 0 || lane == hg::kDrums ? P.ink : P.mute);
+            const String t = lane == hg::kDrums ? String (kDrumRowNames[r]) : (noteName ? noteName (note) : String (note));
+            g.drawText (t, gut.withY (y).withHeight (rh).reduced (3, 0).toNearestInt(), rtl ? Justification::centredLeft : Justification::centredRight);
+        }
+    }
+    const int s0 = (int) view0, s1 = (int) (view0 + viewLen());
+    for (int st = s0; st <= s1; ++st)
+    {
+        const float x = xOf (st); g.setColour (st % 16 == 0 ? P.grid2 : st % 4 == 0 ? P.line : P.grid);
+        g.drawVerticalLine ((int) x, a.getY(), a.getBottom());
+        if (st % 16 == 0 && st < s1) { g.setColour (P.mute); g.setFont (FontOptions (10.0f)); g.drawText (String (st / 16 + 1), Rectangle<float> (rtl ? x - 24 : x + 3, a.getY() + 1, 20, 12).toNearestInt(), rtl ? Justification::right : Justification::left); }
+    }
+    if (work->bars * 16 > s1 - s0)   // kaydırma ipucu: hangi ölçüler görünüyor
+    {
+        g.setColour (P.mute); g.setFont (FontOptions (10.0f));
+        g.drawText (String (s0 / 16 + 1) + "-" + String (s1 / 16) + " / " + String (work->bars), gut.withHeight (14).withY (a.getBottom() - 14).toNearestInt(), Justification::centred);
+    }
+    g.saveState(); g.reduceClipRegion (a.toNearestInt());
+    const auto col = P.track[lane]; const auto& v = work->tracks[(size_t) lane];
+    for (int i = 0; i < (int) v.size(); ++i)
+    {
+        const auto& n = v[(size_t) i]; if (lane == hg::kDrums ? drumRowOf (n.n) < 0 : (n.n < lo || n.n > hi)) continue;
+        if (n.s + n.l <= view0 || n.s >= view0 + viewLen()) continue;
+        float x1 = xOf (n.s), x2 = xOf (n.s + n.l); if (x1 > x2) std::swap (x1, x2);
+        const auto r = Rectangle<float> (x1 + 1, yOf (n.n) + 1, jmax (4.0f, x2 - x1 - 2), jmax (3.0f, rh - 2));
+        g.setColour (col.withAlpha (0.45f + 0.55f * n.v / 127.0f)); g.fillRoundedRectangle (r, 2.5f);
+        if (i == sel) { g.setColour (P.focus); g.drawRoundedRectangle (r.expanded (1), 3.0f, 2.0f); }
+    }
+    if (ph >= 0 && ph * 4.0 >= view0 && ph * 4.0 <= view0 + viewLen()) { const float x = xOf (ph * 4.0); g.setColour (P.accent); g.fillRect (x - 1, a.getY(), 2.0f, a.getHeight()); }
+    g.restoreState();
+    if (hasKeyboardFocus (false)) { g.setColour (P.focus); g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (1), 9, 1.5f); }
 }
 void PianoRoll::setPlayhead (double p, bool playing)
 {
@@ -252,6 +498,7 @@ void PianoRoll::paint (Graphics& g)
     const auto& P = palette();
     g.setColour (P.panel); g.fillRoundedRectangle (getLocalBounds().toFloat(), 10);
     if (! res) return;
+    if (editing && work) { paintEditor (g); return; }
     const double total = res->bars * 16 * 120.0;
     static const int order[4] = { hg::kChords, hg::kBass, hg::kDrums, hg::kMelody };
     static const int lanes[7] = { 46, 42, 64, 37, 39, 38, 36 };

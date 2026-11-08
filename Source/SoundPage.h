@@ -12,6 +12,7 @@ public:
     void setLanguage (const juce::String& lang, bool rtl);
     void setPart (int part);
     int currentPart() const noexcept { return part; }
+    void startImport() { doImport(); }
     std::function<void()> onRebind;    // parametre bağları değişti (MIDI Learn rozetleri yenilenir)
     void tick();                       // editör zamanlayıcısından: önizleme ve ses listesi eşitlemesi
     void paint (juce::Graphics&) override;

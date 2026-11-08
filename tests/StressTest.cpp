@@ -331,6 +331,73 @@ static void snapPng (juce::Component& c, const juce::File& f)
     f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os);
 }
 
+// kendi sesin (ses dosyası -> akor/bas/melodi örnekleyicisi) ve MIDI düzenleme: çalma, perde, durum, dışa aktarma, geri al
+static void testOwnSoundAndEdit (const juce::File& outDir, const FailFn& fail)
+{
+    auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("hitgen-own-test"); dir.deleteRecursively(); dir.createDirectory();
+    auto writeSine = [&] (const juce::String& name, double hz)
+    {
+        auto f = dir.getChildFile (name); juce::AudioBuffer<float> b (1, 44100);
+        for (int i = 0; i < b.getNumSamples(); ++i) b.setSample (0, i, 0.5f * (float) std::sin (2.0 * juce::MathConstants<double>::pi * hz * i / 44100.0) * (1.0f - i / 44100.0f));
+        juce::WavAudioFormat w; std::unique_ptr<juce::FileOutputStream> os (f.createOutputStream()); std::unique_ptr<juce::AudioFormatWriter> wr (w.createWriterFor (os.get(), 44100, 1, 16, {}, 0));
+        if (wr) { os.release(); wr->writeFromAudioSampleBuffer (b, 0, b.getNumSamples()); }
+        return f;
+    };
+    auto named = writeSine ("Lead_A4.wav", 440.0), plain = writeSine ("tone.wav", 220.0);
+    auto p_h = std::make_unique<HitGenProcessor>(); auto& p = *p_h; p.regenerateNow(); p.setRateAndBufferSizeDetails (48000.0, 256); p.prepareToPlay (48000.0, 256);
+    juce::String err; int root = -1;
+    if (! p.loadInstSample (2, named, err, &root) || root != 69) fail ("own sound: root from file name " + juce::String (root) + " " + err);
+    if (! p.loadInstSample (0, plain, err, &root) || root != 57) fail ("own sound: detected root " + juce::String (root) + " " + err);
+    // melodi izinde A5 (81) çal: örnek bir oktav yukarı, ~880 Hz
+    juce::AudioBuffer<float> out (2, 256); p.engine.render (out, 0, 256);   // bekleyen örneği al
+    p.engine.noteOn (hg::kMelody, 81, 110, 0.5, 0);
+    juce::AudioBuffer<float> rec (1, 48000 / 4); int at = 0; float pk = 0;
+    while (at < rec.getNumSamples()) { out.clear(); p.engine.render (out, 0, 256); const int k = juce::jmin (256, rec.getNumSamples() - at); rec.copyFrom (0, at, out, 0, 0, k); pk = std::max (pk, out.getMagnitude (0, 256)); at += k; }
+    int zc = 0; for (int i = 2400; i + 1 < rec.getNumSamples(); ++i) if ((rec.getSample (0, i) < 0) != (rec.getSample (0, i + 1) < 0)) ++zc;
+    const double hz = zc / 2.0 / ((rec.getNumSamples() - 2400) / 48000.0);
+    if (pk < 0.02f || std::abs (hz - 880.0) > 25.0) fail ("own sound: playback peak " + juce::String (pk) + " pitch " + juce::String (hz, 1));
+    // MIDI düzenleme: melodiye nota ekle, dışa aktarımda görünür
+    const auto before = p.midiBytes (hg::kMelody);
+    auto e = std::make_shared<hg::Result> (*p.result()); e->tracks[hg::kMelody].push_back ({ 3.0, 2.0, 77, 99 });
+    const size_t nMel = e->tracks[hg::kMelody].size();
+    p.applyEditedResult (e);
+    if (! p.hasEdits() || p.result()->tracks[hg::kMelody].size() != nMel || p.midiBytes (hg::kMelody) == before) fail ("edit: not applied to playback/export");
+    // yalnızca tempo değişirse düzenleme korunur
+    setP (p, "bpm", 131.0f); p.regenerateNow();
+    if (! p.hasEdits() || p.result()->tracks[hg::kMelody].size() != nMel) fail ("edit: lost on tempo change");
+    // proje durumu: kendi sesler ve düzenleme geri yüklenir
+    juce::MemoryBlock st; p.getStateInformation (st);
+    {
+        auto q_h = std::make_unique<HitGenProcessor>(); auto& q = *q_h; q.setStateInformation (st.getData(), (int) st.getSize()); q.regenerateNow();
+        if (q.instSamplePath (2) != named.getFullPathName() || q.instSamplePath (0) != plain.getFullPathName()) fail ("own sound: not restored from state");
+        if (! q.hasEdits() || q.result()->tracks[hg::kMelody].size() != nMel) fail ("edit: not restored from state");
+    }
+    // müzikal ayar değişince yeni fikir gelir; geri dön düğmesi düzenlemeyi bırakır
+    setP (p, "seed", 4242.0f); p.regenerateNow();
+    if (p.hasEdits()) fail ("edit: kept after seed change");
+    // piyano rulosu: klavyeyle seç, yukarı taşı, geri al
+    std::unique_ptr<HitGenEditor> ed (dynamic_cast<HitGenEditor*> (p.createEditor()));
+    auto& roll = ed->pianoRoll(); roll.setEditing (true, hg::kMelody);
+    const auto r0 = p.result(); const int n0 = r0->tracks[hg::kMelody].empty() ? -1 : r0->tracks[hg::kMelody][0].n;
+    roll.keyPressed (juce::KeyPress (juce::KeyPress::rightKey)); roll.keyPressed (juce::KeyPress (juce::KeyPress::upKey));
+    if (n0 < 0 || ! p.hasEdits() || p.result()->tracks[hg::kMelody][0].n != n0 + 1) fail ("roll: arrow edit not applied");
+    snapPng (ed->contentComponent(), outDir.getChildFile ("plugin-en-midiedit.png"));
+    {   // yerleşim: piyano rulosunun üstünde başka görünür denetim olmamalı (ör. ayarlar panelinin düğmesi dışarıda kalmış)
+        auto& c = ed->contentComponent(); const auto rb = roll.getBounds();
+        for (auto* ch : c.getChildren())
+            if (ch != &roll && ch->isVisible() && ch->getBounds() != c.getLocalBounds() && ch->getBounds().intersects (rb))
+                fail ("layout: '" + ch->getTitle() + "' / " + ch->getName() + " overlaps the piano roll at " + ch->getBounds().toString());
+    }
+    roll.undo();
+    if (p.result()->tracks[hg::kMelody][0].n != n0) fail ("roll: undo failed");
+    roll.redo();
+    if (p.result()->tracks[hg::kMelody][0].n != n0 + 1) fail ("roll: redo failed");
+    p.clearInstSample (0); p.clearInstSample (2); out.clear(); p.engine.render (out, 0, 256); p.engine.collectGarbage();
+    if (p.instSamplePath (2).isNotEmpty()) fail ("own sound: clear failed");
+    dir.deleteRecursively();
+    std::cout << "own sound + midi edit ok: pitch " << juce::String (hz, 1) << " Hz, peak " << juce::String (pk, 3) << "\n";
+}
+
 // açılış: ses çalar ve kendiliğinden biter, dışa aktarımda ve atlamada susar; göz gezip yerine oturur
 static void testIntro (const juce::File& outDir, const FailFn& fail)
 {
@@ -805,6 +872,7 @@ int main (int argc, char** argv)
         std::cout << "editor snapshots written\n";
     }
     testIntro (outDir, fail);
+    testOwnSoundAndEdit (outDir, fail);
     testReference (outDir, fail); testSampler (fail); testLibrary (fail); testMidiLearn (outDir, fail);
     testLoudness (outDir, fail, quick); testDrumMachine (outDir, fail); testGuideAndAssistant (outDir, fail);
     std::cout << (failures == 0 ? "ALL PASSED" : "FAILURES: " + std::to_string (failures)) << "\n";
