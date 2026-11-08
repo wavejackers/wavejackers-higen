@@ -5,6 +5,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "../Source/PluginProcessor.h"
 #include "../Source/FlpWriter.h"
+#include "../Source/Arrangement.h"
 #include "../Source/PluginEditor.h"
 #include <BinaryData.h>
 #include "../Source/SoundParams.h"
@@ -401,6 +402,79 @@ static void testOwnSoundAndEdit (const juce::File& outDir, const FailFn& fail)
 
 
 
+
+// HitGen 3.0 köprüleri: çok izli MIDI (iz adları, nota sayıları, işaretçiler), manifest, FL Piano Roll script'leri, stem'ler (uzunluk, zamanlama)
+static void checkBridges (const hg::ExportResult& er, const hg::Skeleton& sk, const FailFn& fail)
+{
+    const auto arr = hg::buildArrangement (sk);
+    {
+        juce::FileInputStream in (er.midi); juce::MidiFile mf;
+        if (! in.openedOk() || ! mf.readFrom (in)) { fail ("bridges: arrangement midi unreadable"); return; }
+        if (mf.getNumTracks() != (int) arr.lanes.size() + 1) fail ("bridges: midi tracks " + juce::String (mf.getNumTracks()));
+        int markers = 0; for (auto* e : *mf.getTrack (0)) if (e->message.isTextMetaEvent() && e->message.getMetaEventType() == 6) ++markers;
+        int wantMarkers = (int) sk.secs.size(); for (auto& c : sk.cues) if (c.type != "pad") ++wantMarkers;
+        if (markers != wantMarkers) fail ("bridges: midi markers " + juce::String (markers) + " want " + juce::String (wantMarkers));
+        for (int t = 1; t < mf.getNumTracks() && t <= (int) arr.lanes.size(); ++t)
+        {
+            juce::String name; int ons = 0, offs = 0;
+            for (auto* e : *mf.getTrack (t)) { if (e->message.isTrackNameEvent()) name = e->message.getTextFromTextMetaEvent(); if (e->message.isNoteOn()) ++ons; if (e->message.isNoteOff()) ++offs; }
+            const auto& L = arr.lanes[(size_t) t - 1];
+            if (name != L.name || ons != (int) L.notes.size() || offs != ons) fail ("bridges: midi track " + name + " notes " + juce::String (ons) + "/" + juce::String ((int) L.notes.size()));
+        }
+    }
+    {
+        const auto v = juce::JSON::parse (er.manifest.loadFileAsString());
+        if ((int) v["bpm"] != sk.song.P.bpm || (int) v["bars"] != sk.song.bars || v["sections"].size() != (int) sk.secs.size() || v["tracks"].size() != (int) arr.lanes.size())
+            fail ("bridges: manifest fields");
+        if (v["files"]["stem_bass"].toString().isEmpty() || v["files"]["flStudioProject"].toString().isEmpty() || v["files"]["midiArrangement"].toString().isEmpty()) fail ("bridges: manifest files");
+        for (auto& k : { "stem_drums", "stem_bass", "midiArrangement", "flStudioProject", "plan" })
+            if (! er.dir.getChildFile (v["files"][k].toString()).exists()) fail (juce::String ("bridges: manifest points to a missing file: ") + k);
+    }
+    {
+        auto scripts = er.dir.getChildFile ("FL Piano Roll Scripts").findChildFiles (juce::File::findFiles, false, "*.pyscript");
+        if (scripts.size() != (int) arr.lanes.size() || er.scripts != scripts.size()) fail ("bridges: scripts " + juce::String (scripts.size()));
+        for (auto& f : scripts)
+        {
+            const auto t = f.loadFileAsString();
+            int rows = 0; for (auto& line : juce::StringArray::fromLines (t)) if (line.startsWith ("    (") && line.endsWith ("),") && line.containsChar (',') && ! line.contains ("\"")) ++rows;
+            const auto lane = f.getFileNameWithoutExtension().fromFirstOccurrenceOf ("HitGen - ", false, false);
+            int want = -1; for (auto& L : arr.lanes) if (L.name == lane) want = (int) L.notes.size();
+            if (! t.contains ("import flpianoroll as flp") || ! t.contains ("def apply(form):") || ! t.contains ("def createDialog():") || rows != want)
+                fail ("bridges: script " + f.getFileName() + " rows " + juce::String (rows) + " want " + juce::String (want));
+        }
+    }
+    {
+        if (er.stems < 4) fail ("bridges: stems " + juce::String (er.stems));
+        juce::AudioFormatManager fm; fm.registerBasicFormats();
+        auto rms = [] (juce::AudioFormatReader& r, double t0, double t1)
+        {
+            const auto a = (juce::int64) (t0 * r.sampleRate), b = (juce::int64) (t1 * r.sampleRate);
+            juce::AudioBuffer<float> x (2, (int) (b - a)); r.read (&x, 0, x.getNumSamples(), a, true, true);
+            return x.getRMSLevel (0, 0, x.getNumSamples());
+        };
+        const double barSec = 240.0 / sk.song.P.bpm;
+        for (auto& f : er.dir.getChildFile ("Stems").findChildFiles (juce::File::findFiles, false, "*.wav"))
+        {
+            std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (f));
+            if (r == nullptr) { fail ("bridges: stem unreadable " + f.getFileName()); continue; }
+            const double secs = (double) r->lengthInSamples / r->sampleRate;
+            if (std::abs (secs - (sk.song.bars * barSec + 2.0)) > .05) fail ("bridges: stem length " + f.getFileName() + " " + juce::String (secs, 2));
+            if (r->numChannels != 2 || r->bitsPerSample != 24) fail ("bridges: stem format " + f.getFileName());
+            // bas stem'i: breakdown'un ortasında sessiz, drop'ta sesli (zamanlama doğru)
+            if (f.getFileName().contains ("Bass"))
+                for (auto& x : sk.secs)
+                {
+                    const double mid0 = (x.bar + x.bars * .5) * barSec, mid1 = mid0 + barSec;
+                    const float level = rms (*r, mid0, mid1);
+                    if (x.kind == "break" && level > .003f) fail ("bridges: bass stem not silent in " + x.name + " (" + juce::String (level, 4) + ")");
+                    if (x.kind == "drop" && level < .003f) fail ("bridges: bass stem silent in " + x.name);
+                }
+            if (f.getFileName().contains ("Drums")) { bool any = false; for (auto& x : sk.secs) if (x.kind == "drop" && rms (*r, x.bar * barSec, (x.bar + 2) * barSec) > .01f) any = true; if (! any) fail ("bridges: drums stem silent in drops"); }
+        }
+    }
+    std::cout << "bridges ok: " << arr.lanes.size() << " midi tracks, " << er.scripts << " FL scripts, " << er.stems << " stems, manifest\n";
+}
+
 // FL Studio projesi: biçim (başlık, olay boyları), kanal sayısı, tempo, bölüm işaretçileri, pattern'ler, playlist, 500 iz,
 // sample yollarının diskte olması ve playlist'in şarkı boyunu kaplaması
 static void checkFlp (const juce::File& f, const hg::Skeleton& sk, const FailFn& fail, bool withLibrary)
@@ -552,7 +626,9 @@ static void testSkeleton (const juce::File& outDir, const FailFn& fail)
     auto outProj = dir.getChildFile ("Out Project");
     if (! p.startExport (outProj, "plan")) fail ("export: did not start");
     hg::ExportResult er; bool got = false;
-    for (int i = 0; i < 6000 && ! got; ++i) { got = p.pollExport (er); if (! got) juce::Thread::sleep (10); }
+    const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    for (int i = 0; i < 60000 && ! got; ++i) { got = p.pollExport (er); if (! got) juce::Thread::sleep (10); }
+    std::cout << "export with stems: " << juce::String ((juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0, 1) << " s for " << tk.song.bars << " bars\n";
     if (! got || ! er.ok) fail ("export: " + er.error);
     else
     {
@@ -572,6 +648,7 @@ static void testSkeleton (const juce::File& outDir, const FailFn& fail)
         }
         if (outProj.getChildFile ("Samples").findChildFiles (juce::File::findFiles, false).size() != er.copied) fail ("export: sample copies");
         checkFlp (er.flp, tk, fail, true);
+        checkBridges (er, tk, fail);
     }
     // 6) kütüphane olmadan: FX kılavuzu HitGen sesleriyle
     p.setSampleFolders ({}, false);
@@ -625,7 +702,7 @@ static void testSkeleton (const juce::File& outDir, const FailFn& fail)
     }
     ed->setLanguage ("en");
     pg->exportProject (dir.getChildFile ("UI Export"));
-    for (int i = 0; i < 6000 && p.exporting(); ++i) { pg->tick(); juce::Thread::sleep (10); }
+    for (int i = 0; i < 60000 && p.exporting(); ++i) { pg->tick(); juce::Thread::sleep (10); }
     pg->tick();
     if (! dir.getChildFile ("UI Export").getChildFile ("Plan.txt").loadFileAsString().contains ("Buildup")) fail ("ui: export plan");
     {   // kütüphane yokken FL projesi: HitGen sesleri ve sentez FX'leri

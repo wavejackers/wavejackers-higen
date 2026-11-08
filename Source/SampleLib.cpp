@@ -1,5 +1,8 @@
 #include "SampleLib.h"
 #include "FlpWriter.h"
+#include "Arrangement.h"
+#include "Synth.h"
+#include "Data.h"
 #include <map>
 #include <memory>
 
@@ -281,8 +284,8 @@ bool renderFxGuide (const juce::File& out, const Skeleton& sk, const std::vector
         }
         if (b == nullptr)
         {
-            int len = (int) juce::jmin<juce::int64> (w1 - w0, (juce::int64) (barF * 16));
-            if (cue.type == "impact") len = (int) (sr * 3); else if (cue.type == "subDrop") len = (int) (sr * 2.5); else if (cue.type == "downlifter") len = (int) juce::jmin<juce::int64> (w1 - w0, (juce::int64) (barF * 4));
+            int len = (int) std::min<juce::int64> (w1 - w0, (juce::int64) (barF * 16));
+            if (cue.type == "impact") len = (int) (sr * 3); else if (cue.type == "subDrop") len = (int) (sr * 2.5); else if (cue.type == "downlifter") len = (int) std::min<juce::int64> (w1 - w0, (juce::int64) (barF * 4));
             b = synth (cue.type, len, sr, seed + (juce::uint32) i * 977u);
         }
         if (b == nullptr || b->getNumSamples() <= 0) continue;
@@ -292,19 +295,19 @@ bool renderFxGuide (const juce::File& out, const Skeleton& sk, const std::vector
         const int L = b->getNumSamples();
         if (a.endAligned)
         {
-            const juce::int64 win = juce::jmax<juce::int64> (1, w1 - w0);
+            const juce::int64 win = std::max<juce::int64> (1, w1 - w0);
             if (L > win) { p.from = (int) (L - win); p.len = (int) win; p.at = w0; p.fadeIn = (int) (sr * .05); }
             else { p.from = 0; p.len = L; p.at = w1 - L; }
         }
         else
         {
-            const juce::int64 maxLen = juce::jmax<juce::int64> (w1 - w0, (juce::int64) (barF * 4)) + (juce::int64) (barF * 4);
-            p.from = 0; p.len = (int) juce::jmin<juce::int64> (L, maxLen); p.at = w0;
-            if (p.len < L) p.fadeOut = (int) juce::jmin<double> (sr * .25, p.len / 2.0);
+            const juce::int64 maxLen = std::max<juce::int64> (w1 - w0, (juce::int64) (barF * 4)) + (juce::int64) (barF * 4);
+            p.from = 0; p.len = (int) std::min<juce::int64> (L, maxLen); p.at = w0;
+            if (p.len < L) p.fadeOut = (int) std::min<double> (sr * .25, p.len / 2.0);
         }
-        if (p.at + p.len > N) p.len = (int) juce::jmax<juce::int64> (0, N - p.at);
+        if (p.at + p.len > N) p.len = (int) std::max<juce::int64> (0, N - p.at);
         if (p.at < 0) { p.from += (int) -p.at; p.len -= (int) -p.at; p.at = 0; }
-        p.fadeOut = juce::jmax (p.fadeOut, (int) juce::jmin<double> (sr * .01, p.len / 2.0));
+        p.fadeOut = juce::jmax (p.fadeOut, (int) std::min<double> (sr * .01, p.len / 2.0));
         if (p.len > 0) places.push_back (p);
     }
     if (placedOut) *placedOut = (int) places.size();
@@ -321,7 +324,7 @@ bool renderFxGuide (const juce::File& out, const Skeleton& sk, const std::vector
     for (juce::int64 c0 = 0; c0 < N; c0 += CH)
     {
         if (shouldExit && shouldExit()) return false;
-        const int n = (int) juce::jmin<juce::int64> (CH, N - c0);
+        const int n = (int) std::min<juce::int64> (CH, N - c0);
         chunk.clear();
         for (auto& p : places)
         {
@@ -454,6 +457,72 @@ bool writeFlpProject (const ExportJobInput& in, ExportResult& R, juce::String& e
     return true;
 }
 
+bool renderStems (const Arrangement& a, Engine& E, double sr, const juce::File& dir, const std::function<bool()>& shouldExit,
+                  std::atomic<int>* progress, int progressFrom, int progressTo, juce::StringPairArray& files, int* countOut)
+{
+    if (a.P.bpm <= 0 || a.bars <= 0) return false;
+    struct Ev { juce::int64 at; int track, note, vel; double len; };
+    std::vector<Ev> ev;
+    const double secPerTick = 60.0 / a.P.bpm / 480.0;
+    const int parts[4] = { kDrums, kBass, kChords, kMelody };
+    std::array<bool, kNumTracks> has {};
+    for (auto& L : a.lanes)
+        for (auto& n : L.notes)
+        {
+            const int t0 = tickOf (n.s, a.P.swing), t1 = juce::jmax (t0 + 1, tickOf (n.s + n.l, a.P.swing));
+            ev.push_back ({ (juce::int64) std::llround (t0 * secPerTick * sr), L.part, n.n, n.v, (t1 - t0) * secPerTick });
+            has[(size_t) L.part] = true;
+        }
+    std::stable_sort (ev.begin(), ev.end(), [] (const Ev& x, const Ev& y) { return x.at < y.at; });
+    const juce::int64 N = (juce::int64) std::llround (a.seconds() * sr) + (juce::int64) (sr * 2);   // 2 sn kuyruk
+    const char* const names[kNumTracks] = { "Chords", "Bass", "Drums", "Melody" };
+    int made = 0, done = 0, total = 0; for (int p : parts) if (has[(size_t) p]) ++total;
+    const auto stemDir = dir.getChildFile ("Stems");
+    if (! stemDir.createDirectory()) return false;
+    for (int p : parts)
+    {
+        if (! has[(size_t) p]) continue;
+        for (int t = 0; t < kNumTracks; ++t) E.macros[(size_t) t].mute = t != p;
+        E.reset(); E.allNotesOff();
+        juce::AudioBuffer<float> blk (2, 512);
+        for (int i = 0; i < 8; ++i) { blk.clear(); E.render (blk, 0, 512); }   // bekleyen yamaları al, durumu temizle
+        const auto f = stemDir.getChildFile (juce::String (made + 1).paddedLeft ('0', 2) + " " + names[p] + ".wav");
+        f.deleteFile();
+        std::unique_ptr<juce::OutputStream> os (f.createOutputStream());
+        if (os == nullptr) return false;
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatWriter> wr (wav.createWriterFor (os.get(), sr, 2, 24, {}, 0));
+        if (wr == nullptr) return false;
+        os.release();
+        size_t k = 0; juce::int64 pos = 0;
+        while (pos < N)
+        {
+            if (shouldExit && shouldExit()) return false;
+            const int n = (int) std::min<juce::int64> (512, N - pos);
+            blk.clear();
+            int at = 0;
+            while (k < ev.size() && ev[k].at < pos + n)
+            {
+                const int off = (int) std::clamp<juce::int64> (ev[k].at - pos, 0, n);
+                if (off > at) { E.render (blk, at, off - at); at = off; }
+                if (ev[k].track == kDrums) E.drumHit (ev[k].note, ev[k].vel, 0);
+                else E.noteOn (ev[k].track, ev[k].note, ev[k].vel, ev[k].len, 0);
+                ++k;
+            }
+            if (at < n) E.render (blk, at, n - at);
+            if (! wr->writeFromAudioSampleBuffer (blk, 0, n)) return false;
+            pos += n;
+            if (progress != nullptr && (pos & 0xffff) < 512)
+                progress->store (progressFrom + (int) ((progressTo - progressFrom) * ((double) done + (double) pos / (double) N) / juce::jmax (1, total)));
+        }
+        files.set ("stem_" + juce::String (names[p]).toLowerCase(), "Stems/" + f.getFileName());
+        ++made; ++done;
+    }
+    for (int t = 0; t < kNumTracks; ++t) E.macros[(size_t) t].mute = false;
+    if (countOut != nullptr) *countOut = made;
+    return true;
+}
+
 ExportResult exportProject (const ExportJobInput& in, const std::function<bool()>& shouldExit, std::atomic<int>* progress)
 {
     ExportResult R; R.dir = in.dir;
@@ -481,17 +550,47 @@ ExportResult exportProject (const ExportJobInput& in, const std::function<bool()
         smpDir.createDirectory();
         const auto dst = smpDir.getChildFile (juce::File::createLegalFileName ("Bar " + juce::String (cue.bar + 1).paddedLeft ('0', 3) + " - " + cue.type + " - " + f.getFileName()));
         if (f.copyFileTo (dst)) ++R.copied;
-        if (progress) progress->store (8 + (int) (30.0 * (double) (i + 1) / (double) juce::jmax<size_t> (1, in.picks.size())));
+        if (progress) progress->store (8 + (int) (30.0 * (double) (i + 1) / (double) std::max<size_t> (1, in.picks.size())));
     }
     auto audioDir = in.dir.getChildFile ("Audio"); audioDir.createDirectory();
     R.guide = audioDir.getChildFile ("FX Guide.wav");
     if (! renderFxGuide (R.guide, in.sk, in.picks, in.bpm, in.sampleRate, in.seed, shouldExit, progress, &R.placed))
         return fail (shouldExit && shouldExit() ? "cancelled" : "write " + R.guide.getFullPathName());
+    juce::StringPairArray files;
+    files.set ("plan", "Plan.txt"); files.set ("fxGuide", "Audio/FX Guide.wav");
+    files.set ("midiFullSong", juce::File::createLegalFileName (in.baseName + names[0]));
+    for (int i = 1; i < 5; ++i) files.set ("midi_" + juce::String (names[i]).fromFirstOccurrenceOf (" ", false, false).upToFirstOccurrenceOf (".", false, false).toLowerCase(), juce::String ("MIDI/") + names[i]);
+    const auto arr = buildArrangement (in.sk);
+    if (in.writeBridges)
+    {   // çok izli MIDI (iz adlı) ve FL Piano Roll script'leri
+        R.midi = in.dir.getChildFile ("HitGen Arrangement.mid");
+        const auto mb = arrangementMidi (Data::get(), arr);
+        if (! R.midi.replaceWithData (mb.getData(), mb.getSize())) return fail ("write " + R.midi.getFullPathName());
+        files.set ("midiArrangement", R.midi.getFileName());
+        const auto sdir = in.dir.getChildFile ("FL Piano Roll Scripts");
+        if (! sdir.createDirectory()) return fail ("mkdir " + sdir.getFullPathName());
+        for (auto& L : arr.lanes)
+        {
+            const auto f = sdir.getChildFile (juce::File::createLegalFileName ("HitGen - " + L.name + ".pyscript"));
+            if (! f.replaceWithText (flPianoRollScript (arr, L, in.baseName), false, false, "\r\n")) return fail ("write " + f.getFullPathName());
+            ++R.scripts;
+        }
+        files.set ("flPianoRollScripts", sdir.getFileName());
+    }
+    if (in.writeStems && in.stemEngine != nullptr)
+        if (! renderStems (arr, *in.stemEngine, in.renderRate, in.dir, shouldExit, progress, 95, 99, files, &R.stems))
+            return fail (shouldExit && shouldExit() ? "cancelled" : "stems");
     if (in.writeFlp)
     {
         juce::String e;
         if (! writeFlpProject (in, R, e)) return fail (e);
         if (shouldExit && shouldExit()) return fail ("cancelled");
+    }
+    if (R.flp != juce::File()) files.set ("flStudioProject", R.flp.getFileName());
+    if (in.writeBridges)
+    {
+        R.manifest = in.dir.getChildFile ("manifest.json");
+        if (! R.manifest.replaceWithText (arrangementManifest (Data::get(), arr, files))) return fail ("write " + R.manifest.getFullPathName());
     }
     auto plan = in.dir.getChildFile ("Plan.txt");
     if (! plan.replaceWithText (in.planText, false, false, "\r\n")) return fail ("write " + plan.getFullPathName());

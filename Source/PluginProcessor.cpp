@@ -1156,7 +1156,7 @@ bool HitGenProcessor::pollExport (hg::ExportResult& out)
 void HitGenProcessor::renderExportSounds (hg::ExportJobInput& in)
 {
     const double rsr = 44100; in.renderRate = rsr;
-    auto E = std::make_unique<hg::Engine>();
+    auto E = std::make_shared<hg::Engine>();
     E->prepare (rsr, 512);
     E->loudnessOn = false; E->pumpAmt = 0; E->master = 1; E->thick = pThick->load() / 100.0f; E->bpm = (float) juce::jmax (1, in.bpm);
     E->quality = hg::Quality { 7, 8, true };
@@ -1258,4 +1258,6 @@ void HitGenProcessor::renderExportSounds (hg::ExportJobInput& in)
                 if (auto* e = L->pickCat (x.cat, x.pref, in.bpm, in.seed, x.gm * 131, true)) in.drumFiles[x.gm] = e->file;
     }
     E->collectGarbage();
+    E->quality = hg::Quality { 4, 16, true };   // stem'ler: tam şarkı, dengeli kalite
+    in.stemEngine = E;
 }

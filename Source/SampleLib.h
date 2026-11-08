@@ -50,10 +50,17 @@ struct ExportJobInput
     std::array<juce::AudioBuffer<float>, kNumTracks> partRenders;
     std::map<int, juce::File> drumFiles;
     double renderRate = 44100;
+    // HitGen 3.0: tam şarkı stem'leri (iz başına, diğer izler sessiz; pump ve efektler karışımdakiyle aynı) ve DAW köprüleri
+    bool writeStems = true, writeBridges = true;
+    std::shared_ptr<class Engine> stemEngine;      // mesaj iş parçacığında kurulur (yamalar, kit), işte yalnızca bu iş kullanır
 };
-struct ExportResult { bool ok = false; juce::File dir, guide, flp; juce::String error; int copied = 0, placed = 0, flpClips = 0, flpPatterns = 0; };
+struct ExportResult { bool ok = false; juce::File dir, guide, flp, midi, manifest; juce::String error; int copied = 0, placed = 0, flpClips = 0, flpPatterns = 0, stems = 0, scripts = 0; };
 bool writeFlpProject (const ExportJobInput& in, ExportResult& R, juce::String& err);
 ExportResult exportProject (const ExportJobInput& in, const std::function<bool()>& shouldExit, std::atomic<int>* progress);
+
+// Tam şarkı stem'leri: Stems/NN <iz>.wav (24 bit). files'a göreli yolları ekler.
+bool renderStems (const struct Arrangement& a, Engine& E, double sr, const juce::File& dir, const std::function<bool()>& shouldExit,
+                  std::atomic<int>* progress, int progressFrom, int progressTo, juce::StringPairArray& files, int* countOut);
 
 // FX kılavuzu: ipuçlarına göre riser/impact/downlifter... yerleştirilmiş tam boy stereo ses (sample yoksa sentez)
 bool renderFxGuide (const juce::File& out, const Skeleton& sk, const std::vector<std::pair<SkCue, juce::File>>& picks,
