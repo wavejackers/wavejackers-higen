@@ -71,9 +71,20 @@ jobs:
 
       - name: pluginval (katılık 7)
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           # GitHub sürüm indirmeleri ara sıra 504 veriyor: önbellek + uzun yeniden deneme
-          if ! 7z t pv.zip > /dev/null 2>&1; then rm -f pv.zip; curl -fL --retry 12 --retry-delay 20 --retry-all-errors -o pv.zip "${{ matrix.pluginval }}"; fi
+          # Önce doğrudan bağlantı, olmazsa kimlikli GitHub API yolu (farklı sunucu yolu)
+          if ! 7z t pv.zip > /dev/null 2>&1; then
+            rm -f pv.zip
+            curl -fL --retry 4 --retry-delay 15 --retry-all-errors -o pv.zip "${{ matrix.pluginval }}" || true
+          fi
+          if ! 7z t pv.zip > /dev/null 2>&1; then
+            rm -f pv.zip; asset=$(basename "${{ matrix.pluginval }}")
+            for i in 1 2 3 4 5 6; do gh release download --repo Tracktion/pluginval --pattern "$asset" --output pv.zip --clobber && break; sleep 20; done
+          fi
+          7z t pv.zip > /dev/null
           7z x pv.zip -opv > /dev/null
           vst3=$(find build -type d -name "Wavejackers HitGen.vst3" | head -1)
           if [ "$RUNNER_OS" == "macOS" ]; then pv="pv/pluginval.app/Contents/MacOS/pluginval"; elif [ "$RUNNER_OS" == "Windows" ]; then pv="pv/pluginval.exe"; else pv="pv/pluginval"; fi
