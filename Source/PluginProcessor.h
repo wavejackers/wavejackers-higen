@@ -92,6 +92,7 @@ public:
     void resetDrumPad (int pad);
     // kullanıcının kendi sesi (akor/bas/melodi izine, part: 0 akor, 1 bas, 2 melodi): ses dosyası örnekleyicide çalar
     bool loadInstSample (int part, const juce::File& f, juce::String& err, int* rootOut = nullptr);
+    static std::unique_ptr<hg::InstSample> makeInstSample (const juce::File& f, juce::String& err);   // ses dosyası + kök nota
     void clearInstSample (int part);
     juce::String instSamplePath (int part) const { const juce::ScopedLock sl (drumLock); return instSamples[(size_t) juce::jlimit (0, 2, part)]; }
     // MIDI düzenleme: düzenlenmiş sonucu çalmaya ve dışa aktarmaya uygula (ileti iş parçacığı)
@@ -136,6 +137,7 @@ public:
     std::atomic<int> exportProgress { 0 };
     bool pollExport (hg::ExportResult& out);
     static juce::File projectsFolder();
+    void renderExportSounds (hg::ExportJobInput& in);       // FL projesi için HitGen sesleri (ayrı motor örneği)
     static juce::File sampleFoldersFile();
 
     std::atomic<bool> previewPlaying { false };

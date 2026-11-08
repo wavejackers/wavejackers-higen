@@ -548,7 +548,7 @@ String ProjectPage::planText() const
             }
         t << "\n";
     }
-    t << "\n" << T ("skPlanHow") << "\n";
+    t << "\n" << T ("skPlanFlp") << "\n\n" << T ("skPlanHow") << "\n";
     return t;
 }
 

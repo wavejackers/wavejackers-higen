@@ -1,4 +1,5 @@
 #include "SampleLib.h"
+#include "FlpWriter.h"
 #include <map>
 #include <memory>
 
@@ -345,6 +346,113 @@ bool renderFxGuide (const juce::File& out, const Skeleton& sk, const std::vector
     return true;
 }
 
+
+// FL Studio projesi: HitGen sesleri ve FX'ler WAV olarak Samples/ altına, .flp proje klasörünün köküne
+static bool writeWav (const juce::File& f, const juce::AudioBuffer<float>& b, double sr)
+{
+    f.getParentDirectory().createDirectory(); f.deleteFile();
+    std::unique_ptr<juce::OutputStream> os (f.createOutputStream());
+    if (os == nullptr) return false;
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::AudioFormatWriter> wr (wav.createWriterFor (os.get(), sr, (unsigned int) juce::jmax (1, b.getNumChannels()), 24, {}, 0));
+    if (wr == nullptr) return false;
+    os.release();
+    return wr->writeFromAudioSampleBuffer (b, 0, b.getNumSamples());
+}
+
+static double audioSeconds (juce::AudioFormatManager& fm, const juce::File& f)
+{
+    std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (f));
+    return r != nullptr && r->sampleRate > 0 ? (double) r->lengthInSamples / r->sampleRate : 0.0;
+}
+
+bool writeFlpProject (const ExportJobInput& in, ExportResult& R, juce::String& err)
+{
+    juce::AudioFormatManager fm; fm.registerBasicFormats();
+    const auto hgDir = in.dir.getChildFile ("Samples").getChildFile ("HitGen");
+    FlpSources src;
+    static const std::map<int, const char*> drumNames { { 36, "Kick" }, { 37, "Rim" }, { 38, "Snare" }, { 39, "Clap" }, { 42, "Hat" }, { 46, "Open Hat" }, { 64, "Perc" } };
+    for (auto& [gm, nm] : drumNames)
+    {
+        if (auto it = in.drumFiles.find (gm); it != in.drumFiles.end() && it->second.existsAsFile())
+        {
+            auto dst = hgDir.getChildFile (juce::String ("Drum ") + nm + " - " + it->second.getFileName());
+            if (! dst.existsAsFile() && ! it->second.copyFileTo (dst)) { err = "write " + dst.getFullPathName(); return false; }
+            src.drums[gm] = dst.getFullPathName();
+        }
+        else if (auto r = in.drumRenders.find (gm); r != in.drumRenders.end() && r->second.getNumSamples() > 0)
+        {
+            auto dst = hgDir.getChildFile (juce::String ("HitGen ") + nm + ".wav");
+            if (! writeWav (dst, r->second, in.renderRate)) { err = "write " + dst.getFullPathName(); return false; }
+            src.drums[gm] = dst.getFullPathName();
+        }
+    }
+    const char* const partNames[kNumTracks] = { "Chords", "Bass", "", "Melody" };
+    for (int t : { kChords, kBass, kMelody })
+        if (in.partRenders[(size_t) t].getNumSamples() > 0)
+        {
+            auto dst = hgDir.getChildFile (juce::String ("HitGen ") + partNames[t] + " C5.wav");
+            if (! writeWav (dst, in.partRenders[(size_t) t], in.renderRate)) { err = "write " + dst.getFullPathName(); return false; }
+            src.parts[(size_t) t] = dst.getFullPathName();
+        }
+    // FX: önerilen sample (ters ipucunda ters çevrilmiş kopya) ya da HitGen sentezi
+    const auto fxDir = in.dir.getChildFile ("Samples").getChildFile ("FX");
+    std::map<juce::String, juce::String> made;
+    for (size_t i = 0; i < in.picks.size(); ++i)
+    {
+        const auto& [cue, file] = in.picks[i];
+        const auto a = cueAudio (cue.type);
+        if (! a.render) continue;
+        juce::String path;
+        if (file != juce::File() && file.existsAsFile())
+        {
+            const auto key = file.getFullPathName() + (a.reversed ? "#r" : "");
+            if (auto it = made.find (key); it != made.end()) path = it->second;
+            else
+            {
+                juce::File dst;
+                if (a.reversed)
+                {
+                    auto b = loadAudio (fm, file, in.renderRate);
+                    if (b == nullptr) continue;
+                    for (int c = 0; c < 2; ++c) b->reverse (c, 0, b->getNumSamples());
+                    dst = fxDir.getChildFile (file.getFileNameWithoutExtension() + " (reverse).wav");
+                    if (! writeWav (dst, *b, in.renderRate)) { err = "write " + dst.getFullPathName(); return false; }
+                }
+                else
+                {
+                    dst = fxDir.getChildFile (file.getFileName());
+                    fxDir.createDirectory();
+                    if (! dst.existsAsFile() && ! file.copyFileTo (dst)) { err = "write " + dst.getFullPathName(); return false; }
+                }
+                path = made[key] = dst.getFullPathName();
+            }
+        }
+        else
+        {
+            const double barSec = 240.0 / juce::jmax (1, in.bpm);
+            int len = (int) (in.renderRate * juce::jmin (cue.len, 16) * barSec);
+            if (cue.type == "impact") len = (int) (in.renderRate * 3); else if (cue.type == "subDrop") len = (int) (in.renderRate * 2.5);
+            else if (cue.type == "downlifter") len = (int) (in.renderRate * juce::jmin (cue.len, 4) * barSec);
+            auto b = synth (cue.type, len, in.renderRate, in.seed + (juce::uint32) i * 977u);
+            if (b == nullptr) continue;
+            const float pk = b->getMagnitude (0, b->getNumSamples()); if (pk > 1e-5f) b->applyGain (.7f / pk);
+            auto dst = fxDir.getChildFile ("HitGen " + cue.type + " bar " + juce::String (cue.bar + 1).paddedLeft ('0', 3) + ".wav");
+            if (! writeWav (dst, *b, in.renderRate)) { err = "write " + dst.getFullPathName(); return false; }
+            path = dst.getFullPathName();
+        }
+        FlpSources::Fx fx; fx.cue = cue; fx.path = path; fx.endAligned = a.endAligned; fx.seconds = audioSeconds (fm, juce::File (path));
+        src.fx.push_back (fx);
+    }
+    auto proj = buildFlp (in.sk, src, in.baseName);
+    R.flp = in.dir.getChildFile (juce::File::createLegalFileName (in.baseName + ".flp"));
+    const auto bytes = writeFlp (proj);
+    if (! R.flp.replaceWithData (bytes.getData(), bytes.getSize())) { err = "write " + R.flp.getFullPathName(); return false; }
+    R.flpPatterns = (int) proj.patterns.size();
+    for (auto& it : proj.items) if (! it.pattern) ++R.flpClips;
+    return true;
+}
+
 ExportResult exportProject (const ExportJobInput& in, const std::function<bool()>& shouldExit, std::atomic<int>* progress)
 {
     ExportResult R; R.dir = in.dir;
@@ -378,6 +486,12 @@ ExportResult exportProject (const ExportJobInput& in, const std::function<bool()
     R.guide = audioDir.getChildFile ("FX Guide.wav");
     if (! renderFxGuide (R.guide, in.sk, in.picks, in.bpm, in.sampleRate, in.seed, shouldExit, progress, &R.placed))
         return fail (shouldExit && shouldExit() ? "cancelled" : "write " + R.guide.getFullPathName());
+    if (in.writeFlp)
+    {
+        juce::String e;
+        if (! writeFlpProject (in, R, e)) return fail (e);
+        if (shouldExit && shouldExit()) return fail ("cancelled");
+    }
     auto plan = in.dir.getChildFile ("Plan.txt");
     if (! plan.replaceWithText (in.planText, false, false, "\r\n")) return fail ("write " + plan.getFullPathName());
     if (progress) progress->store (100);

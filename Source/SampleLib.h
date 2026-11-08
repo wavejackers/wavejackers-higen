@@ -4,6 +4,8 @@
 #pragma once
 #include <juce_audio_formats/juce_audio_formats.h>
 #include "Generator.h"
+#include <map>
+#include <array>
 
 namespace hg
 {
@@ -41,8 +43,16 @@ struct ExportJobInput
     std::vector<juce::MemoryBlock> midis;   // [tam parça, akor, bas, davul, melodi]
     std::vector<std::pair<SkCue, juce::File>> picks;   // ipucu başına seçilen sample (boş dosya = HitGen sesi)
     int bpm = 120; juce::uint32 seed = 7; double sampleRate = 44100;
+    // FL Studio projesi için: HitGen'in kendi sesleri (davul vuruşları GM notasına göre, akor/bas/melodi C5'te tek nota)
+    // ve kütüphaneden önerilen davul one-shot'ları (varsa render yerine kullanılır)
+    bool writeFlp = true;
+    std::map<int, juce::AudioBuffer<float>> drumRenders;
+    std::array<juce::AudioBuffer<float>, kNumTracks> partRenders;
+    std::map<int, juce::File> drumFiles;
+    double renderRate = 44100;
 };
-struct ExportResult { bool ok = false; juce::File dir, guide; juce::String error; int copied = 0, placed = 0; };
+struct ExportResult { bool ok = false; juce::File dir, guide, flp; juce::String error; int copied = 0, placed = 0, flpClips = 0, flpPatterns = 0; };
+bool writeFlpProject (const ExportJobInput& in, ExportResult& R, juce::String& err);
 ExportResult exportProject (const ExportJobInput& in, const std::function<bool()>& shouldExit, std::atomic<int>* progress);
 
 // FX kılavuzu: ipuçlarına göre riser/impact/downlifter... yerleştirilmiş tam boy stereo ses (sample yoksa sentez)

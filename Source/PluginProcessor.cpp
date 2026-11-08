@@ -769,23 +769,22 @@ bool HitGenProcessor::loadDrumSample (int pad, const juce::File& f, juce::String
     return true;
 }
 
-bool HitGenProcessor::loadInstSample (int part, const juce::File& f, juce::String& err, int* rootOut)
+std::unique_ptr<hg::InstSample> HitGenProcessor::makeInstSample (const juce::File& f, juce::String& err)
 {
-    if (part < 0 || part > 2) return false;
-    if (! f.existsAsFile()) { err = "dmNoFile"; return false; }
+    if (! f.existsAsFile()) { err = "dmNoFile"; return nullptr; }
     juce::AudioFormatManager fm; fm.registerBasicFormats();
     std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (f));
-    if (r == nullptr || r->sampleRate < 8000 || r->lengthInSamples < 64) { err = "dmBadFile"; return false; }
+    if (r == nullptr || r->sampleRate < 8000 || r->lengthInSamples < 64) { err = "dmBadFile"; return nullptr; }
     const int len = (int) std::min<juce::int64> (r->lengthInSamples, (juce::int64) (r->sampleRate * 30.0));   // en çok 30 sn
     auto s = std::make_unique<hg::InstSample>();
     const int ch = juce::jlimit (1, 2, (int) r->numChannels);
     s->buf.setSize (ch, len); s->buf.clear();
-    if (! r->read (&s->buf, 0, len, 0, true, ch > 1)) { err = "dmBadFile"; return false; }
+    if (! r->read (&s->buf, 0, len, 0, true, ch > 1)) { err = "dmBadFile"; return nullptr; }
     int start = 0; const float thr = s->buf.getMagnitude (0, len) * 0.02f;
     while (start < len - 64) { bool loud = false; for (int c = 0; c < ch; ++c) if (std::abs (s->buf.getSample (c, start)) > thr) loud = true; if (loud) break; ++start; }
     if (start > 0) { juce::AudioBuffer<float> t (ch, len - start); for (int c = 0; c < ch; ++c) t.copyFrom (c, 0, s->buf, c, start, len - start); s->buf = std::move (t); }
     const float pk = s->buf.getMagnitude (0, s->buf.getNumSamples());
-    if (pk < 1e-5f) { err = "dmSilent"; return false; }
+    if (pk < 1e-5f) { err = "dmSilent"; return nullptr; }
     s->buf.applyGain (0.9f / pk);
     // dosya adında nota varsa (ör. "Pad_C3", "bass-F#1") onu, yoksa perde bulucuyu, o da yoksa C3 (60)
     int root = -1;
@@ -809,6 +808,15 @@ bool HitGenProcessor::loadInstSample (int part, const juce::File& f, juce::Strin
     if (root < 0) root = hg::detectRootNote (s->buf, r->sampleRate);
     if (root < 0) root = 60;
     s->root = root; s->rate = r->sampleRate; s->path = f.getFullPathName(); s->name = f.getFileNameWithoutExtension();
+    return s;
+}
+
+bool HitGenProcessor::loadInstSample (int part, const juce::File& f, juce::String& err, int* rootOut)
+{
+    if (part < 0 || part > 2) return false;
+    auto s = makeInstSample (f, err);
+    if (s == nullptr) return false;
+    const int root = s->root;
     engine.inst[part].setSample (std::move (s));
     { const juce::ScopedLock sl (drumLock); instSamples[(size_t) part] = f.getFullPathName(); }
     if (rootOut != nullptr) *rootOut = root;
@@ -1128,6 +1136,7 @@ bool HitGenProcessor::startExport (const juce::File& dir, const juce::String& pl
     in.midis.push_back (hg::midiFile (data, in.sk.song, all, false));
     for (int t : all) { auto one = in.sk.song; one.marks.clear(); in.midis.push_back (hg::midiFile (data, one, { t }, false)); }
     in.picks = skPicks (in.sk);
+    renderExportSounds (in);
     exportProgress.store (0);
     pool.addJob (new ExportJob (std::move (in), [this] (hg::ExportResult R) { const std::lock_guard<std::mutex> g (jobMx); doneExport = std::move (R); }, exportProgress), true);
     return true;
@@ -1140,4 +1149,103 @@ bool HitGenProcessor::pollExport (hg::ExportResult& out)
     if (! R) return false;
     exportBusy.store (false); out = std::move (*R);
     return true;
+}
+
+// FL Studio projesi için HitGen sesleri: ayrı bir motor örneğiyle (çalan motoru etkilemez) mesaj iş parçacığında render.
+// Akor/bas/melodi C5'te (MIDI 60) tek nota: FL Sampler kökü C5 olduğundan notalar doğru perdeden çalar.
+void HitGenProcessor::renderExportSounds (hg::ExportJobInput& in)
+{
+    const double rsr = 44100; in.renderRate = rsr;
+    auto E = std::make_unique<hg::Engine>();
+    E->prepare (rsr, 512);
+    E->loudnessOn = false; E->pumpAmt = 0; E->master = 1; E->thick = pThick->load() / 100.0f; E->bpm = (float) juce::jmax (1, in.bpm);
+    E->quality = hg::Quality { 7, 8, true };
+    for (int t = 0; t < 4; ++t)
+    {
+        const auto& q = pp[(size_t) t]; auto& m = E->macros[(size_t) t];
+        m.volume = q.vol->load(); m.mute = false;
+        if (t == 2) continue;
+        m.cutoff = q.cut->load(); m.reso = q.res->load(); m.attack = q.atk->load(); m.release = q.rel->load();
+        m.drive = q.drv->load(); m.reverb = q.rev->load(); m.delay = q.dly->load();
+    }
+    {
+        auto ki = data.kitIndex (sounds[2]); E->setKit (data.kit (ki >= 0 ? ki : 0));
+        auto& dm = E->drumMachine;
+        for (int pad = 0; pad < hg::kNumPads; ++pad)
+        {
+            const auto& dp = dmPtr[(size_t) pad]; auto& c = dm.ctl[(size_t) pad];
+            c.level = dp[0]->load() / 100.0f; c.tune = dp[1]->load(); c.decay = dp[2]->load() / 100.0f; c.punch = dp[3]->load() / 100.0f;
+            c.soft = dp[4]->load() / 100.0f; c.mid = dp[5]->load(); c.high = dp[6]->load();
+        }
+    }
+    for (int t : { hg::kChords, hg::kBass, hg::kMelody })
+    {
+        const auto& base = data.soundById (sounds[(size_t) t]);
+        if (base.isVoid()) continue;
+        const int part = partOfTrack (t);
+        float vals[hg::kNumSp]; readSd (part, vals);
+        E->setPatch (part, hg::Patch::fromVar (hg::spToSound (base, vals), data, rsr));
+        const auto path = instSamplePath (part);
+        juce::String err;
+        if (path.isNotEmpty()) if (auto smp = makeInstSample (juce::File (path), err)) E->inst[part].setSample (std::move (smp));
+    }
+    juce::AudioBuffer<float> blk (2, 512);
+    auto renderFor = [&] (double seconds, const std::function<void()>& trigger)
+    {
+        blk.clear(); E->render (blk, 0, 512);   // bekleyen yamaları al
+        E->allNotesOff();
+        for (int i = 0; i < 40; ++i) { blk.clear(); E->render (blk, 0, 512); }   // önceki notanın kuyruğu sönsün
+        trigger();
+        const int total = (int) (rsr * seconds);
+        juce::AudioBuffer<float> out (2, total); out.clear();
+        for (int pos = 0; pos < total; pos += 512)
+        {
+            const int n = juce::jmin (512, total - pos);
+            blk.clear(); E->render (blk, 0, n);
+            for (int c = 0; c < 2; ++c) out.copyFrom (c, pos, blk, c, 0, n);
+        }
+        // sondaki sessizliği kırp, kısa kuyruk sönümü, tepe 0.9
+        int end = total;
+        const float pk = out.getMagnitude (0, total);
+        if (pk < 1.0e-5f) return juce::AudioBuffer<float>();
+        while (end > 512 && out.getMagnitude (end - 256, 256) < pk * 0.001f) end -= 256;
+        juce::AudioBuffer<float> r (2, end);
+        for (int c = 0; c < 2; ++c) r.copyFrom (c, 0, out, c, 0, end);
+        const int fade = juce::jmin (end / 4, (int) (rsr * .01));
+        for (int c = 0; c < 2; ++c) r.applyGainRamp (c, end - fade, fade, 1.0f, 0.0f);
+        r.applyGain (.9f / pk);
+        return r;
+    };
+    // nota uzunluğu: şarkıdaki notaların ortancası (FL Sampler sample'ı sonuna dek çalar)
+    const double stepSec = 60.0 / juce::jmax (1, in.bpm) / 4.0;
+    auto median = [&] (int t)
+    {
+        std::vector<double> l; for (auto& n : in.sk.song.tracks[(size_t) t]) l.push_back (n.l);
+        if (l.empty()) return 4.0;
+        std::nth_element (l.begin(), l.begin() + (long) l.size() / 2, l.end());
+        return l[l.size() / 2];
+    };
+    const struct { int t; double lo, hi; } parts[] = { { hg::kChords, .5, 6.0 }, { hg::kBass, .15, 2.0 }, { hg::kMelody, .15, 2.0 } };
+    for (auto& pd : parts)
+    {
+        if (in.sk.song.tracks[(size_t) pd.t].empty()) continue;
+        const double dur = juce::jlimit (pd.lo, pd.hi, median (pd.t) * stepSec);
+        in.partRenders[(size_t) pd.t] = renderFor (dur + 1.2, [&] { E->noteOn (pd.t, 60, 104, dur, 0); });
+    }
+    for (int gm : { 36, 37, 38, 39, 42, 46, 64 })
+    {
+        bool has = false; for (auto& n : in.sk.song.tracks[hg::kDrums]) if (n.n == gm) { has = true; break; }
+        if (! has) continue;
+        in.drumRenders[gm] = renderFor (1.5, [&] { E->drumHit (gm, 112, 0); });
+    }
+    // kütüphane varsa davullar için önerilen one-shot'lar
+    if (auto L = lib)
+    {
+        const struct { int gm, cat; const char* pref; } m[] = { { 36, hg::kCatKick, "" }, { 38, hg::kCatSnare, "" }, { 39, hg::kCatClap, "" }, { 42, hg::kCatHat, "" },
+                                                               { 46, hg::kCatOpenHat, "" }, { 37, hg::kCatPerc, "rim" }, { 64, hg::kCatShaker, "" } };
+        for (auto& x : m)
+            if (in.drumRenders.count (x.gm))
+                if (auto* e = L->pickCat (x.cat, x.pref, in.bpm, in.seed, x.gm * 131, true)) in.drumFiles[x.gm] = e->file;
+    }
+    E->collectGarbage();
 }

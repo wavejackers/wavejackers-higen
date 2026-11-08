@@ -4,6 +4,7 @@
 //  - durum kaydet/yükle, MIDI giriş, editörün 6 dilde ekran görüntüsü
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "../Source/PluginProcessor.h"
+#include "../Source/FlpWriter.h"
 #include "../Source/PluginEditor.h"
 #include <BinaryData.h>
 #include "../Source/SoundParams.h"
@@ -399,6 +400,54 @@ static void testOwnSoundAndEdit (const juce::File& outDir, const FailFn& fail)
 }
 
 
+
+// FL Studio projesi: biçim (başlık, olay boyları), kanal sayısı, tempo, bölüm işaretçileri, pattern'ler, playlist, 500 iz,
+// sample yollarının diskte olması ve playlist'in şarkı boyunu kaplaması
+static void checkFlp (const juce::File& f, const hg::Skeleton& sk, const FailFn& fail, bool withLibrary)
+{
+    juce::MemoryBlock mb;
+    if (! f.existsAsFile() || ! f.loadFileAsData (mb)) { fail ("flp: not written " + f.getFullPathName()); return; }
+    int ppq = 0, nch = 0; std::vector<hg::FlpEvent> ev;
+    if (! hg::readFlpEvents (mb, ppq, nch, ev)) { fail ("flp: malformed"); return; }
+    int chans = 0, markers = 0, tracks = 0, notesEv = 0, paths = 0, missing = 0, kick = 0; juce::uint32 tempo = 0; size_t plBytes = 0;
+    int maxEnd = 0, clips = 0, patItems = 0;
+    juce::StringArray names;
+    auto utf16 = [] (const juce::MemoryBlock& m) { juce::String s; auto* d = static_cast<const juce::uint8*> (m.getData()); for (size_t i = 0; i + 1 < m.getSize(); i += 2) { const int c = d[i] | (d[i + 1] << 8); if (c == 0) break; s += juce::String::charToString ((juce::juce_wchar) c); } return s; };
+    for (auto& e : ev)
+    {
+        if (e.id == 64) ++chans;
+        if (e.id == 156) tempo = e.value;
+        if (e.id == 148) ++markers;
+        if (e.id == 238) ++tracks;
+        if (e.id == 224) { ++notesEv; if (e.data.getSize() % 24 != 0) fail ("flp: note block size"); }
+        if (e.id == 203) { names.add (utf16 (e.data)); if (names[names.size() - 1] == "Kick") ++kick; }
+        if (e.id == 196) { ++paths; if (! juce::File (utf16 (e.data)).existsAsFile()) ++missing; }
+        if (e.id == 233)
+        {
+            plBytes = e.data.getSize();
+            auto* d = static_cast<const juce::uint8*> (e.data.getData());
+            for (size_t k = 0; k + 32 <= plBytes; k += 32)
+            {
+                auto u32 = [&] (size_t o) { return (int) (d[k + o] | (d[k + o + 1] << 8) | (d[k + o + 2] << 16) | (d[k + o + 3] << 24)); };
+                const int pos = u32 (0), len = u32 (8), idx = d[k + 6] | (d[k + 7] << 8);
+                if (idx > 20480) ++patItems; else ++clips;
+                maxEnd = std::max (maxEnd, pos + len);
+            }
+        }
+    }
+    if (ppq != 96 || nch != chans || chans < 5) fail ("flp: header ppq " + juce::String (ppq) + " channels " + juce::String (nch) + "/" + juce::String (chans));
+    if ((int) tempo != sk.song.P.bpm * 1000) fail ("flp: tempo " + juce::String ((int) tempo));
+    if (markers != (int) sk.secs.size()) fail ("flp: markers " + juce::String (markers));
+    if (tracks != 500) fail ("flp: track data " + juce::String (tracks));
+    if (plBytes == 0 || plBytes % 32 != 0) fail ("flp: playlist size");
+    if (notesEv < (int) sk.secs.size() * 3 || patItems != notesEv) fail ("flp: patterns " + juce::String (notesEv) + " items " + juce::String (patItems));
+    if (clips < 8) fail ("flp: audio clips " + juce::String (clips));
+    if (maxEnd < sk.song.bars * 384 - 384 || maxEnd > sk.song.bars * 384) fail ("flp: playlist length " + juce::String (maxEnd / 384) + " bars, song " + juce::String (sk.song.bars));
+    if (kick != 1 || ! names.contains ("Bass") || ! names.contains ("Chords")) fail ("flp: channel names " + names.joinIntoString (","));
+    if (paths != chans || missing != 0) fail ("flp: sample paths " + juce::String (paths) + " missing " + juce::String (missing));
+    std::cout << "flp ok (" << (withLibrary ? "library" : "HitGen sounds") << "): " << chans << " channels, " << notesEv << " patterns, " << clips << " clips, " << markers << " markers\n";
+}
+
 // proje iskeleti: süre hesabı, Black Coffee / FRERE kuralları, sample sınıflandırma ve önerileri, proje klasörü, arayüz
 static void testSkeleton (const juce::File& outDir, const FailFn& fail)
 {
@@ -521,6 +570,7 @@ static void testSkeleton (const juce::File& outDir, const FailFn& fail)
             if (b.getMagnitude (0, b.getNumSamples()) > 1.0f) fail ("fx guide: clipping");
         }
         if (outProj.getChildFile ("Samples").findChildFiles (juce::File::findFiles, false).size() != er.copied) fail ("export: sample copies");
+        checkFlp (er.flp, tk, fail, true);
     }
     // 6) kütüphane olmadan: FX kılavuzu HitGen sesleriyle
     p.setSampleFolders ({}, false);
@@ -577,6 +627,10 @@ static void testSkeleton (const juce::File& outDir, const FailFn& fail)
     for (int i = 0; i < 6000 && p.exporting(); ++i) { pg->tick(); juce::Thread::sleep (10); }
     pg->tick();
     if (! dir.getChildFile ("UI Export").getChildFile ("Plan.txt").loadFileAsString().contains ("Buildup")) fail ("ui: export plan");
+    {   // kütüphane yokken FL projesi: HitGen sesleri ve sentez FX'leri
+        auto flps = dir.getChildFile ("UI Export").findChildFiles (juce::File::findFiles, false, "*.flp");
+        if (flps.size() != 1) fail ("flp: missing in UI export"); else checkFlp (flps[0], pg->shownSkeleton(), fail, false);
+    }
     ed.reset();
     p.setSampleFolders ({}, false);
     dir.deleteRecursively();
