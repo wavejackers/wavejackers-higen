@@ -1162,6 +1162,7 @@ bool HitGenProcessor::startExport (const juce::File& dir, const juce::String& pl
     for (int t : all) { auto one = in.sk.song; one.marks.clear(); in.midis.push_back (hg::midiFile (data, one, { t }, false)); }
     in.picks = skPicks (in.sk);
     renderExportSounds (in);
+    in.writeStems = exportStems;
     exportProgress.store (0);
     pool.addJob (new ExportJob (std::move (in), [this] (hg::ExportResult R) { const std::lock_guard<std::mutex> g (jobMx); doneExport = std::move (R); }, exportProgress), true);
     return true;

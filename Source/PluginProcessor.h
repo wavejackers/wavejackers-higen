@@ -134,6 +134,7 @@ public:
     int loadSuggestedDrums();                                  // kütüphaneden kick, clap, hat... Davul Makinesi pad'lerine
     // ---- proje klasörü dışa aktarımı (arka planda)
     bool startExport (const juce::File& dir, const juce::String& planText);
+    bool exportStems = true;                                   // tam şarkı stem'leri (testlerin hızlı turunda kapatılır)
     bool exporting() const { return exportBusy.load(); }
     std::atomic<int> exportProgress { 0 };
     bool pollExport (hg::ExportResult& out);

@@ -123,7 +123,8 @@ CoProducerPanel::CoProducerPanel (HitGenProcessor& p, hgui::LookAndFeel& l, cons
     load.onClick = [this]
     {
         chooser = std::make_unique<FileChooser> (T ("coLoad"), File::getSpecialLocation (File::userMusicDirectory), "*.mid;*.midi");
-        chooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles, [this, sp = Component::SafePointer<CoProducerPanel> (this)] (const FileChooser& fc)
+        Component::SafePointer<CoProducerPanel> sp (this);   // MSVC: iç içe lambda'da "this" ile ilklendirme derlenmiyor
+        chooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles, [this, sp] (const FileChooser& fc)
         { if (sp != nullptr && fc.getResult().existsAsFile()) loadFile (fc.getResult()); });
     };
     apply.onClick = [this] { complete(); };

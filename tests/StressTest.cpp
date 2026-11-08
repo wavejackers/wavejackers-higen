@@ -407,6 +407,7 @@ static void testOwnSoundAndEdit (const juce::File& outDir, const FailFn& fail)
 
 
 // HitGen 3.0 köprüleri: çok izli MIDI (iz adları, nota sayıları, işaretçiler), manifest, FL Piano Roll script'leri, stem'ler (uzunluk, zamanlama)
+static bool quickRun() { return juce::SystemStats::getEnvironmentVariable ("HITGEN_QUICK", {}).isNotEmpty(); }
 static void checkBridges (const hg::ExportResult& er, const hg::Skeleton& sk, const FailFn& fail)
 {
     const auto arr = hg::buildArrangement (sk);
@@ -447,7 +448,7 @@ static void checkBridges (const hg::ExportResult& er, const hg::Skeleton& sk, co
         }
     }
     {
-        if (er.stems < 4) fail ("bridges: stems " + juce::String (er.stems));
+        if (er.stems < 4 && ! quickRun()) fail ("bridges: stems " + juce::String (er.stems));
         juce::AudioFormatManager fm; fm.registerBasicFormats();
         auto rms = [] (juce::AudioFormatReader& r, double t0, double t1)
         {
@@ -627,6 +628,22 @@ static void testSkeleton (const juce::File& outDir, const FailFn& fail)
     if (drums < 5 || p.drumSamplePath (hg::kPadKick).isEmpty()) fail ("suggested drums: loaded " + juce::String (drums));
     // 5) proje klasörü (arka planda)
     auto outProj = dir.getChildFile ("Out Project");
+    if (quickRun()) p.exportStems = false;   // sanitizer turu: tam şarkı stem'leri çok yavaş; stem kodu aşağıda kısa şarkıyla sınanır
+    {   // stem'ler: 16 ölçülük kısa şarkı (her turda)
+        juce::StringArray k { "intro", "drop" }; std::vector<int> b { 8, 8 };
+        hg::ExportJobInput in; in.sk = hg::skeleton (p.data, *p.result(), k, 0, &b); in.bpm = in.sk.song.P.bpm;
+        p.renderExportSounds (in);
+        auto sdir = dir.getChildFile ("short-stems"); juce::StringPairArray files; int made = 0;
+        const auto a = hg::buildArrangement (in.sk);
+        if (in.stemEngine == nullptr || ! hg::renderStems (a, *in.stemEngine, in.renderRate, sdir, {}, nullptr, 0, 100, files, &made) || made < 3)
+            fail ("stems (short): made " + juce::String (made));
+        for (auto& f : sdir.getChildFile ("Stems").findChildFiles (juce::File::findFiles, false, "*.wav"))
+        {
+            juce::AudioFormatManager fm; fm.registerBasicFormats(); std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (f));
+            juce::AudioBuffer<float> x (2, (int) r->lengthInSamples); r->read (&x, 0, x.getNumSamples(), 0, true, true);
+            if (std::abs ((double) r->lengthInSamples / r->sampleRate - (16 * 240.0 / in.bpm + 2.0)) > .05 || x.getMagnitude (0, x.getNumSamples()) < .01f) fail ("stems (short): " + f.getFileName());
+        }
+    }
     if (! p.startExport (outProj, "plan")) fail ("export: did not start");
     hg::ExportResult er; bool got = false;
     const auto t0 = juce::Time::getMillisecondCounterHiRes();
