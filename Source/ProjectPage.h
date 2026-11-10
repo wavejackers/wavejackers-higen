@@ -46,7 +46,7 @@ private:
     juce::String lang = "en"; bool rtl = false; int shownRev = -1, pendingDelete = -1;
     juce::Label help, status, skHint, libInfo, exportInfo;
     juce::TextEditor nameEd;
-    juce::TextButton startBtn, saveBtn, openBtn, deleteBtn, genBtn, addSecBtn, libBtn, drumsBtn, exportBtn, autoBtn, coBtn;
+    juce::TextButton startBtn, saveBtn, openBtn, deleteBtn, genBtn, addSecBtn, libBtn, drumsBtn, exportBtn, autoBtn, coBtn, openFlBtn;
     juce::ComboBox structBox, lenBox;
     juce::ListBox tmplList, mineList, cueList;
     hgui::DragTile fullTile, full0Tile, loopTile;   // DAW'a sürüklenen MIDI: tam parça (çok izli), tam parça (Format 0), tüm izler (döngü)
@@ -56,7 +56,7 @@ private:
     std::unique_ptr<juce::FileChooser> chooser;
     hg::Skeleton sk; std::vector<Row> rows;
     const void* shownRes = nullptr; int shownBpm = -1, shownLib = -1, selSec = -1;
-    juce::File lastExport;
+    juce::File lastExport, lastFlp;
 
     juce::String T (const juce::String& k) const { return data.tr (lang, k); }
     void startTemplate (int style);

@@ -78,7 +78,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout HitGenProcessor::createLayou
 }
 
 HitGenProcessor::HitGenProcessor()
-    : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+    : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+                                         .withOutput ("Chords", juce::AudioChannelSet::stereo(), false)
+                                         .withOutput ("Bass", juce::AudioChannelSet::stereo(), false)
+                                         .withOutput ("Drums", juce::AudioChannelSet::stereo(), false)
+                                         .withOutput ("Melody", juce::AudioChannelSet::stereo(), false)),
       data (hg::Data::get()),
       apvts (*this, nullptr, "HitGen", createLayout (data))
 {
@@ -134,7 +138,15 @@ HitGenProcessor::~HitGenProcessor()
 bool HitGenProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
     const auto& out = layouts.getMainOutputChannelSet();
-    return out == juce::AudioChannelSet::stereo() || out == juce::AudioChannelSet::mono();
+    if (out != juce::AudioChannelSet::stereo() && out != juce::AudioChannelSet::mono()) return false;
+    // ek çıkışlar (akor, bas, davul, melodi): kapalı ya da stereo; ana çıkış monoysa hepsi kapalı olmalı
+    for (int b = 1; b < layouts.outputBuses.size(); ++b)
+    {
+        const auto& set = layouts.outputBuses.getReference (b);
+        if (set.isDisabled()) continue;
+        if (set != juce::AudioChannelSet::stereo() || out != juce::AudioChannelSet::stereo()) return false;
+    }
+    return true;
 }
 
 void HitGenProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
@@ -401,6 +413,16 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     juce::ScopedNoDenormals noDenormals;
     const int n = buffer.getNumSamples();
     buffer.clear();
+    {   // çok çıkış: etkin ek bus'lara ilgili izi yönlendir (iz kimliği: 0 akor, 1 bas, 2 davul, 3 melodi)
+        static const int busTrack[5] = { -1, hg::kChords, hg::kBass, hg::kDrums, hg::kMelody };
+        for (int t = 0; t < 4; ++t) { engine.auxL[t] = nullptr; engine.auxR[t] = nullptr; }
+        for (int b = 1; b < juce::jmin (5, getBusCount (false)); ++b)
+            if (auto* bus = getBus (false, b); bus != nullptr && bus->isEnabled() && bus->getNumberOfChannels() == 2)
+            {
+                const int c0 = getChannelIndexInProcessBlockBuffer (false, b, 0), c1 = getChannelIndexInProcessBlockBuffer (false, b, 1);
+                if (c1 < buffer.getNumChannels()) { engine.auxL[busTrack[b]] = buffer.getWritePointer (c0); engine.auxR[busTrack[b]] = buffer.getWritePointer (c1); }
+            }
+    }
     if (auto* np = pendingPattern.exchange (nullptr))
     {
         if (livePattern != nullptr)
@@ -522,6 +544,14 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         else { if (sampOn && e.track != hg::kDrums) ref.samplerNoteOff (e.note); else engine.noteOff (e.track, e.note, 0); }
     }
     if (pos < n) engine.render (buffer, pos, n - pos);
+    for (int t = 0; t < 4; ++t)   // ek çıkışlar: master düzeyi ve -1 dBFS yumuşak sınır (ana çıkışın limiter'ı bunlara uygulanmaz)
+        if (engine.auxL[t] != nullptr && engine.auxR[t] != nullptr)
+            for (auto* x : { engine.auxL[t], engine.auxR[t] })
+                for (int i = 0; i < n; ++i)
+                {
+                    const float y = x[i] * engine.master * .7f, ay = std::abs (y);
+                    x[i] = ay <= .7f ? y : std::copysign (.7f + .191f * std::tanh ((ay - .7f) / .191f), y);
+                }
     if (sampOn || wasSamp) ref.renderSampler (buffer, getSampleRate());
     if (wasSamp && ! sampOn) ref.samplerAllOff();
     wasSamp = sampOn;

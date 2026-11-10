@@ -482,11 +482,13 @@ void Engine::render (juce::AudioBuffer<float>& out, int start, int num)
             const int pt = trackMacro[t]; float g = pumpG[(size_t) pt]; int wait = pumpWait[(size_t) pt];
             const float coef = (float) std::exp (-1.0 / (juce::jmax (.04f, pumpRel[(size_t) pt]) / 3.0 * sr));
             const bool pumping = pumpDepth[(size_t) pt] > 0 && pumpAmt > 0;
+            float* xL = auxL[pt] != nullptr ? auxL[pt] + start + done : nullptr; float* xR = auxR[pt] != nullptr ? auxR[pt] + start + done : nullptr;
             for (int i = 0; i < n; ++i)
             {
                 if (pumping) { if (wait > 0) --wait; else g = 1 - (1 - g) * coef; }
                 const float gl = (pumping ? g : 1.0f) * bus, a = L[i] * gl, b = R[i] * gl;
-                oL[i] += a; if (oR) oR[i] += b; else oL[i] += b;
+                if (xL != nullptr && xR != nullptr) { xL[i] += a; xR[i] += b; }
+                else { oL[i] += a; if (oR) oR[i] += b; else oL[i] += b; }
                 rvL[i] += a * rv; rvR[i] += b * rv; dlL[i] += a * dl; dlR[i] += b * dl;
             }
             pumpG[(size_t) pt] = g; pumpWait[(size_t) pt] = wait;
@@ -506,7 +508,8 @@ void Engine::render (juce::AudioBuffer<float>& out, int start, int num)
                     float st2[2] = { drumLpR[0], drumLpR[1] }; b = svf (b, lpC, st2).lp; drumLpR[0] = st2[0]; drumLpR[1] = st2[1];
                 }
                 a *= bus; b *= bus;
-                oL[i] += a; if (oR) oR[i] += b; /* davulda reverb yok */
+                if (auxL[2] != nullptr && auxR[2] != nullptr) { auxL[2][start + done + i] += a; auxR[2][start + done + i] += b; }
+                else { oL[i] += a; if (oR) oR[i] += b; } /* davulda reverb yok */
             }
         }
         // delay (noktalı sekizlik, geri besleme LP)

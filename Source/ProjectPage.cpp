@@ -234,7 +234,7 @@ ProjectPage::ProjectPage (HitGenProcessor& p, hgui::LookAndFeel& l) : proc (p), 
     help.setJustificationType (Justification::topLeft); status.setJustificationType (Justification::topLeft);
     addAndMakeVisible (nameEd); nameEd.setFont (lnf.font (16)); nameEd.setInputRestrictions (80); nameEd.setIndents (8, 6);
     nameEd.onReturnKey = [this] { save(); };
-    for (auto* b : { &startBtn, &saveBtn, &openBtn, &deleteBtn, &genBtn, &addSecBtn, &libBtn, &drumsBtn, &exportBtn, &autoBtn, &coBtn }) addAndMakeVisible (*b);
+    for (auto* b : { &startBtn, &saveBtn, &openBtn, &deleteBtn, &genBtn, &addSecBtn, &libBtn, &drumsBtn, &exportBtn, &autoBtn, &coBtn, &openFlBtn }) addAndMakeVisible (*b);
     for (auto* c : { &structBox, &lenBox }) addAndMakeVisible (*c);
     const int which[3] = { 5, 6, 4 };
     hgui::DragTile* tiles[3] = { &fullTile, &full0Tile, &loopTile };
@@ -290,6 +290,7 @@ ProjectPage::ProjectPage (HitGenProcessor& p, hgui::LookAndFeel& l) : proc (p), 
     exportBtn.onClick = [this] { exportProject(); };
     autoBtn.onClick = [this] { openPanel (true); };
     coBtn.onClick = [this] { openPanel (false); };
+    openFlBtn.onClick = [this] { if (lastFlp.existsAsFile()) lastFlp.startAsProcess(); };   // dosya ilişkisiyle FL Studio açılır
     nameEd.setText (proc.userPreset, false);
     proc.ensureLibrary();
     refreshSkeleton();
@@ -308,6 +309,7 @@ void ProjectPage::updateButtons()
     auto L = proc.library();
     drumsBtn.setEnabled (L != nullptr && ! L->items.empty() && ! proc.scanning());
     exportBtn.setEnabled (! proc.exporting() && ! sk.secs.empty());
+    openFlBtn.setEnabled (lastFlp.existsAsFile());
     genBtn.setButtonText (proc.skel.active ? T ("skRegen") : T ("skGen"));
 }
 
@@ -594,7 +596,8 @@ void ProjectPage::tick()
         {
             exportInfo.setText (T ("skExported").replace ("{f}", er.dir.getFullPathName()), dontSendNotification);
             say (T ("skExportedLong").replace ("{c}", String (er.copied)).replace ("{p}", String (er.placed)));
-            if (revealAfterExport) er.dir.revealToUser();
+            lastFlp = er.flp;
+            if (revealAfterExport) { if (er.flp.existsAsFile()) er.flp.startAsProcess(); else er.dir.revealToUser(); }   // dolu projeyi FL Studio'da aç
         }
         else { exportInfo.setText (T ("skExportFail"), dontSendNotification); say (T ("skExportFail") + "\n" + er.error); }
         updateButtons();
@@ -617,7 +620,7 @@ void ProjectPage::setLanguage (const String& l, bool r)
     startBtn.setButtonText (T ("pjStart")); saveBtn.setButtonText (T ("pjSave")); openBtn.setButtonText (T ("prLoad")); deleteBtn.setButtonText (T ("prDelete"));
     autoBtn.setButtonText (T ("skAuto")); coBtn.setButtonText (T ("skCo"));
     autoBtn.setTooltip (T ("apHint")); coBtn.setTooltip (T ("coHint"));
-    addSecBtn.setButtonText (T ("skAdd")); libBtn.setButtonText (T ("skLib")); drumsBtn.setButtonText (T ("skDrums")); exportBtn.setButtonText (T ("skExport"));
+    addSecBtn.setButtonText (T ("skAdd")); openFlBtn.setButtonText (T ("skOpenFl")); openFlBtn.setTooltip (T ("skOpenFlHint")); libBtn.setButtonText (T ("skLib")); drumsBtn.setButtonText (T ("skDrums")); exportBtn.setButtonText (T ("skExport"));
     genBtn.setTooltip (T ("skGenHint")); exportBtn.setTooltip (T ("skExportHint")); drumsBtn.setTooltip (T ("skDrumsHint")); libBtn.setTooltip (T ("skLibHint"));
     skHint.setText (T ("skHint"), dontSendNotification);
     tmplList.setTitle (T ("pjTemplates")); mineList.setTitle (T ("pjMine")); cueList.setTitle (T ("skList"));
@@ -664,7 +667,7 @@ void ProjectPage::resized()
         { &cueList, { 468, 222, 676, 236 } },
         { &libBtn, { 468, 464, 200, 30 } }, { &libInfo, { 676, 464, 240, 30 } }, { &drumsBtn, { 924, 464, 220, 30 } },
         { &fullTile, { 468, 502, 216, 44 } }, { &full0Tile, { 692, 502, 216, 44 } }, { &loopTile, { 916, 502, 228, 44 } },
-        { &exportBtn, { 468, 556, 250, 38 } }, { &exportInfo, { 726, 552, 418, 46 } } };
+        { &exportBtn, { 468, 556, 250, 38 } }, { &openFlBtn, { 726, 556, 190, 38 } }, { &exportInfo, { 924, 552, 220, 46 } } };
     for (auto& [c, r] : L) if (c != nullptr) c->setBounds (mir (r));
 }
 

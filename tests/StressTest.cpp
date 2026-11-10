@@ -858,6 +858,47 @@ static void testProducer (const juce::File& outDir, const FailFn& fail)
     std::cout << "producer ok: key exact " << exact << "/" << total << ", pitch set " << close << ", in candidates " << cand << ", best fit " << juce::String (cands[0].fit, 2) << " vs random " << juce::String (rndFit, 2) << "\n";
 }
 
+
+// çok çıkış: ek bus'lar kapalıyken her şey ana çıkışta; açılınca her iz kendi çıkışında, ana çıkışta kalmaz
+static void testMultiOut (const FailFn& fail)
+{
+    auto measure = [&] (bool aux, std::array<double, 5>& rms)
+    {
+        auto p_h = std::make_unique<HitGenProcessor>(); auto& p = *p_h;
+        auto L = p.getBusesLayout();
+        if (L.outputBuses.size() != 5) { fail ("multiout: bus count " + juce::String (L.outputBuses.size())); return false; }
+        for (int b = 1; b < 5; ++b) L.outputBuses.getReference (b) = aux ? juce::AudioChannelSet::stereo() : juce::AudioChannelSet::disabled();
+        if (! p.setBusesLayout (L)) { fail ("multiout: layout rejected"); return false; }
+        { auto M = L; M.outputBuses.getReference (0) = juce::AudioChannelSet::mono(); if (aux && p.checkBusesLayoutSupported (M)) fail ("multiout: mono main with aux accepted"); }
+        setP (p, "loudness", 0.0f);
+        p.regenerateNow();
+        const int nch = p.getTotalNumOutputChannels(), sr = 48000, blk = 512;
+        if (nch != (aux ? 10 : 2)) fail ("multiout: channels " + juce::String (nch));
+        p.setRateAndBufferSizeDetails (sr, blk); p.prepareToPlay (sr, blk);
+        FakeHead head; head.bpm = 124; p.setPlayHead (&head);
+        juce::AudioBuffer<float> buf (nch, blk); juce::MidiBuffer midi;
+        std::array<double, 5> sum {};
+        const int blocks = (int) (sr * 8.0 / blk);
+        for (int k = 0; k < blocks; ++k)
+        {
+            midi.clear(); p.processBlock (buf, midi);
+            for (int b = 0; b < (aux ? 5 : 1); ++b)
+                for (int c = 0; c < 2; ++c) { const float* x = buf.getReadPointer (b * 2 + c); for (int i = 0; i < blk; ++i) { if (! std::isfinite (x[i]) || std::abs (x[i]) > .9f) { fail ("multiout: NaN or over -1 dBFS on bus " + juce::String (b)); break; } sum[(size_t) b] += x[i] * x[i]; } }
+            head.ppq += blk * head.bpm / 60.0 / sr;
+        }
+        for (int b = 0; b < 5; ++b) rms[(size_t) b] = std::sqrt (sum[(size_t) b] / (2.0 * blocks * blk));
+        p.setPlayHead (nullptr);
+        return true;
+    };
+    std::array<double, 5> off {}, on {};
+    if (! measure (false, off) || ! measure (true, on)) return;
+    // açıkken: dört iz kendi çıkışında sesli; ana çıkışta yalnızca reverb/delay dönüşleri kalır (kapalıdakinden çok daha sessiz)
+    for (int b = 1; b < 5; ++b) if (on[(size_t) b] < 1e-3) fail ("multiout: bus " + juce::String (b) + " silent");
+    if (off[0] < 1e-3 || on[0] > off[0] * .6) fail ("multiout: main " + juce::String (on[0], 4) + " vs " + juce::String (off[0], 4));
+    std::cout << "multi-out ok: main " << juce::String (off[0], 3) << " -> " << juce::String (on[0], 3) << ", chords " << juce::String (on[1], 3) << " bass " << juce::String (on[2], 3)
+              << " drums " << juce::String (on[3], 3) << " melody " << juce::String (on[4], 3) << "\n";
+}
+
 // açılış: ses çalar ve kendiliğinden biter, dışa aktarımda ve atlamada susar; göz gezip yerine oturur
 static void testIntro (const juce::File& outDir, const FailFn& fail)
 {
@@ -1335,6 +1376,7 @@ int main (int argc, char** argv)
     testOwnSoundAndEdit (outDir, fail);
     testSkeleton (outDir, fail);
     testProducer (outDir, fail);
+    testMultiOut (fail);
     testReference (outDir, fail); testSampler (fail); testLibrary (fail); testMidiLearn (outDir, fail);
     testLoudness (outDir, fail, quick); testDrumMachine (outDir, fail); testGuideAndAssistant (outDir, fail);
     std::cout << (failures == 0 ? "ALL PASSED" : "FAILURES: " + std::to_string (failures)) << "\n";

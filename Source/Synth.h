@@ -108,6 +108,9 @@ public:
     // Blok başında ayarlanır
     std::array<Macros, 4> macros;
     float bpm = 126, thick = .7f, pumpAmt = 1, master = 1;
+    // Çok çıkış: bir iz için işaretçi verilirse (blok başına göre) o izin sesi ana karışıma değil oraya yazılır.
+    // İndeks iz kimliğidir (0 akor, 1 bas, 2 davul, 3 melodi). Reverb/delay gönderimleri ana çıkışta kalır.
+    float* auxL[4] {}; float* auxR[4] {};
     bool loudnessOn = true;                     // -14 LUFS normalleştirme + -1 dBFS sınırlayıcı (kapalıyken eski yumuşak limiter)
     InstSampler inst[3];                        // kullanıcının kendi sesi: 0 akor, 1 bas, 2 melodi (yüklüyse sentezleyicinin yerine çalar)
     DrumMachine drumMachine;                    // davul pedleri: analog sentez ya da kullanıcı örnekleri
