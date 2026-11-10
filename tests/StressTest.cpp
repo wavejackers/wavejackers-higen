@@ -5,6 +5,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "../Source/PluginProcessor.h"
 #include "../Source/FlpWriter.h"
+#include "../Source/AlsWriter.h"
 #include "../Source/Arrangement.h"
 #include "../Source/CoProducer.h"
 #include "../Source/ProducerPanels.h"
@@ -18,6 +19,7 @@
 #include "../Source/Loudness.h"
 #include <iostream>
 #include <functional>
+#include <set>
 #include <memory>
 
 struct FakeHead : juce::AudioPlayHead
@@ -494,6 +496,63 @@ static void checkBridges (const hg::ExportResult& er, const hg::Skeleton& sk, co
     std::cout << "bridges ok: " << arr.lanes.size() << " midi tracks, " << er.scripts << " FL scripts, " << er.stems << " stems, manifest\n";
 }
 
+// Ableton Live seti: gzip XML ayrıştırılır; iz/klip/nota/işaretçi sayıları, tempo, benzersiz hedef kimlikleri,
+// izlerde çakışan klip olmaması ve her sample referansının (göreli yol) diskte bir dosyaya çıkması
+static void checkAls (const juce::File& f, const hg::Skeleton& sk, const FailFn& fail)
+{
+    if (! f.existsAsFile()) { fail ("als: missing"); return; }
+    auto xml = juce::parseXML (hg::readAlsXml (f));
+    if (xml == nullptr || ! xml->hasTagName ("Ableton")) { fail ("als: not gzip XML"); return; }
+    auto* ls = xml->getChildByName ("LiveSet");
+    const auto arr = hg::buildArrangement (sk);
+    auto val = [] (juce::XmlElement* e, const char* path) -> juce::String
+    {
+        for (auto& p : juce::StringArray::fromTokens (path, "/", "")) if (e == nullptr || (e = e->getChildByName (p)) == nullptr) return {};
+        return e->getStringAttribute ("Value");
+    };
+    int midiT = 0, audioT = 0, notes = 0, refs = 0, badRefs = 0;
+    std::set<int> trackIds, targets; int maxT = 0; bool dup = false;
+    std::function<void (juce::XmlElement*)> walk = [&] (juce::XmlElement* e)
+    {
+        const auto t = e->getTagName();
+        if (e->hasAttribute ("Id") && (t.endsWith ("Target") || t.startsWith ("ControllerTargets.")))
+        { const int id = e->getIntAttribute ("Id"); dup |= ! targets.insert (id).second; maxT = juce::jmax (maxT, id); }
+        if (t == "MidiNoteEvent") ++notes;
+        if (t == "SampleRef")
+            if (auto* fr = e->getChildByName ("FileRef"); fr != nullptr && val (fr, "HasRelativePath") == "true")
+            {
+                ++refs; auto d = f.getParentDirectory();
+                if (auto* rp = fr->getChildByName ("RelativePath")) for (auto* r = rp->getFirstChildElement(); r != nullptr; r = r->getNextElement()) d = d.getChildFile (r->getStringAttribute ("Dir"));
+                if (! d.getChildFile (val (fr, "Name")).existsAsFile()) ++badRefs;
+            }
+        for (auto* c = e->getFirstChildElement(); c != nullptr; c = c->getNextElement()) walk (c);
+    };
+    walk (ls);
+    if (dup) fail ("als: duplicate automation target ids");
+    if (val (ls, "NextPointeeId").getIntValue() <= maxT) fail ("als: NextPointeeId too small");
+    if (refs == 0 || badRefs > 0) fail ("als: sample refs " + juce::String (badRefs) + "/" + juce::String (refs) + " missing");
+    for (auto* t = ls->getChildByName ("Tracks")->getFirstChildElement(); t != nullptr; t = t->getNextElement())
+    {
+        if (! trackIds.insert (t->getIntAttribute ("Id")).second) fail ("als: duplicate track id");
+        const bool m = t->hasTagName ("MidiTrack"); (m ? midiT : audioT)++;
+        auto* ev = t->getChildByName ("DeviceChain")->getChildByName ("MainSequencer")->getChildByName (m ? "ClipTimeable" : "Sample")->getChildByName ("ArrangerAutomation")->getChildByName ("Events");
+        double last = 0;
+        for (auto* c = ev->getFirstChildElement(); c != nullptr; c = c->getNextElement())
+        {
+            const double a = val (c, "CurrentStart").getDoubleValue(), b = val (c, "CurrentEnd").getDoubleValue();
+            if (a < last - 1e-6 || b <= a || b > arr.bars * 4.0 + 1e-6) fail ("als: clip overlap/range on " + val (t, "Name/EffectiveName"));
+            last = b;
+        }
+    }
+    if (midiT != (int) arr.lanes.size()) fail ("als: midi tracks " + juce::String (midiT) + " != lanes " + juce::String ((int) arr.lanes.size()));
+    int want = 0; for (auto& L : arr.lanes) for (auto& n : L.notes) if (n.s < arr.bars * 16.0) ++want;
+    if (notes != want) fail ("als: notes " + juce::String (notes) + " != " + juce::String (want));
+    int locs = 0; for (auto* l = ls->getChildByName ("Locators")->getChildByName ("Locators")->getFirstChildElement(); l != nullptr; l = l->getNextElement()) ++locs;
+    if (locs != (int) arr.secs.size()) fail ("als: locators");
+    if (val (ls, "MasterTrack/DeviceChain/Mixer/Tempo/Manual").getIntValue() != arr.P.bpm) fail ("als: tempo");
+    std::cout << "  als: " << midiT << " midi + " << audioT << " audio tracks, " << notes << " notes, " << refs << " sample refs\n";
+}
+
 // FL Studio projesi: biçim (başlık, olay boyları), kanal sayısı, tempo, bölüm işaretçileri, pattern'ler, playlist, 500 iz,
 // sample yollarının diskte olması ve playlist'in şarkı boyunu kaplaması
 static void checkFlp (const juce::File& f, const hg::Skeleton& sk, const FailFn& fail, bool withLibrary)
@@ -683,6 +742,7 @@ static void testSkeleton (const juce::File& outDir, const FailFn& fail)
         }
         if (outProj.getChildFile ("Samples").findChildFiles (juce::File::findFiles, false).size() != er.copied) fail ("export: sample copies");
         checkFlp (er.flp, tk, fail, true);
+        checkAls (er.als, tk, fail);
         checkBridges (er, tk, fail);
     }
     // 6) kütüphane olmadan: FX kılavuzu HitGen sesleriyle
@@ -743,6 +803,8 @@ static void testSkeleton (const juce::File& outDir, const FailFn& fail)
     {   // kütüphane yokken FL projesi: HitGen sesleri ve sentez FX'leri
         auto flps = dir.getChildFile ("UI Export").findChildFiles (juce::File::findFiles, false, "*.flp");
         if (flps.size() != 1) fail ("flp: missing in UI export"); else checkFlp (flps[0], pg->shownSkeleton(), fail, false);
+        auto alss = dir.getChildFile ("UI Export").findChildFiles (juce::File::findFiles, false, "*.als");
+        if (alss.size() != 1) fail ("als: missing in UI export"); else checkAls (alss[0], pg->shownSkeleton(), fail);
     }
     ed.reset();
     p.setSampleFolders ({}, false);

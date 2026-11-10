@@ -107,14 +107,21 @@ Kendi MIDI'ni yükle ya da panele sürükle (melodi, akor veya bas; davul kanal�
 
 ### DAW çıktıları ("FL Studio projesi oluştur")
 Proje klasörüne yazılanlar:
-- `<ad>.flp`: dolu FL Studio projesi (Sampler kanalları, bölüm başına pattern'ler, FX klipleri, işaretçiler, adlı mikser kanalları)
+- `<ad>.flp`: dolu FL Studio projesi (Sampler kanalları, bölüm başına pattern'ler, FX klipleri, işaretçiler, adlı mikser kanalları). Dışa aktarma bitince FL Studio'da kendiliğinden açılır (.flp dosyası FL'ye bağlıysa); "FL Studio'da aç" düğmesi aynı projeyi yeniden açar.
+- `<ad>.als`: dolu Ableton Live seti. Her şerit (Kick, Clap, Hat, Bass, Chords, Pad, Lead, Arp…) Simpler'lı bir MIDI izi ve FL projesindeki aynı sesle çalar; her bölüm ayrı MIDI klibi; riser/impact/downlifter gibi FX'ler ses izlerinde ipucu ölçülerinde; bölümler Locator; tempo ayarlı. Live 10 biçiminde yazılır, Live 11/12 açılışta dönüştürür. Max for Live gerekmez.
 - `HitGen Arrangement.mid`: Type-1 çok izli MIDI, iz başına ad (Kick, Clap, Hat, Bass, Chords, Melody…), bölüm ve ipucu işaretçileri, tempo/ölçü/ton
-- `Stems/`: tam şarkı WAV stem'leri (davul, bas, akor, melodi; 24 bit, diğer izler susturularak render; pump ve efektler karışımdakiyle aynı)
+- `Stems/`: tam şarkı WAV stem'leri (davullar ve her melodik şerit ayrı: Bass, Chords, Pad, Lead, Arp; 24 bit, diğer izler susturularak render; pump ve efektler karışımdakiyle aynı)
 - `FL Piano Roll Scripts/*.pyscript`: Image-Line'ın resmi Piano Roll Scripting API'siyle iz başına notaları ve bölüm işaretçilerini açık piyano rulosuna yazar (`Belgeler\Image-Line\FL Studio\Settings\Piano roll scripts` klasörüne kopyala, Tools > Scripting)
 - `manifest.json`: tempo, ton, bölümler (ölçü ve saniye), ipuçları, izler ve dosya eşlemesi (DAW köprüleri için tek kaynak)
 - `MIDI/`, `Audio/FX Guide.wav`, `Samples/`, `Plan.txt`
 
-Ableton Live için: `HitGen Arrangement.mid` dosyasını aranjmana sürükle (her iz ayrı MIDI izi olur) ve `Stems/` klasöründeki WAV'ları 1. ölçüye bırak.
+Ableton Live için `<ad>.als` dosyasını aç. İstersen `HitGen Arrangement.mid` dosyasını aranjmana sürükleyip (her iz ayrı MIDI izi olur) `Stems/` klasöründeki WAV'ları 1. ölçüye de bırakabilirsin.
+
+**Pad / Lead / Arp şeritleri:** aranjmanda akordan türetilen Pad (uzun akor sesleri, kök + üst ses) ve Arp (16'lık akor arpeji, drop ve groove bölümlerinde) şeritleri ile Lead (eski Melody) ayrı izlerdir; MIDI, stem, .flp ve .als hepsinde ayrı gelir.
+
+**Çok çıkış (multi-out):** eklentinin 4 ek stereo çıkışı var (Chords, Bass, Drums, Melody), varsayılan kapalı. DAW'da açınca o iz ana karışımdan çıkıp kendi çıkışına gider (ör. FL Studio: eklenti ayarları > Outputs; Ableton: izin girişini "HitGen > Bass" seç). Çıkışlarda -1 dBFS yumuşak sınırlayıcı var.
+
+**FL Studio MIDI scripting neden yok:** FL'nin MIDI controller script API'si playlist'e pattern/klip yerleştiremez, sample yükleyemez; aranjmanı otomatik doldurmak için işe yaramaz. Bu yüzden aranjman doğrudan .flp dosyası olarak yazılıyor ve FL'de kendiliğinden açılıyor; piyano rulosu için ayrıca Piano Roll script'leri var.
 
 ### Doğrulama durumu (dürüst liste)
 | Özellik | Otomatik test | Gerçek DAW'da denendi mi |
@@ -127,7 +134,11 @@ Ableton Live için: `HitGen Arrangement.mid` dosyasını aranjmana sürükle (he
 | Co-Producer ton bulma | 98 durum: perde kümesi 98/98, gerçek ton adaylarda 98/98, tam ton (majör/minör) 62/98 | — |
 | Co-Producer kilit (stil/tohum/uzunluk/proje yükleme) | Evet | — |
 | Auto Producer (5 tür) | Evet (stil, tempo, ton, süre) | Dinlenerek değerlendirilmedi |
-| Ableton Max for Live köprüsü, FL MIDI scripting, çok çıkışlı bus | Yok (henüz yapılmadı) | — |
+| .als Ableton seti | Kendi testimiz: gzip XML ayrıştırma, iz/klip/nota/Locator sayıları, tempo, benzersiz otomasyon kimlikleri, çakışan klip yok, her sample yolu diskte | Hayır (Ableton Live'da açılmadı) |
+| Pad / Arp / Lead şeritleri ve şerit başına stem'ler | Evet | Dinlenerek değerlendirilmedi |
+| Çok çıkış (4 ek stereo bus) | Evet (bus düzeni, çıkışlarda ses, ana karışımda düşüş, tepe < -1 dBFS) + pluginval 10 | Hayır |
+| Dışa aktarma sonrası FL'de otomatik açılma | Kod yolu var; Linux'ta açılacak FL olmadığından test edilmedi | Hayır |
+| Ableton Max for Live cihazı, FL MIDI scripting | Yapılmadı: .als ve .flp dosyaları aynı işi eklentisiz yapıyor | — |
 
 ## Kurulum
 
@@ -211,4 +222,4 @@ The whole editor uses the Wavejackers character art (sage with staff, two angels
 "Generate project" on the Project tab builds a full track from an editable section list (default Intro, Buildup, Drop, Breakdown, Buildup, Drop, Outro) and a target length (4:00 to 10:00, or the style's length). Sections are 8-bar phrases; 8:00 at 120 BPM is exactly 240 bars. Arrangement rules come from two real projects: Black Coffee "The Rapture Pt.III" (Ableton remake, organic house) and FRERE "Powerful" / "Tiger" (FL Studio, melodic techno). Every moment gets MIDI and, when sample folders are added, a sample suggestion picked from file names and tempo. "Create FL Studio project" writes a filled FL Studio project (.flp: Sampler channels with HitGen sounds or your samples, a pattern per part and section, FX audio clips at their cue bars, section markers, named mixer inserts), plus full-song and per-part MIDI, an FX guide WAV with every riser, impact and downlifter in place, copies of the suggested samples and a plan.
 
 ### HitGen 3.0 (English summary)
-Auto Producer (genre, tempo, key, length, energy → a full track in one click; Afro House, Melodic Techno, Progressive House, Indie Dance, Deep House) and Co-Producer (load your MIDI; HitGen finds candidate keys, searches its ideas for the chords that fit your notes best, completes the other parts and keeps your notes locked). "Create FL Studio project" now also writes a Type-1 multi-track MIDI with named tracks and markers, full-song WAV stems, FL Piano Roll scripts and manifest.json. The .flp and the scripts follow FL Studio's documented/observed formats but have not been opened in FL Studio yet; see the verification table above.
+Auto Producer (genre, tempo, key, length, energy → a full track in one click; Afro House, Melodic Techno, Progressive House, Indie Dance, Deep House) and Co-Producer (load your MIDI; HitGen finds candidate keys, searches its ideas for the chords that fit your notes best, completes the other parts and keeps your notes locked). "Create FL Studio project" now also writes a filled Ableton Live set (.als: a Simpler MIDI track per lane, a clip per section, FX audio clips, locators; Live 10 format, untested in Live), separate Pad/Lead/Arp lanes, optional multi-out (4 extra stereo buses, off by default), opens the .flp in FL Studio automatically, and writes a Type-1 multi-track MIDI with named tracks and markers, full-song WAV stems, FL Piano Roll scripts and manifest.json. The .flp and the scripts follow FL Studio's documented/observed formats but have not been opened in FL Studio yet; see the verification table above.

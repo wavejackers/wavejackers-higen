@@ -53,7 +53,7 @@ struct ExportJobInput
     bool writeStems = true, writeBridges = true;
     std::shared_ptr<class Engine> stemEngine;      // mesaj iş parçacığında kurulur (yamalar, kit), işte yalnızca bu iş kullanır
 };
-struct ExportResult { bool ok = false; juce::File dir, guide, flp, midi, manifest; juce::String error; int copied = 0, placed = 0, flpClips = 0, flpPatterns = 0, stems = 0, scripts = 0; };
+struct ExportResult { bool ok = false; juce::File dir, guide, flp, als, midi, manifest; juce::String error; int copied = 0, placed = 0, flpClips = 0, alsClips = 0, flpPatterns = 0, stems = 0, scripts = 0; };
 bool writeFlpProject (const ExportJobInput& in, ExportResult& R, juce::String& err);
 ExportResult exportProject (const ExportJobInput& in, const std::function<bool()>& shouldExit, std::atomic<int>* progress);
 

@@ -1,4 +1,5 @@
 #include "SampleLib.h"
+#include "AlsWriter.h"
 #include "FlpWriter.h"
 #include "Arrangement.h"
 #include "Synth.h"
@@ -446,6 +447,12 @@ bool writeFlpProject (const ExportJobInput& in, ExportResult& R, juce::String& e
     if (! R.flp.replaceWithData (bytes.getData(), bytes.getSize())) { err = "write " + R.flp.getFullPathName(); return false; }
     R.flpPatterns = (int) proj.patterns.size();
     for (auto& it : proj.items) if (! it.pattern) ++R.flpClips;
+    // Ableton Live: aynı aranjman ve aynı sesler (.als)
+    AlsInfo ai;
+    const auto als = buildAlsXml (arr, src, in.dir, &ai);
+    R.als = in.dir.getChildFile (juce::File::createLegalFileName (in.baseName + ".als"));
+    if (! writeAls (R.als, als)) { err = "write " + R.als.getFullPathName(); return false; }
+    R.alsClips = ai.midiClips + ai.audioClips;
     return true;
 }
 
@@ -583,6 +590,7 @@ ExportResult exportProject (const ExportJobInput& in, const std::function<bool()
         if (shouldExit && shouldExit()) return fail ("cancelled");
     }
     if (R.flp != juce::File()) files.set ("flStudioProject", R.flp.getFileName());
+    if (R.als != juce::File()) files.set ("abletonProject", R.als.getFileName());
     if (in.writeBridges)
     {
         R.manifest = in.dir.getChildFile ("manifest.json");
