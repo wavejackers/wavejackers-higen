@@ -142,7 +142,7 @@ juce::String buildAlsXml (const Arrangement& a, const FlpSources& src, const juc
             {
                 const juce::File f (it->second);
                 const auto ai = audioInfo (fm, f);
-                const auto last = juce::String (juce::jmax<juce::int64> (0, ai.len - 1));
+                const auto last = juce::String (std::max<juce::int64> (0, ai.len - 1));
                 setV (part, "Name", f.getFileNameWithoutExtension());
                 setV (part, "SampleEnd", last); setV (part, "SustainLoop/End", last); setV (part, "ReleaseLoop/End", last);
                 setV (part, "RootKey", "60");

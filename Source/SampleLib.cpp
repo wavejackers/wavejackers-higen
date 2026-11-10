@@ -516,7 +516,7 @@ bool renderStems (const Arrangement& a, Engine& E, double sr, const juce::File& 
             if (! wr->writeFromAudioSampleBuffer (blk, 0, n)) return false;
             pos += n;
             if (progress != nullptr && (pos & 0xffff) < 512)
-                progress->store (progressFrom + (int) ((progressTo - progressFrom) * ((double) gi + (double) pos / (double) N) / juce::jmax<size_t> (1, groups.size())));
+                progress->store (progressFrom + (int) ((progressTo - progressFrom) * ((double) gi + (double) pos / (double) N) / (double) std::max<size_t> (1, groups.size())));
         }
         files.set ("stem_" + G.name.toLowerCase().replace (" ", ""), "Stems/" + f.getFileName());
         ++made;
