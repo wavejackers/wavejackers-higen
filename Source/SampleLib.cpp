@@ -375,30 +375,22 @@ bool writeFlpProject (const ExportJobInput& in, ExportResult& R, juce::String& e
     const auto hgDir = in.dir.getChildFile ("Samples").getChildFile ("HitGen");
     if (! hgDir.createDirectory()) { err = "mkdir " + hgDir.getFullPathName(); return false; }
     FlpSources src;
-    static const std::map<int, const char*> drumNames { { 36, "Kick" }, { 37, "Rim" }, { 38, "Snare" }, { 39, "Clap" }, { 42, "Hat" }, { 46, "Open Hat" }, { 64, "Perc" } };
-    for (auto& [gm, nm] : drumNames)
+    const auto arr = buildArrangement (in.sk);
+    for (auto& L : arr.lanes)
     {
-        if (auto it = in.drumFiles.find (gm); it != in.drumFiles.end() && it->second.existsAsFile())
+        if (auto it = in.laneFiles.find (L.role); it != in.laneFiles.end() && it->second.existsAsFile())
         {
-            auto dst = hgDir.getChildFile (juce::String ("Drum ") + nm + " - " + it->second.getFileName());
+            auto dst = hgDir.getChildFile (L.name + " - " + it->second.getFileName());
             if (! dst.existsAsFile() && ! it->second.copyFileTo (dst)) { err = "write " + dst.getFullPathName(); return false; }
-            src.drums[gm] = dst.getFullPathName();
+            src.lanes[L.role] = dst.getFullPathName();
         }
-        else if (auto r = in.drumRenders.find (gm); r != in.drumRenders.end() && r->second.getNumSamples() > 0)
+        else if (auto r = in.laneRenders.find (L.role); r != in.laneRenders.end() && r->second.getNumSamples() > 0)
         {
-            auto dst = hgDir.getChildFile (juce::String ("HitGen ") + nm + ".wav");
+            auto dst = hgDir.getChildFile ("HitGen " + L.name + (L.gm < 0 ? " C5" : "") + ".wav");
             if (! writeWav (dst, r->second, in.renderRate)) { err = "write " + dst.getFullPathName(); return false; }
-            src.drums[gm] = dst.getFullPathName();
+            src.lanes[L.role] = dst.getFullPathName();
         }
     }
-    const char* const partNames[kNumTracks] = { "Chords", "Bass", "", "Melody" };
-    for (int t : { kChords, kBass, kMelody })
-        if (in.partRenders[(size_t) t].getNumSamples() > 0)
-        {
-            auto dst = hgDir.getChildFile (juce::String ("HitGen ") + partNames[t] + " C5.wav");
-            if (! writeWav (dst, in.partRenders[(size_t) t], in.renderRate)) { err = "write " + dst.getFullPathName(); return false; }
-            src.parts[(size_t) t] = dst.getFullPathName();
-        }
     // FX: önerilen sample (ters ipucunda ters çevrilmiş kopya) ya da HitGen sentezi
     const auto fxDir = in.dir.getChildFile ("Samples").getChildFile ("FX");
     std::map<juce::String, juce::String> made;
@@ -448,7 +440,7 @@ bool writeFlpProject (const ExportJobInput& in, ExportResult& R, juce::String& e
         FlpSources::Fx fx; fx.cue = cue; fx.path = path; fx.endAligned = a.endAligned; fx.seconds = audioSeconds (fm, juce::File (path));
         src.fx.push_back (fx);
     }
-    auto proj = buildFlp (in.sk, src, in.baseName);
+    auto proj = buildFlp (arr, src, in.baseName);
     R.flp = in.dir.getChildFile (juce::File::createLegalFileName (in.baseName + ".flp"));
     const auto bytes = writeFlp (proj);
     if (! R.flp.replaceWithData (bytes.getData(), bytes.getSize())) { err = "write " + R.flp.getFullPathName(); return false; }
@@ -461,32 +453,35 @@ bool renderStems (const Arrangement& a, Engine& E, double sr, const juce::File& 
                   std::atomic<int>* progress, int progressFrom, int progressTo, juce::StringPairArray& files, int* countOut)
 {
     if (a.P.bpm <= 0 || a.bars <= 0) return false;
-    struct Ev { juce::int64 at; int track, note, vel; double len; };
+    struct Ev { juce::int64 at; int track, note, vel; double len; int lane; };
     std::vector<Ev> ev;
     const double secPerTick = 60.0 / a.P.bpm / 480.0;
-    const int parts[4] = { kDrums, kBass, kChords, kMelody };
-    std::array<bool, kNumTracks> has {};
-    for (auto& L : a.lanes)
-        for (auto& n : L.notes)
+    for (size_t li = 0; li < a.lanes.size(); ++li)
+        for (auto& n : a.lanes[li].notes)
         {
             const int t0 = tickOf (n.s, a.P.swing), t1 = juce::jmax (t0 + 1, tickOf (n.s + n.l, a.P.swing));
-            ev.push_back ({ (juce::int64) std::llround (t0 * secPerTick * sr), L.part, n.n, n.v, (t1 - t0) * secPerTick });
-            has[(size_t) L.part] = true;
+            ev.push_back ({ (juce::int64) std::llround (t0 * secPerTick * sr), a.lanes[li].part, n.n, n.v, (t1 - t0) * secPerTick, (int) li });
         }
     std::stable_sort (ev.begin(), ev.end(), [] (const Ev& x, const Ev& y) { return x.at < y.at; });
+    // stem grupları: tüm davul şeritleri tek stem, her melodik şerit (bas, akor, pad, lead, arp) ayrı stem
+    struct Group { juce::String name; std::vector<int> lanes; int bus; };
+    std::vector<Group> groups;
+    { Group d { "Drums", {}, kDrums }; for (size_t li = 0; li < a.lanes.size(); ++li) if (a.lanes[li].gm >= 0) d.lanes.push_back ((int) li); if (! d.lanes.empty()) groups.push_back (d); }
+    for (size_t li = 0; li < a.lanes.size(); ++li) if (a.lanes[li].gm < 0) groups.push_back ({ a.lanes[li].name, { (int) li }, a.lanes[li].part });
     const juce::int64 N = (juce::int64) std::llround (a.seconds() * sr) + (juce::int64) (sr * 2);   // 2 sn kuyruk
-    const char* const names[kNumTracks] = { "Chords", "Bass", "Drums", "Melody" };
-    int made = 0, done = 0, total = 0; for (int p : parts) if (has[(size_t) p]) ++total;
     const auto stemDir = dir.getChildFile ("Stems");
     if (! stemDir.createDirectory()) return false;
-    for (int p : parts)
+    int made = 0;
+    for (size_t gi = 0; gi < groups.size(); ++gi)
     {
-        if (! has[(size_t) p]) continue;
-        for (int t = 0; t < kNumTracks; ++t) E.macros[(size_t) t].mute = t != p;
+        const auto& G = groups[gi];
+        std::vector<bool> on (a.lanes.size(), false); for (int li : G.lanes) on[(size_t) li] = true;
+        // yalnızca bu grubun bus'ı duyulur; davul vuruşları her zaman tetiklenir (sidechain pump karışımdaki gibi), sesleri susturulur
+        for (int t = 0; t < kNumTracks; ++t) E.macros[(size_t) t].mute = t != G.bus;
         E.reset(); E.allNotesOff();
         juce::AudioBuffer<float> blk (2, 512);
-        for (int i = 0; i < 8; ++i) { blk.clear(); E.render (blk, 0, 512); }   // bekleyen yamaları al, durumu temizle
-        const auto f = stemDir.getChildFile (juce::String (made + 1).paddedLeft ('0', 2) + " " + names[p] + ".wav");
+        for (int i = 0; i < 8; ++i) { blk.clear(); E.render (blk, 0, 512); }
+        const auto f = stemDir.getChildFile (juce::File::createLegalFileName (juce::String (made + 1).paddedLeft ('0', 2) + " " + G.name + ".wav"));
         f.deleteFile();
         std::unique_ptr<juce::OutputStream> os (f.createOutputStream());
         if (os == nullptr) return false;
@@ -503,20 +498,21 @@ bool renderStems (const Arrangement& a, Engine& E, double sr, const juce::File& 
             int at = 0;
             while (k < ev.size() && ev[k].at < pos + n)
             {
-                const int off = (int) std::clamp<juce::int64> (ev[k].at - pos, 0, n);
+                const auto& e = ev[k++];
+                const bool drum = e.track == kDrums;
+                if (! drum && ! on[(size_t) e.lane]) continue;
+                const int off = (int) std::clamp<juce::int64> (e.at - pos, 0, n);
                 if (off > at) { E.render (blk, at, off - at); at = off; }
-                if (ev[k].track == kDrums) E.drumHit (ev[k].note, ev[k].vel, 0);
-                else E.noteOn (ev[k].track, ev[k].note, ev[k].vel, ev[k].len, 0);
-                ++k;
+                if (drum) E.drumHit (e.note, e.vel, 0); else E.noteOn (e.track, e.note, e.vel, e.len, 0);
             }
             if (at < n) E.render (blk, at, n - at);
             if (! wr->writeFromAudioSampleBuffer (blk, 0, n)) return false;
             pos += n;
             if (progress != nullptr && (pos & 0xffff) < 512)
-                progress->store (progressFrom + (int) ((progressTo - progressFrom) * ((double) done + (double) pos / (double) N) / juce::jmax (1, total)));
+                progress->store (progressFrom + (int) ((progressTo - progressFrom) * ((double) gi + (double) pos / (double) N) / juce::jmax<size_t> (1, groups.size())));
         }
-        files.set ("stem_" + juce::String (names[p]).toLowerCase(), "Stems/" + f.getFileName());
-        ++made; ++done;
+        files.set ("stem_" + G.name.toLowerCase().replace (" ", ""), "Stems/" + f.getFileName());
+        ++made;
     }
     for (int t = 0; t < kNumTracks; ++t) E.macros[(size_t) t].mute = false;
     if (countOut != nullptr) *countOut = made;

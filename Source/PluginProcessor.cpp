@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "Arrangement.h"
 #include "PluginEditor.h"
 
 namespace
@@ -1244,44 +1245,38 @@ void HitGenProcessor::renderExportSounds (hg::ExportJobInput& in)
     };
     // nota uzunluğu: şarkıdaki notaların ortancası (FL Sampler sample'ı sonuna dek çalar)
     const double stepSec = 60.0 / juce::jmax (1, in.bpm) / 4.0;
-    auto median = [&] (int t)
+    // aranjmandaki her melodik şerit için tek nota (C5): bas, akor, lead, pad (akor sesi, uzun), arp (lead sesi, kısa)
+    const auto arr = hg::buildArrangement (in.sk);
+    for (auto& L : arr.lanes)
     {
-        std::vector<double> l; for (auto& n : in.sk.song.tracks[(size_t) t]) l.push_back (n.l);
-        if (l.empty()) return 4.0;
-        std::nth_element (l.begin(), l.begin() + (long) l.size() / 2, l.end());
-        return l[l.size() / 2];
-    };
-    const struct { int t; double lo, hi; } parts[] = { { hg::kChords, .5, 6.0 }, { hg::kBass, .15, 2.0 }, { hg::kMelody, .15, 2.0 } };
-    for (auto& pd : parts)
-    {
-        if (in.sk.song.tracks[(size_t) pd.t].empty()) continue;
-        const double dur = juce::jlimit (pd.lo, pd.hi, median (pd.t) * stepSec);
-        const bool pad = pd.t == hg::kChords;
-        auto r = renderFor (dur + (pad ? 1.0 : .35), [&] { E->noteOn (pd.t, 60, 104, dur, 0); });
-        // FL Sampler örneği sonuna dek çalar: notadan sonra kısa bir sönüm, bas ve melodide kuyruklar üst üste binmesin
-        const int from = (int) (rsr * dur), rel = (int) (rsr * (pad ? .6 : .12));
+        if (L.gm >= 0) continue;
+        std::vector<double> lens; for (auto& n : L.notes) lens.push_back (n.l);
+        std::nth_element (lens.begin(), lens.begin() + (long) lens.size() / 2, lens.end());
+        const double med = lens.empty() ? 4.0 : lens[lens.size() / 2];
+        const bool longOne = L.role == "chords" || L.role == "pad";
+        const double lo = longOne ? .5 : .12, hi = L.role == "pad" ? 8.0 : longOne ? 6.0 : 2.0;
+        const double dur = juce::jlimit (lo, hi, med * stepSec);
+        auto r = renderFor (dur + (longOne ? 1.0 : .35), [&] { E->noteOn (L.part, 60, 104, dur, 0); });
+        // FL Sampler örneği sonuna dek çalar: notadan sonra kısa bir sönüm, kuyruklar üst üste binmesin
+        const int from = (int) (rsr * dur), rel = (int) (rsr * (longOne ? .6 : .12));
         if (r.getNumSamples() > from + 8)
         {
             const int n = juce::jmin (rel, r.getNumSamples() - from);
             for (int c = 0; c < r.getNumChannels(); ++c) r.applyGainRamp (c, from, n, 1.0f, 0.0f);
             r.setSize (r.getNumChannels(), from + n, true);
         }
-        in.partRenders[(size_t) pd.t] = std::move (r);
+        in.laneRenders[L.role] = std::move (r);
     }
-    for (int gm : { 36, 37, 38, 39, 42, 46, 64 })
-    {
-        bool has = false; for (auto& n : in.sk.song.tracks[hg::kDrums]) if (n.n == gm) { has = true; break; }
-        if (! has) continue;
-        in.drumRenders[gm] = renderFor (1.5, [&] { E->drumHit (gm, 112, 0); });
-    }
+    for (auto& L : arr.lanes)
+        if (L.gm >= 0) in.laneRenders[L.role] = renderFor (1.5, [&] { E->drumHit (L.gm, 112, 0); });
     // kütüphane varsa davullar için önerilen one-shot'lar
-    if (auto L = lib)
+    if (auto Lb = lib)
     {
-        const struct { int gm, cat; const char* pref; } m[] = { { 36, hg::kCatKick, "" }, { 38, hg::kCatSnare, "" }, { 39, hg::kCatClap, "" }, { 42, hg::kCatHat, "" },
-                                                               { 46, hg::kCatOpenHat, "" }, { 37, hg::kCatPerc, "rim" }, { 64, hg::kCatShaker, "" } };
+        const struct { const char* role; int cat; const char* pref; int salt; } m[] = { { "kick", hg::kCatKick, "", 36 }, { "snare", hg::kCatSnare, "", 38 }, { "clap", hg::kCatClap, "", 39 },
+            { "hat", hg::kCatHat, "", 42 }, { "ohat", hg::kCatOpenHat, "", 46 }, { "rim", hg::kCatPerc, "rim", 37 }, { "perc", hg::kCatShaker, "", 64 } };
         for (auto& x : m)
-            if (in.drumRenders.count (x.gm))
-                if (auto* e = L->pickCat (x.cat, x.pref, in.bpm, in.seed, x.gm * 131, true)) in.drumFiles[x.gm] = e->file;
+            if (in.laneRenders.count (x.role))
+                if (auto* e = Lb->pickCat (x.cat, x.pref, in.bpm, in.seed, x.salt * 131, true)) in.laneFiles[x.role] = e->file;
     }
     E->collectGarbage();
     E->quality = hg::Quality { 4, 16, true };   // stem'ler: tam şarkı, dengeli kalite

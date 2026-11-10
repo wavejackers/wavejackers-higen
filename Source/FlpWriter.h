@@ -38,10 +38,10 @@ bool readFlpEvents (const juce::MemoryBlock& file, int& ppq, int& numChannels, s
 // fx: ipucu başına ses klibi (wav ve saniye cinsinden uzunluk). Yollar mutlak olmalı.
 struct FlpSources
 {
-    std::map<int, juce::String> drums;                 // GM nota -> wav yolu
-    std::array<juce::String, kNumTracks> parts;        // kChords, kBass, kMelody (kDrums boş)
+    std::map<juce::String, juce::String> lanes;        // şerit rolü (kick, bass, pad, arp...) -> wav yolu (melodik: C5 kök)
     struct Fx { SkCue cue; juce::String path; double seconds = 0; bool endAligned = false; };
     std::vector<Fx> fx;
 };
-FlpProject buildFlp (const Skeleton& sk, const FlpSources& src, const juce::String& title);
+struct Arrangement;
+FlpProject buildFlp (const Arrangement& a, const FlpSources& src, const juce::String& title);
 }

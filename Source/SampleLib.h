@@ -46,9 +46,8 @@ struct ExportJobInput
     // FL Studio projesi için: HitGen'in kendi sesleri (davul vuruşları GM notasına göre, akor/bas/melodi C5'te tek nota)
     // ve kütüphaneden önerilen davul one-shot'ları (varsa render yerine kullanılır)
     bool writeFlp = true;
-    std::map<int, juce::AudioBuffer<float>> drumRenders;
-    std::array<juce::AudioBuffer<float>, kNumTracks> partRenders;
-    std::map<int, juce::File> drumFiles;
+    std::map<juce::String, juce::AudioBuffer<float>> laneRenders;   // şerit rolü -> HitGen sesi (melodik: C5'te tek nota)
+    std::map<juce::String, juce::File> laneFiles;                   // şerit rolü -> kütüphaneden önerilen one-shot (davullar)
     double renderRate = 44100;
     // HitGen 3.0: tam şarkı stem'leri (iz başına, diğer izler sessiz; pump ve efektler karışımdakiyle aynı) ve DAW köprüleri
     bool writeStems = true, writeBridges = true;

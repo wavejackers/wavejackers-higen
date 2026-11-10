@@ -1,5 +1,6 @@
 #include "FlpWriter.h"
 #include "SampleLib.h"
+#include "Arrangement.h"
 #include <map>
 
 namespace hg
@@ -204,66 +205,52 @@ bool readFlpEvents (const juce::MemoryBlock& file, int& ppq, int& numChannels, s
 namespace
 {
 juce::uint32 rgb (int r, int g, int b) { return (juce::uint32) ((b << 16) | (g << 8) | r); }   // FL: 0x00BBGGRR
-struct Lane { juce::String name; juce::uint32 colour; int track = -1, gm = -1; };
 }
 
-FlpProject buildFlp (const Skeleton& sk, const FlpSources& src, const juce::String& title)
+FlpProject buildFlp (const Arrangement& arr, const FlpSources& src, const juce::String& title)
 {
-    FlpProject P; P.ppq = 96; P.bpm = sk.song.P.bpm > 0 ? sk.song.P.bpm : 120; P.title = title;
-    P.genre = sk.profile == "organic" ? "Organic House" : sk.profile == "techno" ? "Melodic Techno" : "EDM";
+    FlpProject P; P.ppq = 96; P.bpm = arr.P.bpm > 0 ? arr.P.bpm : 120; P.title = title;
+    P.genre = arr.profile == "organic" ? "Organic House" : arr.profile == "techno" ? "Melodic Techno" : "EDM";
     P.comment = "Wavejackers HitGen project skeleton";
     const int step = P.ppq / 4, bar = P.ppq * 4;
-    // davul şeritleri: şarkıda notası olan her GM vuruşu ayrı kanal ve iz
-    const struct { int gm; const char* name; juce::uint32 col; } drumDefs[] = {
-        { 36, "Kick", rgb (226, 87, 76) }, { 39, "Clap", rgb (240, 160, 70) }, { 38, "Snare", rgb (236, 190, 80) }, { 42, "Hat", rgb (227, 187, 98) },
-        { 46, "Open Hat", rgb (210, 200, 120) }, { 37, "Rim", rgb (180, 160, 110) }, { 64, "Perc", rgb (170, 140, 90) } };
-    std::vector<Lane> lanes; std::map<int, int> laneOfGm;
-    for (auto& d : drumDefs)
+    static const std::map<juce::String, juce::uint32> colours {
+        { "kick", rgb (226, 87, 76) }, { "clap", rgb (240, 160, 70) }, { "snare", rgb (236, 190, 80) }, { "hat", rgb (227, 187, 98) },
+        { "ohat", rgb (210, 200, 120) }, { "rim", rgb (180, 160, 110) }, { "perc", rgb (170, 140, 90) },
+        { "bass", rgb (90, 150, 230) }, { "chords", rgb (150, 110, 220) }, { "lead", rgb (90, 200, 170) }, { "pad", rgb (120, 140, 230) }, { "arp", rgb (110, 210, 230) } };
+    // kanal + iz: aranjmandaki her şerit (davul vuruşları, bas, akor, pad, lead, arp)
+    for (size_t i = 0; i < arr.lanes.size(); ++i)
     {
-        bool has = false; for (auto& n : sk.song.tracks[kDrums]) if (n.n == d.gm) { has = true; break; }
-        if (! has) continue;
-        laneOfGm[d.gm] = (int) lanes.size();
-        lanes.push_back ({ d.name, d.col, -1, d.gm });
-    }
-    const struct { int t; const char* name; juce::uint32 col; } partDefs[] = { { kBass, "Bass", rgb (90, 150, 230) }, { kChords, "Chords", rgb (150, 110, 220) }, { kMelody, "Melody", rgb (90, 200, 170) } };
-    std::map<int, int> laneOfPart;
-    for (auto& d : partDefs)
-        if (! sk.song.tracks[(size_t) d.t].empty()) { laneOfPart[d.t] = (int) lanes.size(); lanes.push_back ({ d.name, d.col, -1, -1 }); }
-    // kanallar + izler (şerit sırası)
-    for (size_t i = 0; i < lanes.size(); ++i)
-    {
-        auto& L = lanes[i]; L.track = (int) i;
-        FlpChannel ch; ch.name = L.name; ch.colour = L.colour; ch.insert = (int) i + 1;
-        if (L.gm >= 0) { auto it = src.drums.find (L.gm); if (it != src.drums.end()) ch.samplePath = it->second; }
-        else for (auto& [t, li] : laneOfPart) if (li == (int) i) ch.samplePath = src.parts[(size_t) t];
+        const auto& L = arr.lanes[i];
+        FlpChannel ch; ch.name = L.name; ch.insert = (int) i + 1;
+        auto c = colours.find (L.role); ch.colour = c != colours.end() ? c->second : rgb (120, 130, 150);
+        if (auto it = src.lanes.find (L.role); it != src.lanes.end()) ch.samplePath = it->second;
         P.channels.push_back (ch);
-        P.tracks.push_back ({ L.name, L.colour });
+        P.tracks.push_back ({ L.name, ch.colour });
     }
     // pattern'ler: şerit x bölüm
-    for (auto& s : sk.secs)
+    for (auto& s : arr.secs)
     {
         const double a = s.bar * 16.0, b = (s.bar + s.bars) * 16.0;
-        auto addPattern = [&] (int laneIdx, const std::vector<NoteEv>& src_, int gm, bool melodic)
+        for (size_t li = 0; li < arr.lanes.size(); ++li)
         {
-            FlpPattern pt; pt.channel = laneIdx; pt.colour = lanes[(size_t) laneIdx].colour;
-            pt.name = lanes[(size_t) laneIdx].name + " - " + s.name; pt.lengthTicks = s.bars * bar;
-            for (auto& n : src_)
+            const auto& L = arr.lanes[li]; const bool melodic = L.gm < 0;
+            FlpPattern pt; pt.channel = (int) li; pt.colour = P.channels[li].colour;
+            pt.name = L.name + " - " + s.name; pt.lengthTicks = s.bars * bar;
+            for (auto& n : L.notes)
             {
-                if (n.s < a || n.s >= b || (gm >= 0 && n.n != gm)) continue;
+                if (n.s < a || n.s >= b) continue;
                 FlpNote fn; fn.pos = juce::roundToInt ((n.s - a) * step); fn.len = juce::jmax (melodic ? 6 : step, juce::roundToInt (n.l * step));
                 fn.key = melodic ? n.n : 60; fn.vel = juce::jlimit (1, 128, juce::roundToInt (n.v * 128.0 / 127.0));
                 pt.notes.push_back (fn);
             }
-            if (pt.notes.empty()) return;
+            if (pt.notes.empty()) continue;
             P.patterns.push_back (std::move (pt));
-            P.items.push_back ({ true, (int) P.patterns.size(), s.bar * bar, s.bars * bar, lanes[(size_t) laneIdx].track });
-        };
-        for (auto& [gm, li] : laneOfGm) addPattern (li, sk.song.tracks[kDrums], gm, false);
-        for (auto& [t, li] : laneOfPart) addPattern (li, sk.song.tracks[(size_t) t], -1, true);
+            P.items.push_back ({ true, (int) P.patterns.size(), s.bar * bar, s.bars * bar, (int) li });
+        }
     }
     // FX ses klipleri: ipucu türü başına bir iz, dosya başına bir kanal
     std::map<juce::String, int> fxTrack, fxChannel;
-    const int total = sk.song.bars * bar;
+    const int total = arr.bars * bar;
     for (auto& f : src.fx)
     {
         if (f.path.isEmpty() || f.seconds <= 0) continue;
@@ -287,7 +274,7 @@ FlpProject buildFlp (const Skeleton& sk, const FlpSources& src, const juce::Stri
         it.len = juce::jmin (it.len, total - it.pos);
         if (it.len > 0) P.items.push_back (it);
     }
-    for (auto& s : sk.secs) P.markers.push_back ({ s.bar * bar, s.name });
+    for (auto& s : arr.secs) P.markers.push_back ({ s.bar * bar, s.name });
     // FL 21 playlist öğeleri 60 bayt, FL 20.9 öğeleri 32 bayt: toplam bayt 60'a bölünürse bazı okuyucular boyu yanlış tahmin eder.
     // Belirsizlik kalmasın: gerekirse boş, 1 ölçülük bir bilgi klibi eklenir (ses üretmez).
     if (P.items.size() % 15 == 0)

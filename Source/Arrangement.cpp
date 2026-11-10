@@ -1,5 +1,6 @@
 #include "Arrangement.h"
 #include "Data.h"
+#include <algorithm>
 #ifndef JucePlugin_VersionString
  #define JucePlugin_VersionString "3.0.0"
 #endif
@@ -12,7 +13,7 @@ struct LaneDef { const char* name; const char* role; int part, gm, ch; };
 const LaneDef kLanes[] = {
     { "Kick", "kick", kDrums, 36, 9 }, { "Clap", "clap", kDrums, 39, 9 }, { "Snare", "snare", kDrums, 38, 9 }, { "Hat", "hat", kDrums, 42, 9 },
     { "Open Hat", "ohat", kDrums, 46, 9 }, { "Rim", "rim", kDrums, 37, 9 }, { "Perc", "perc", kDrums, 64, 9 },
-    { "Bass", "bass", kBass, -1, 1 }, { "Chords", "chords", kChords, -1, 0 }, { "Melody", "melody", kMelody, -1, 2 } };
+    { "Bass", "bass", kBass, -1, 1 }, { "Chords", "chords", kChords, -1, 0 }, { "Lead", "lead", kMelody, -1, 2 } };
 
 juce::String pyStr (const juce::String& s)   // Python dizgesi: tırnak ve ters bölü kaçışlı, ASCII dışı \u
 {
@@ -27,6 +28,70 @@ juce::String pyStr (const juce::String& s)   // Python dizgesi: tırnak ve ters 
 }
 }
 
+// ---- türetilmiş katmanlar: akor ilerleyişinden Pad (uzun, geniş) ve Arp (16'lık/8'lik akor tonu yürüyüşü).
+// Üretim algoritmasına dokunmaz; yalnızca aranjman çıktılarında (MIDI, FL, Ableton, stem) ayrı izler olarak yer alır.
+static bool padIn (const juce::String& profile, const SkSection& s, int bi)
+{
+    const auto& k = s.kind;
+    if (profile == "edm") return k == "break" || k == "build";
+    if (profile == "organic") return true;   // Black Coffee: pad bütün parça boyunca
+    if (k == "intro") return bi >= juce::jmin (8, s.bars / 2);
+    if (k == "outro") return bi < s.bars / 2;
+    return true;
+}
+static bool arpIn (const juce::String& profile, const SkSection& s, int bi)
+{
+    const auto& k = s.kind; const bool main = k == "drop" || k == "groove";
+    if (profile == "organic") return main && bi >= s.bars / 2;
+    if (main) return true;
+    return k == "build" && bi >= s.bars / 2;
+}
+static std::vector<int> chordPcs (const ChordInfo& c)
+{
+    std::vector<int> pcs; for (int m : c.midi) { const int pc = ((m % 12) + 12) % 12; if (std::find (pcs.begin(), pcs.end(), pc) == pcs.end()) pcs.push_back (pc); }
+    if (pcs.empty()) pcs = { ((c.pc % 12) + 12) % 12 };
+    return pcs;
+}
+static void deriveLayers (Arrangement& a, const Skeleton& sk)
+{
+    const auto& ch = sk.song.chords;
+    if (ch.empty()) return;
+    ArrLane pad; pad.name = "Pad"; pad.role = "pad"; pad.part = kChords; pad.midiChannel = 3;
+    ArrLane arp; arp.name = "Arp"; arp.role = "arp"; arp.part = kMelody; arp.midiChannel = 4;
+    std::vector<int> prev; int prevBar = -2;
+    for (auto& s : sk.secs)
+        for (int bi = 0; bi < s.bars; ++bi)
+        {
+            const int bar = s.bar + bi;
+            if (bar >= (int) ch.size()) break;
+            auto pcs = chordPcs (ch[(size_t) bar]);
+            const int root = ((ch[(size_t) bar].pc % 12) + 12) % 12;
+            if (padIn (a.profile, s, bi))
+            {   // geniş voicing: kök 48-59 arası, akor tonları 60-71 arası
+                std::vector<int> v { 48 + root }; for (int pc : pcs) v.push_back (60 + pc);
+                std::sort (v.begin(), v.end());
+                if (v == prev && prevBar == bar - 1)
+                {   // aynı akor sürüyor: notaları uzat
+                    for (auto it = pad.notes.rbegin(); it != pad.notes.rend() && it->s + it->l >= bar * 16.0 - 1e-9; ++it) it->l += 16;
+                }
+                else for (int n : v) pad.notes.push_back ({ bar * 16.0, 16.0, n, 62 });
+                prev = v; prevBar = bar;
+            }
+            else prevBar = -2;
+            if (arpIn (a.profile, s, bi))
+            {
+                int base = 60 + root; if (base > 66) base -= 12;   // kök 54-66 arası, tonlar bir oktav içinde yukarı
+                std::vector<int> tones; for (int pc : pcs) tones.push_back (base + ((pc - root + 12) % 12));
+                std::sort (tones.begin(), tones.end()); tones.push_back (base + 12);
+                const int step = a.profile == "organic" ? 2 : 1;
+                for (int k = 0, i = 0; k < 16; k += step, ++i)
+                    arp.notes.push_back ({ bar * 16.0 + k, step * .9, tones[(size_t) i % tones.size()], k % 4 == 0 ? 92 : 70 });
+            }
+        }
+    if (! pad.notes.empty()) a.lanes.push_back (std::move (pad));
+    if (! arp.notes.empty()) a.lanes.push_back (std::move (arp));
+}
+
 Arrangement buildArrangement (const Skeleton& sk)
 {
     Arrangement a;
@@ -37,6 +102,7 @@ Arrangement buildArrangement (const Skeleton& sk)
         for (auto& n : sk.song.tracks[(size_t) d.part]) if (d.gm < 0 || n.n == d.gm) L.notes.push_back (n);
         if (! L.notes.empty()) a.lanes.push_back (std::move (L));
     }
+    deriveLayers (a, sk);
     return a;
 }
 

@@ -411,6 +411,19 @@ static bool quickRun() { return juce::SystemStats::getEnvironmentVariable ("HITG
 static void checkBridges (const hg::ExportResult& er, const hg::Skeleton& sk, const FailFn& fail)
 {
     const auto arr = hg::buildArrangement (sk);
+    {   // türetilmiş katmanlar: pad (uzun notalar, 48-72), arp (drop'larda, 54-78), lead = melodi
+        const hg::ArrLane* pad = nullptr; const hg::ArrLane* arp = nullptr; bool lead = false;
+        for (auto& L : arr.lanes) { if (L.role == "pad") pad = &L; if (L.role == "arp") arp = &L; if (L.role == "lead") lead = true; }
+        if (pad == nullptr || arp == nullptr || ! lead) fail ("bridges: pad/arp/lead lanes missing");
+        else
+        {
+            for (auto& n : pad->notes) if (n.n < 48 || n.n > 72 || n.l < 16) { fail ("bridges: pad note out of range"); break; }
+            for (auto& n : arp->notes) if (n.n < 54 || n.n > 78 || n.l > 2) { fail ("bridges: arp note out of range"); break; }
+            int inDrop = 0, inBreak = 0;
+            for (auto& n : arp->notes) for (auto& x : sk.secs) if (n.s >= x.bar * 16 && n.s < (x.bar + x.bars) * 16) { if (x.kind == "drop") ++inDrop; if (x.kind == "break") ++inBreak; }
+            if (inDrop == 0 || inBreak != 0) fail ("bridges: arp placement drop " + juce::String (inDrop) + " break " + juce::String (inBreak));
+        }
+    }
     {
         juce::FileInputStream in (er.midi); juce::MidiFile mf;
         if (! in.openedOk() || ! mf.readFrom (in)) { fail ("bridges: arrangement midi unreadable"); return; }
@@ -449,7 +462,8 @@ static void checkBridges (const hg::ExportResult& er, const hg::Skeleton& sk, co
         }
     }
     {
-        if (er.stems < 4 && ! quickRun()) fail ("bridges: stems " + juce::String (er.stems));
+        int groups = 1; for (auto& L : arr.lanes) if (L.gm < 0) ++groups;   // davullar tek stem + her melodik şerit
+        if (er.stems != groups && ! quickRun()) fail ("bridges: stems " + juce::String (er.stems) + " want " + juce::String (groups));
         juce::AudioFormatManager fm; fm.registerBasicFormats();
         auto rms = [] (juce::AudioFormatReader& r, double t0, double t1)
         {
