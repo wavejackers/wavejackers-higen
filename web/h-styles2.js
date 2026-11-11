@@ -3,6 +3,8 @@
 HG.BP.slap = [[0,2,1,110],[3,1,3,96],[6,2,1,104],[8,1,1,108],[10,1,3,98],[11,1,1,88],[14,2,3,100]];
 HG.BP.garage = [[0,3,1,104],[7,2,1,92],[10,3,3,98],[14,2,1,90]];
 HG.BP.rubber = [[0,1,1,110],[2,2,1,96],[4,1,3,90],[6,1,1,104],[7,1,1,86],[10,2,2,98],[12,1,1,108],[14,2,3,96]];
+// Tech house bas (Logic Pro anlatımından): 1. adım kick'e bırakılır, çoğu nota kök, ölçü sonunda oktav/üçlü sıçraması
+HG.BP.techh = [[1,1,1,90],[2,1,1,100],[3,1,1,86],[5,1,1,88],[6,1,1,100],[7,1,1,84],[9,1,1,88],[10,1,1,100],[11,1,1,84],[13,1,1,86],[14,1,3,98],[15,1,4,88]];
 HG.BP.psy = [[1,1,1,92],[2,1,1,104],[3,1,1,96],[5,1,1,92],[6,1,1,104],[7,1,1,96],[9,1,1,92],[10,1,1,104],[11,1,1,96],[13,1,1,92],[14,1,1,104],[15,1,1,96]];
 HG.BP.rumble = [[2,1,1,104],[3,1,1,84],[6,1,1,104],[7,1,1,84],[10,1,1,104],[11,1,1,84],[14,1,1,104],[15,1,1,84]];
 
@@ -144,4 +146,12 @@ HG.BP.rumble = [[2,1,1,104],[3,1,1,84],[6,1,1,104],[7,1,1,84],[10,1,1,104],[11,1
     pump: { chords: [.35, .2], bass: [.35, .18], melody: [.15, .2] },
     arr: [['Intro', 16], ['Groove', 32], ['Break', 16], ['Build', 8], ['Drop', 32], ['Outro', 16]],
     var: [{ prog: [0, 6, 5, 6] }, { scale: 'dorian', prog: [0, 3, 0, 3] }, { prog: [0, 5, 3, 4], mm: 'hook', hr: ['h2'], md: .4 }, { prog: [0, 0, 6, 5], cm: 'sustain', cp: 'long', md: .5 }] });
+  add({ id: 'techhouse', artist: 'Tech House', grp: 'house', accent: '#ffb02e', bpm: [124, 128], bpmDef: 126, key: 5, scales: ['minor', 'dorian'], swing: 16,
+    chord: { mode: 'stab', pats: ['sparse', 'push'] }, bass: { pats: ['techh'], oct: 36 },
+    drums: { kick: K4, clap: C24, chat: H16, ohat: OFF, rim: '.......x.......x', perc: '..x.....x..x....', fill: 'perc', hacc: 'off' },
+    mel: { mode: 'chop', dens: .35, oct: 72 },
+    sound: { chords: 'dd-funk-stab', bass: 'dd-bounce-bass', melody: 'vox-chop', drums: 'house' },
+    pump: { chords: [.35, .2], bass: [.5, .18], melody: [.1, .2] },
+    arr: [['Intro', 16], ['Groove', 32], ['Break', 16], ['Groove', 32], ['Outro', 16]],
+    var: [{ prog: [0, 0, 0, 0] }, { prog: [0, 0, 6, 0], bp: 'bounce' }, { prog: [0, 0, 5, 6], mm: 'chop', md: 1.0 }, { prog: [0, 0, 0, 0], dr: { perc: 'x..x..x...x.x...' }, md: .2 }] });
 })();

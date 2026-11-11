@@ -46,6 +46,8 @@ static bool arpIn (const juce::String& profile, const SkSection& s, int bi)
     if (main) return true;
     return k == "build" && bi >= s.bars / 2;
 }
+// Afro/organik teknikleri (Blessings): yalnızca afro grubundaki stiller; tech house kendi perküsyonunu ve groove'unu korur
+static bool isAfro (const Arrangement& a) { return a.profile == "organic" && Data::get().styleById (a.P.style)["grp"].toString() == "afro"; }
 static bool mainSec (const SkSection& s) { return s.kind == "drop" || s.kind == "groove"; }
 
 // ---- "Blessings" (Liva K) anlatımından: az eleman, tek tonal çapa, oktav yükselen stab, seyrek perküsyon, hızlanan buildup.
@@ -53,7 +55,7 @@ static bool mainSec (const SkSection& s) { return s.kind == "drop" || s.kind == 
 // buildup'larda dört ölçüde bir ipucu verir (drop'ta duyulacak sesi önceden ezberletir).
 static void deriveStab (Arrangement& a, const Skeleton& sk)
 {
-    if (a.profile != "organic") return;
+    if (! isAfro (a)) return;
     ArrLane st; st.name = "Stab"; st.role = "stab"; st.part = kBass; st.midiChannel = 5;
     const int root = ((a.P.key % 12) + 12) % 12;
     static const int steps[] = { 0, 3, 6, 10 }; static const int vel[] = { 100, 78, 88, 78 };
@@ -106,7 +108,7 @@ static void deriveBuildAuto (Arrangement& a, const Skeleton& sk)
 // Perküsyon inceltme (organic): kalabalık loop yerine ölçü başına en fazla 2 vuruş (en güçlüler kalır)
 static void thinPerc (Arrangement& a)
 {
-    if (a.profile != "organic") return;
+    if (! isAfro (a)) return;
     for (auto& L : a.lanes)
     {
         if (L.role != "perc") continue;

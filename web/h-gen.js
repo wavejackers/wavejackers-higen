@@ -105,12 +105,15 @@ HG.generate = function (P) {
         if (lane === 'chat' && s % 2 === 1 && rd() > .55 + energy * .45) continue;
         if ((lane === 'perc' || lane === 'rim' || lane === 'chat') && rd() < orig * .07) continue;
         let v = bv + (c === 'X' ? 8 : 0);
-        if (lane === 'chat') v = s % 4 === 0 ? 92 : s % 2 === 0 ? 78 : 58;
+        if (lane === 'chat') v = D.hacc === 'off' ? (s % 4 === 2 ? 92 : s % 2 === 0 ? 68 : 56) : s % 4 === 0 ? 92 : s % 2 === 0 ? 78 : 58;
         add('drums', base + s, .9, note, v + Math.floor(rd() * 10) - 5);
       }
     });
     if (orig > .1) for (let s = 1; s < 16; s += 2) if (rd() < orig * .06 && !T.drums.some(x => x.s === base + s)) add('drums', base + s, .9, rd() < .5 ? G.rim : G.perc, 48 + Math.floor(rd() * 20));
-    if (D.fill !== 'none' && b % 4 === 3 && b > 0 && bars > 4) {
+    if (D.fill === 'perc' && b % 4 === 3 && b > 0 && bars > 4) {   // perküsyon fill'i: her seferinde farklı, 8. ölçüde daha uzun
+      const big = b % 8 === 7, from = big ? 8 : 12, pr = big ? .75 : .6;
+      for (let s = from; s < 16; s++) if (rd() < pr) { const nn = rd() < .3 ? G.rim : G.perc; if (!T.drums.some(x => x.s === base + s && x.n === nn)) add('drums', base + s, .9, nn, 52 + Math.floor(rd() * 44)); }
+    } else if (D.fill !== 'none' && D.fill !== 'perc' && b % 4 === 3 && b > 0 && bars > 4) {
       const note = D.fill === 'snare' ? G.snare : G.clap;
       [12, 13, 14, 15].forEach((s, i) => { if (rd() < .8 && !T.drums.some(x => x.s === base + s && x.n === note)) add('drums', base + s, .9, note, 70 + i * 12); });
     }

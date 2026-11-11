@@ -7,7 +7,7 @@
 #include "Ui.h"
 
 struct HgGenre { const char* id; const char* name; const char* style; const char* fallback; int bpm; int structure; int seconds; };
-extern const HgGenre kHgGenres[5];
+extern const HgGenre kHgGenres[6];
 
 class AutoProducerPanel : public juce::Component
 {

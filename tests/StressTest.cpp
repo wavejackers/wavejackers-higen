@@ -430,7 +430,7 @@ static void checkBridges (const hg::ExportResult& er, const hg::Skeleton& sk, co
     {   // "Blessings" teknikleri: seyrek perküsyon, oktav yükselen stab, hızlanan buildup + pitch bend
         const hg::ArrLane* stab = nullptr; const hg::ArrLane* stut = nullptr; const hg::ArrLane* perc = nullptr;
         for (auto& L : arr.lanes) { if (L.role == "stab") stab = &L; if (L.role == "stutter") stut = &L; if (L.role == "perc") perc = &L; }
-        const bool organic = arr.profile == "organic";
+        const bool organic = arr.profile == "organic" && hg::Data::get().styleById (arr.P.style)["grp"].toString() == "afro";
         if (organic != (stab != nullptr)) fail ("bridges: stab lane only for organic");
         if (organic && perc != nullptr)
         {
@@ -947,7 +947,7 @@ static void testProducer (const juce::File& outDir, const FailFn& fail)
     // 4) Auto Producer: her tür tek tıkla
     std::unique_ptr<HitGenEditor> ed (dynamic_cast<HitGenEditor*> (p.createEditor()));
     ed->setTab (5);
-    for (int gi = 0; gi < 5; ++gi)
+    for (int gi = 0; gi < 6; ++gi)
     {
         auto panel = ed->project()->makePanel (true);
         auto* ap = dynamic_cast<AutoProducerPanel*> (panel.get());
@@ -983,6 +983,41 @@ static void testProducer (const juce::File& outDir, const FailFn& fail)
 
 
 // çok çıkış: ek bus'lar kapalıyken her şey ana çıkışta; açılınca her iz kendi çıkışında, ana çıkışta kalmaz
+// Tech house stili ("Logic Pro tech house" anlatımından): bas 1. adımı kick'e bırakır, açık hat'ler off-beat, kapalı hat'lerde
+// off-beat vurgu, hayalet rim, perküsyon fill'leri her seferinde farklı; Arrangement'ta afro teknikleri (Stab, perc inceltme) yok
+static void testTechHouse (const FailFn& fail)
+{
+    HitGenProcessor p; const auto& D = p.data;
+    if (D.styleIndex ("techhouse") < 0) { fail ("techhouse: style missing"); return; }
+    setP (p, "style", (float) D.styleIndex ("techhouse")); p.applyStyleDefaults(); setP (p, "bars", 2.0f); p.regenerateNow();
+    const auto r = p.result(); if (r == nullptr || r->bars < 16) { fail ("techhouse: result"); return; }
+    int onKick = 0, badOpen = 0, ghost = 0; double accSum = 0, onSum = 0; int accN = 0, onN = 0;
+    for (auto& n : r->tracks[hg::kBass]) if (std::fmod (n.s, 16.0) == 0.0) ++onKick;
+    for (auto& n : r->tracks[hg::kDrums])
+    {
+        const int st = (int) std::fmod (n.s, 16.0);
+        if (n.n == 46 && st % 4 != 2) ++badOpen;
+        if (n.n == 37 && (st == 7 || st == 15)) ++ghost;
+        if (n.n == 42) { if (st % 4 == 2) { accSum += n.v; ++accN; } else if (st % 4 == 0) { onSum += n.v; ++onN; } }
+    }
+    if (onKick != 0) fail ("techhouse: bass plays on the first 16th of a bar " + juce::String (onKick));
+    if (badOpen != 0) fail ("techhouse: open hats must stay on the off-beat, got " + juce::String (badOpen) + " elsewhere");
+    if (ghost < 8) fail ("techhouse: ghost rims missing");
+    if (accN == 0 || onN == 0 || accSum / accN < onSum / onN + 10) fail ("techhouse: closed hat off-beat accent");
+    std::set<juce::String> fills; int nonEmpty = 0;
+    for (int b : { 3, 7, 11, 15 })
+    {
+        juce::String sig; for (auto& n : r->tracks[hg::kDrums]) if (n.n == 64 && (int) (n.s / 16) == b && std::fmod (n.s, 16.0) >= 12.0) sig << (int) n.s << ",";
+        if (sig.isNotEmpty()) ++nonEmpty;
+        fills.insert (sig);
+    }
+    if (nonEmpty < 3 || fills.size() < 2) fail ("techhouse: percussion fills must differ (" + juce::String ((int) fills.size()) + " distinct, " + juce::String (nonEmpty) + " non-empty)");
+    // afro teknikleri tech house'a uygulanmamalı: Perc şeridi inceltilmemiş, Stab yok
+    hg::Skeleton sk = p.skeletonNow(); const auto arr = hg::buildArrangement (sk);
+    for (auto& L : arr.lanes) if (L.role == "stab") fail ("techhouse: afro stab lane must not exist");
+    std::cout << "techhouse ok: " << r->bars << " bars, fills " << fills.size() << " distinct\n";
+}
+
 static void testMultiOut (const FailFn& fail)
 {
     auto measure = [&] (bool aux, std::array<double, 5>& rms)
@@ -1499,6 +1534,7 @@ int main (int argc, char** argv)
     testOwnSoundAndEdit (outDir, fail);
     testSkeleton (outDir, fail);
     testProducer (outDir, fail);
+    testTechHouse (fail);
     testMultiOut (fail);
     testReference (outDir, fail); testSampler (fail); testLibrary (fail); testMidiLearn (outDir, fail);
     testLoudness (outDir, fail, quick); testDrumMachine (outDir, fail); testGuideAndAssistant (outDir, fail);

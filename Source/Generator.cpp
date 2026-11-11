@@ -211,6 +211,7 @@ Result generate (const Data& data, const GenParams& P)
     const Lane lanes[] = { { "kick", kGM_kick, 118 }, { "clap", kGM_clap, 100 }, { "snare", kGM_snare, 106 }, { "chat", kGM_chat, 80 }, { "ohat", kGM_ohat, 90 }, { "rim", kGM_rim, 70 }, { "perc", kGM_perc, 80 } };
     auto drumAt = [&] (double s, int n) { for (auto& x : T[kDrums]) if (x.s == s && (n < 0 || x.n == n)) return true; return false; };
     const juce::String fill = D.count ("fill") ? D["fill"] : juce::String();
+    const juce::String hacc = D.count ("hacc") ? D["hacc"] : juce::String();
     for (int b = 0; b < bars; ++b)
     {
         const int base = b * 16;
@@ -224,7 +225,7 @@ Result generate (const Data& data, const GenParams& P)
                 if (lane == "chat" && s % 2 == 1 && rd() > .55 + energy * .45) continue;
                 if ((lane == "perc" || lane == "rim" || lane == "chat") && rd() < orig * .07) continue;
                 int v = L.bv + (c == 'X' ? 8 : 0);
-                if (lane == "chat") v = s % 4 == 0 ? 92 : s % 2 == 0 ? 78 : 58;
+                if (lane == "chat") v = hacc == "off" ? (s % 4 == 2 ? 92 : s % 2 == 0 ? 68 : 56) : s % 4 == 0 ? 92 : s % 2 == 0 ? 78 : 58;
                 add (kDrums, base + s, .9, L.note, v + (int) std::floor (rd() * 10) - 5);
             }
         }
@@ -235,7 +236,17 @@ Result generate (const Data& data, const GenParams& P)
                     int n = rd() < .5 ? kGM_rim : kGM_perc;
                     add (kDrums, base + s, .9, n, 48 + std::floor (rd() * 20));
                 }
-        if (fill != "none" && b % 4 == 3 && b > 0 && bars > 4)
+        if (fill == "perc" && b % 4 == 3 && b > 0 && bars > 4)
+        {
+            const bool big = b % 8 == 7; const int from = big ? 8 : 12; const double pr = big ? .75 : .6;
+            for (int s = from; s < 16; ++s)
+                if (rd() < pr)
+                {
+                    const int nn = rd() < .3 ? kGM_rim : kGM_perc;
+                    if (! drumAt (base + s, nn)) add (kDrums, base + s, .9, nn, 52 + std::floor (rd() * 44));
+                }
+        }
+        else if (fill != "none" && fill != "perc" && b % 4 == 3 && b > 0 && bars > 4)
         {
             int note = fill == "snare" ? kGM_snare : kGM_clap;
             int i = 0;

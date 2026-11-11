@@ -3,12 +3,13 @@
 using namespace juce;
 
 // Tür -> HitGen stili (yoksa yedek), varsayılan tempo, iskelet yapısı (HitGenProcessor::skStructKinds) ve süre
-const HgGenre kHgGenres[5] = {
+const HgGenre kHgGenres[6] = {
     { "afro", "Afro House", "blackcoffee", "orhan", 120, 1, 420 },
     { "mtechno", "Melodic Techno", "anyma", "monique", 124, 2, 420 },
     { "prog", "Progressive House", "prog", "tiesto", 124, 0, 360 },
     { "indie", "Indie Dance", "indie", "fisher", 118, 0, 360 },
-    { "deep", "Deep House", "solomun", "domdolla", 122, 3, 420 } };
+    { "deep", "Deep House", "solomun", "domdolla", 122, 3, 420 },
+    { "tech", "Tech House", "techhouse", "domdolla", 126, 3, 360 } };
 
 namespace
 {
@@ -36,7 +37,7 @@ AutoProducerPanel::AutoProducerPanel (HitGenProcessor& p, hgui::LookAndFeel& l, 
     lGenre.setText (T ("apGenre"), dontSendNotification); lBpm.setText ("BPM", dontSendNotification); lKey.setText (T ("apKey"), dontSendNotification);
     lLen.setText (T ("skLen"), dontSendNotification); lEnergy.setText (T ("energy"), dontSendNotification);
     for (auto* c : { &genre, &key, &scale, &length }) addAndMakeVisible (*c);
-    for (int i = 0; i < 5; ++i) genre.addItem (kHgGenres[i].name, i + 1);
+    for (int i = 0; i < 6; ++i) genre.addItem (kHgGenres[i].name, i + 1);
     for (int i = 0; i < proc.data.noteNames.size(); ++i) key.addItem (proc.data.noteNames[i], i + 1);
     for (int i = 0; i < proc.data.scaleOrder.size(); ++i) scale.addItem (T (proc.data.scaleOrder[i]), i + 1);
     for (int i = 1; i < 8; ++i) { const int s = HitGenProcessor::kSkDurations[i]; length.addItem (String (s / 60) + ":00", i + 1); }
@@ -51,7 +52,7 @@ AutoProducerPanel::AutoProducerPanel (HitGenProcessor& p, hgui::LookAndFeel& l, 
     genre.onChange = [this] { genreChanged(); };
     // başlangıç: güncel stile en yakın tür
     int gi = 1; const auto cur = proc.data.styleId ((int) proc.apvts.getRawParameterValue ("style")->load());
-    for (int i = 0; i < 5; ++i) if (cur == kHgGenres[i].style || cur == kHgGenres[i].fallback) gi = i;
+    for (int i = 0; i < 6; ++i) if (cur == kHgGenres[i].style || cur == kHgGenres[i].fallback) gi = i;
     genre.setSelectedItemIndex (gi, sendNotificationSync);
     key.setSelectedItemIndex ((int) proc.apvts.getRawParameterValue ("key")->load(), dontSendNotification);
     const int sc = (int) proc.apvts.getRawParameterValue ("scale")->load();
@@ -60,14 +61,14 @@ AutoProducerPanel::AutoProducerPanel (HitGenProcessor& p, hgui::LookAndFeel& l, 
 
 void AutoProducerPanel::genreChanged()
 {
-    const auto& g = kHgGenres[jlimit (0, 4, genre.getSelectedItemIndex())];
+    const auto& g = kHgGenres[jlimit (0, 5, genre.getSelectedItemIndex())];
     bpm.setValue (g.bpm, dontSendNotification);
     for (int i = 1; i < 8; ++i) if (HitGenProcessor::kSkDurations[i] == g.seconds) length.setSelectedItemIndex (i - 1, dontSendNotification);
 }
 
 void AutoProducerPanel::produce()
 {
-    const auto& g = kHgGenres[jlimit (0, 4, genre.getSelectedItemIndex())];
+    const auto& g = kHgGenres[jlimit (0, 5, genre.getSelectedItemIndex())];
     int si = proc.data.styleIndex (g.style); if (si < 0) si = proc.data.styleIndex (g.fallback);
     if (si < 0) si = 0;
     if (proc.coLockedRole() >= 0) proc.coUnlock();
