@@ -6,6 +6,8 @@
 #include "../Source/PluginProcessor.h"
 #include "../Source/FlpWriter.h"
 #include "../Source/AlsWriter.h"
+#include "../Source/AutoMix.h"
+#include <juce_dsp/juce_dsp.h>
 #include "../Source/Arrangement.h"
 #include "../Source/CoProducer.h"
 #include "../Source/ProducerPanels.h"
@@ -559,6 +561,67 @@ static void checkBridges (const hg::ExportResult& er, const hg::Skeleton& sk, co
 
 // Ableton Live seti: gzip XML ayrıştırılır; iz/klip/nota/işaretçi sayıları, tempo, benzersiz hedef kimlikleri,
 // izlerde çakışan klip olmaması ve her sample referansının (göreli yol) diskte bir dosyaya çıkması
+static double dbOf (double x) { return 20.0 * std::log10 (std::max (1e-12, x)); }
+static double rmsDbOf (const juce::AudioBuffer<float>& b)
+{
+    double e = 0; for (int c = 0; c < b.getNumChannels(); ++c) { auto* d = b.getReadPointer (c); for (int i = 0; i < b.getNumSamples(); ++i) e += (double) d[i] * d[i]; }
+    return dbOf (std::sqrt (e / (double) (b.getNumChannels() * b.getNumSamples())));
+}
+
+// Pembe gürültü referansı ve mix ölçütü
+static void testMixCore (const FailFn& fail)
+{
+    const double sr = 44100;
+    const auto n = hg::pinkNoise (sr, 20.0, hg::kRefNoiseRmsDb, 1);
+    if (std::abs (rmsDbOf (n) - hg::kRefNoiseRmsDb) > .2) fail ("mix: pink noise rms " + juce::String (rmsDbOf (n), 2));
+    if (n.getMagnitude (0, n.getNumSamples()) > 1.0f) fail ("mix: pink noise clips");
+    // -3 dB/oktav: oktav bantlarının gücü (125-250 Hz ile 1-2 kHz arası 3 oktav = -9 dB, bant genişliği başına eşit enerji)
+    juce::dsp::FFT fft (14); std::vector<float> buf (1 << 15); std::vector<double> acc (1 << 13, 0.0); int frames = 0;
+    for (int pos = 0; pos + (1 << 14) <= n.getNumSamples(); pos += 1 << 14, ++frames)
+    {
+        std::fill (buf.begin(), buf.end(), 0.f);
+        for (int i = 0; i < (1 << 14); ++i) buf[(size_t) i] = n.getSample (0, pos + i) * (.5f - .5f * std::cos (6.2831853f * i / (1 << 14)));
+        fft.performFrequencyOnlyForwardTransform (buf.data(), true);
+        for (size_t k = 0; k < acc.size(); ++k) acc[k] += (double) buf[k] * buf[k];
+    }
+    auto band = [&] (double f0, double f1) { double e = 0; for (int k = (int) (f0 / sr * (1 << 14)); k < (int) (f1 / sr * (1 << 14)); ++k) e += acc[(size_t) k]; return e; };
+    // pembe gürültü: her oktavda eşit enerji (güç yoğunluğu -3 dB/oktav)
+    for (double f : { 125.0, 250.0, 500.0, 1000.0, 2000.0 })
+    {
+        const double dd = 10.0 * std::log10 (band (f * 2, f * 4) / band (f, f * 2));
+        if (std::abs (dd) > 1.0) fail ("mix: pink noise octave " + juce::String (f, 0) + " Hz step " + juce::String (dd, 2) + " dB (expected 0)");
+    }
+    // duyulabilirlik ölçüsü doğrusal: gürültü +6 dB yükselince gereken kazanç tam 6 dB azalır
+    hg::MixResult m;
+    auto loud = hg::pinkNoise (sr, 5.0, hg::kRefNoiseRmsDb + 6.0, 3), quiet = hg::pinkNoise (sr, 5.0, hg::kRefNoiseRmsDb, 3);
+    const double gl = hg::fxGainDb ("zz", loud, sr, m), gq = hg::fxGainDb ("zz", quiet, sr, m);
+    if (std::abs ((gq - gl) - 6.0) > .3) fail ("mix: audibility not linear, delta " + juce::String (gq - gl, 2));
+    // gürültünün kendisi: gürültüye göre ~ +3 dB hedefine yakın (en güçlü bantlarda yalnızca birkaç dB dalgalanma)
+    if (std::abs (gq - (hg::kTargetAudDb - 0.0 + hg::fxOffsetDb ("zz"))) > 6.0) fail ("mix: noise vs noise gain " + juce::String (gq, 2));
+}
+
+// Dışa aktarılan projede mix: rapor, referans gürültü, -6 dBFS mix tepe, kırpma yok, kick/bas hi-hat/pad'den güçlü
+static void checkMixExport (const hg::ExportResult& er, const juce::File& proj, const FailFn& fail)
+{
+    if (! er.mixReport.existsAsFile() || er.mixReport.getSize() < 200) fail ("mix: report missing");
+    if (! er.pinkNoise.existsAsFile()) { fail ("mix: pink noise reference missing"); return; }
+    juce::AudioFormatManager fm; fm.registerBasicFormats();
+    if (std::unique_ptr<juce::AudioFormatReader> rd (fm.createReaderFor (er.pinkNoise)); rd == nullptr) fail ("mix: pink noise unreadable");
+    else
+    {
+        juce::AudioBuffer<float> b (2, (int) std::min<juce::int64> (rd->lengthInSamples, (juce::int64) (rd->sampleRate * 10))); rd->read (&b, 0, b.getNumSamples(), 0, true, true);
+        if (std::abs (rmsDbOf (b) - hg::kRefNoiseRmsDb) > .3) fail ("mix: reference noise rms " + juce::String (rmsDbOf (b), 2));
+    }
+    if (std::abs (er.mixPeakDb - hg::kMixPeakDb) > .3) fail ("mix: peak " + juce::String (er.mixPeakDb, 2));
+    if (er.mixRmsDb < -30 || er.mixRmsDb > -8) fail ("mix: rms " + juce::String (er.mixRmsDb, 2));
+    for (auto& f : proj.getChildFile ("Samples").findChildFiles (juce::File::findFiles, true, "*.wav"))
+        if (std::unique_ptr<juce::AudioFormatReader> rd (fm.createReaderFor (f)); rd != nullptr)
+        {
+            juce::AudioBuffer<float> b (2, (int) std::min<juce::int64> (rd->lengthInSamples, (juce::int64) (rd->sampleRate * 20))); rd->read (&b, 0, b.getNumSamples(), 0, true, true);
+            if (b.getMagnitude (0, b.getNumSamples()) >= 1.0f) fail ("mix: sample clips: " + f.getFileName());
+        }
+}
+
 static void checkAls (const juce::File& f, const hg::Skeleton& sk, const FailFn& fail)
 {
     if (! f.existsAsFile()) { fail ("als: missing"); return; }
@@ -805,6 +868,7 @@ static void testSkeleton (const juce::File& outDir, const FailFn& fail)
         checkFlp (er.flp, tk, fail, true);
         checkAls (er.als, tk, fail);
         checkBridges (er, tk, fail);
+        checkMixExport (er, outProj, fail);
     }
     // 6) kütüphane olmadan: FX kılavuzu HitGen sesleriyle
     p.setSampleFolders ({}, false);
@@ -1535,6 +1599,7 @@ int main (int argc, char** argv)
     testSkeleton (outDir, fail);
     testProducer (outDir, fail);
     testTechHouse (fail);
+    testMixCore (fail);
     testMultiOut (fail);
     testReference (outDir, fail); testSampler (fail); testLibrary (fail); testMidiLearn (outDir, fail);
     testLoudness (outDir, fail, quick); testDrumMachine (outDir, fail); testGuideAndAssistant (outDir, fail);

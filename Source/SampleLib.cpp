@@ -1,4 +1,5 @@
 #include "SampleLib.h"
+#include "AutoMix.h"
 #include "AlsWriter.h"
 #include "FlpWriter.h"
 #include "Arrangement.h"
@@ -377,20 +378,55 @@ bool writeFlpProject (const ExportJobInput& in, ExportResult& R, juce::String& e
     if (! hgDir.createDirectory()) { err = "mkdir " + hgDir.getFullPathName(); return false; }
     FlpSources src;
     const auto arr = buildArrangement (in.sk);
+    // Mix: pembe gürültü referansıyla denge + gain staging. Her şeridin tek vuruşu/notası yüklenir, kazançlar örneklere yazılır (fader 0 dB).
+    std::map<juce::String, juce::AudioBuffer<float>> shots;
+    std::map<juce::String, Buf> libShots;
     for (auto& L : arr.lanes)
     {
         if (auto it = in.laneFiles.find (L.role); it != in.laneFiles.end() && it->second.existsAsFile())
         {
-            auto dst = hgDir.getChildFile (L.name + " - " + it->second.getFileName());
-            if (! dst.existsAsFile() && ! it->second.copyFileTo (dst)) { err = "write " + dst.getFullPathName(); return false; }
-            src.lanes[L.role] = dst.getFullPathName();
+            if (auto b = loadAudio (fm, it->second, in.renderRate)) { shots[L.role] = *b; libShots[L.role] = b; }
+        }
+        else if (auto r = in.laneRenders.find (L.role); r != in.laneRenders.end() && r->second.getNumSamples() > 0)
+            shots[L.role] = r->second;
+    }
+    const auto mix = autoMix (arr, shots, in.renderRate);
+    auto applied = [&] (const juce::String& role, juce::AudioBuffer<float> b)
+    {
+        b.applyGain ((float) std::pow (10.0, mix.gainFor (role) / 20.0));
+        return b;
+    };
+    for (auto& L : arr.lanes)
+    {
+        if (auto it = in.laneFiles.find (L.role); it != in.laneFiles.end() && it->second.existsAsFile())
+        {
+            if (auto lb = libShots.find (L.role); lb != libShots.end())
+            {
+                auto dst = hgDir.getChildFile (L.name + " - " + it->second.getFileNameWithoutExtension() + " (mix).wav");
+                if (! writeWav (dst, applied (L.role, *lb->second), in.renderRate)) { err = "write " + dst.getFullPathName(); return false; }
+                src.lanes[L.role] = dst.getFullPathName();
+            }
+            else   // okunamayan dosya: eski davranış (kopya, kazançsız)
+            {
+                auto dst = hgDir.getChildFile (L.name + " - " + it->second.getFileName());
+                if (! dst.existsAsFile() && ! it->second.copyFileTo (dst)) { err = "write " + dst.getFullPathName(); return false; }
+                src.lanes[L.role] = dst.getFullPathName();
+            }
         }
         else if (auto r = in.laneRenders.find (L.role); r != in.laneRenders.end() && r->second.getNumSamples() > 0)
         {
             auto dst = hgDir.getChildFile ("HitGen " + L.name + (L.gm < 0 ? " C5" : "") + ".wav");
-            if (! writeWav (dst, r->second, in.renderRate)) { err = "write " + dst.getFullPathName(); return false; }
+            if (! writeWav (dst, applied (L.role, r->second), in.renderRate)) { err = "write " + dst.getFullPathName(); return false; }
             src.lanes[L.role] = dst.getFullPathName();
         }
+    }
+    {   // referans pembe gürültü (-23 dBFS RMS) ve rapor
+        const auto ref = in.dir.getChildFile ("Audio").getChildFile ("Pink Noise Reference.wav");
+        if (! writeWav (ref, pinkNoise (in.renderRate, 30.0, kRefNoiseRmsDb), in.renderRate)) { err = "write " + ref.getFullPathName(); return false; }
+        R.pinkNoise = ref;
+        R.mixReport = in.dir.getChildFile ("Mix Report.txt");
+        if (! R.mixReport.replaceWithText (mixReport (mix, arr))) { err = "write " + R.mixReport.getFullPathName(); return false; }
+        R.mixCommonDb = mix.commonDb; R.mixPeakDb = mix.mixPeakDb; R.mixRmsDb = mix.mixRmsDb;
     }
     // FX: önerilen sample (ters ipucunda ters çevrilmiş kopya) ya da HitGen sentezi
     const auto fxDir = in.dir.getChildFile ("Samples").getChildFile ("FX");
@@ -413,14 +449,24 @@ bool writeFlpProject (const ExportJobInput& in, ExportResult& R, juce::String& e
                     auto b = loadAudio (fm, file, in.renderRate);
                     if (b == nullptr) continue;
                     for (int c = 0; c < 2; ++c) b->reverse (c, 0, b->getNumSamples());
-                    dst = fxDir.getChildFile (file.getFileNameWithoutExtension() + " (reverse).wav");
+                    b->applyGain ((float) std::pow (10.0, fxGainDb (cue.type, *b, in.renderRate, mix) / 20.0));
+                    dst = fxDir.getChildFile (file.getFileNameWithoutExtension() + " (reverse, mix).wav");
                     if (! writeWav (dst, *b, in.renderRate)) { err = "write " + dst.getFullPathName(); return false; }
                 }
                 else
                 {
-                    dst = fxDir.getChildFile (file.getFileName());
-                    fxDir.createDirectory();
-                    if (! dst.existsAsFile() && ! file.copyFileTo (dst)) { err = "write " + dst.getFullPathName(); return false; }
+                    dst = fxDir.getChildFile (file.getFileNameWithoutExtension() + " (mix).wav");
+                    auto b = loadAudio (fm, file, in.renderRate);
+                    if (b != nullptr)
+                    {
+                        b->applyGain ((float) std::pow (10.0, fxGainDb (cue.type, *b, in.renderRate, mix) / 20.0));
+                        if (! writeWav (dst, *b, in.renderRate)) { err = "write " + dst.getFullPathName(); return false; }
+                    }
+                    else
+                    {
+                        dst = fxDir.getChildFile (file.getFileName()); fxDir.createDirectory();
+                        if (! dst.existsAsFile() && ! file.copyFileTo (dst)) { err = "write " + dst.getFullPathName(); return false; }
+                    }
                 }
                 path = made[key] = dst.getFullPathName();
             }
@@ -434,6 +480,7 @@ bool writeFlpProject (const ExportJobInput& in, ExportResult& R, juce::String& e
             auto b = synth (cue.type, len, in.renderRate, in.seed + (juce::uint32) i * 977u);
             if (b == nullptr) continue;
             const float pk = b->getMagnitude (0, b->getNumSamples()); if (pk > 1e-5f) b->applyGain (.7f / pk);
+            b->applyGain ((float) std::pow (10.0, fxGainDb (cue.type, *b, in.renderRate, mix) / 20.0));
             auto dst = fxDir.getChildFile ("HitGen " + cue.type + " bar " + juce::String (cue.bar + 1).paddedLeft ('0', 3) + ".wav");
             if (! writeWav (dst, *b, in.renderRate)) { err = "write " + dst.getFullPathName(); return false; }
             path = dst.getFullPathName();
@@ -591,6 +638,7 @@ ExportResult exportProject (const ExportJobInput& in, const std::function<bool()
     }
     if (R.flp != juce::File()) files.set ("flStudioProject", R.flp.getFileName());
     if (R.als != juce::File()) files.set ("abletonProject", R.als.getFileName());
+    if (R.mixReport != juce::File()) { files.set ("mixReport", R.mixReport.getFileName()); files.set ("pinkNoiseReference", "Audio/Pink Noise Reference.wav"); }
     if (in.writeBridges)
     {
         R.manifest = in.dir.getChildFile ("manifest.json");
