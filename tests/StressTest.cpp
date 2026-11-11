@@ -1104,7 +1104,8 @@ static BankRender renderBank (const hg::Data& D, const juce::var& snd, double sr
     E->loudnessOn = false; E->pumpAmt = 0; E->thick = .7f; E->bpm = bpm; E->quality = hg::Quality { 7, 8, true };
     const int pi = bankPatchIndex (snd["r"].toString()), track = pi == 2 ? hg::kMelody : pi; B.pt = pi == 2 ? 3 : pi;
     E->macros[(size_t) B.pt].movement = movement;
-    E->setPatch (pi, hg::Patch::fromVar (snd, D, sr));
+    float sp[hg::kNumSp]; hg::spFromSound (snd, sp);   // eklentideki gibi: ses parametrelere açılır, parametrelerden yeniden kurulur
+    E->setPatch (pi, hg::Patch::fromVar (hg::spToSound (snd, sp), D, sr));
     static const hg::DemoTable tab;
     const int kind = hg::demoKindFor (snd["cat"].toString(), snd["demo"].toString());
     const double spb = 60.0 / bpm;
@@ -1315,6 +1316,36 @@ static void testBankBehaviour (const FailFn& fail)
         p->stopDemo(); for (int b = 0; b < 2; ++b) { buf.clear(); midi.clear(); p->processBlock (buf, midi); }
         if (p->demoPlaying()) fail ("demo: stop ignored");
     }
+}
+
+
+// Ses sayfası görüntüleri ve arayüz davranışı: görünümler, tarayıcı sırası, kategori filtresi, önceki/sonraki
+static void testSoundPageUi (const juce::File& outDir, const FailFn& fail, bool shots)
+{
+    HitGenProcessor p; p.setPlayConfigDetails (0, 2, 48000, 256); p.prepareToPlay (48000, 256);
+    std::unique_ptr<HitGenEditor> ed (dynamic_cast<HitGenEditor*> (p.createEditor()));
+    ed->setTab (1); auto& sp = ed->sounds();
+    auto shot = [&] (const juce::String& name)
+    {
+        if (! shots) return;
+        sp.tick(); auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f);
+        auto f = outDir.getChildFile ("sound-" + name + ".png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os);
+    };
+    sp.setPart (1); p.setSound (hg::kBass, "wf-acid-line", true); p.idle(); sp.tick();
+    shot ("macro-bass");
+    // tarayıcı: bas izinde fabrika sesleri önce gelir, yalnızca bas rolündeki sesler listelenir
+    const auto ids = sp.browserIds();
+    if (ids.isEmpty() || ! p.data.isFactory (ids[0])) fail ("sound browser: factory sounds should come first");
+    for (auto& id : ids) if (! p.data.soundById (id)["r"].toString().containsChar ('b')) { fail ("sound browser: non-bass sound in bass list " + id); break; }
+    sp.setView (SoundPage::vBrowse); shot ("browse-bass");
+    sp.setView (SoundPage::vEdit); shot ("edit-bass");
+    sp.setPart (0); p.setSound (hg::kChords, "wf-pad-horizon", true); p.idle(); sp.setView (SoundPage::vMacro); sp.tick(); shot ("macro-chords");
+    sp.setPart (2); p.setSound (hg::kMelody, "wf-lead-obsidian", true); p.idle(); sp.tick(); shot ("macro-melody");
+    ed->setLanguage ("ar"); sp.tick(); shot ("macro-ar"); ed->setLanguage ("tr"); sp.setView (SoundPage::vBrowse); shot ("browse-tr");
+    ed->setLanguage ("en"); sp.setView (SoundPage::vMacro);
+    // makro yayları parametreleri gerçekten değiştirir (Hareket = mov_melody)
+    p.apvts.getParameter ("mov_melody")->setValueNotifyingHost (p.apvts.getParameter ("mov_melody")->convertTo0to1 (.6f));
+    if (std::abs (p.apvts.getRawParameterValue ("mov_melody")->load() - .6f) > .02f) fail ("sound page: movement param not settable");
 }
 
 static void testMultiOut (const FailFn& fail)
@@ -1589,6 +1620,7 @@ int main (int argc, char** argv)
     auto fail = [&] (const juce::String& m) { std::cout << "FAIL " << m << "\n"; ++failures; };
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_DEMO", {}).isNotEmpty()) { testLoudness (outDir, fail, false); return failures == 0 ? 0 : 1; }   // yalnızca dinleme demoları
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_CALIBRATE", {}).isNotEmpty()) { testFactoryBank (fail, true); return 0; }   // fabrika bankası seviye ayarı
+    if (juce::SystemStats::getEnvironmentVariable ("HITGEN_SHOT", {}).isNotEmpty()) { testSoundPageUi (outDir, fail, true); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_BANK", {}).isNotEmpty()) { testFactoryBank (fail, false); testBankBehaviour (fail); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
 
     // 1) stiller x kalite
@@ -1839,6 +1871,7 @@ int main (int argc, char** argv)
     testMixCore (fail);
     testFactoryBank (fail, false);
     testBankBehaviour (fail);
+    testSoundPageUi (outDir, fail, false);
     testMultiOut (fail);
     testReference (outDir, fail); testSampler (fail); testLibrary (fail); testMidiLearn (outDir, fail);
     testLoudness (outDir, fail, quick); testDrumMachine (outDir, fail); testGuideAndAssistant (outDir, fail);

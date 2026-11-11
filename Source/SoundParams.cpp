@@ -191,6 +191,17 @@ juce::var spToSound (const juce::var& base, const float* x)
     o->setProperty ("l", lfos);
     o->setProperty ("dr", r6 (x[fxDrive])); o->setProperty ("ch", r6 (x[fxChorus])); o->setProperty ("dl", r6 (x[fxDelay]));
     o->setProperty ("rv", r6 (x[fxReverb])); o->setProperty ("vol", r6 (x[level]));
+    // Parametre aralığının dışındaki preset değerleri (ör. riser'ın 6 sn'lik filtre açılışı) kullanıcı o düğmeye dokunmadıkça korunur:
+    // düğme, temel sesin kırpılmış değerinde duruyorsa sesin kendi değeri yazılır. Eski seslerin değerleri aralık içinde olduğundan etkilenmez.
+    float xb[kNumSp]; spFromSound (base, xb);
+    auto same = [&] (int i) { return std::abs (x[i] - xb[i]) <= 1e-3f * std::max (1.0f, std::abs (xb[i])); };
+    if (same (noise) && base.hasProperty ("noi")) o->setProperty ("noi", base["noi"]);
+    if (base["f"].isArray() && (int) std::lround (x[ftype]) == (int) std::lround (xb[ftype]))
+    {
+        auto f = o->getProperty ("f");
+        const int idx[3] = { 2, 3, 4 }, prm[3] = { reso, fenv, fatk };
+        for (int k = 0; k < 3; ++k) if (same (prm[k]) && ! at (base["f"], idx[k]).isVoid()) f.getArray()->set (idx[k], at (base["f"], idx[k]));
+    }
     return juce::var (o.release());
 }
 

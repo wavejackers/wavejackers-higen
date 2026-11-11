@@ -335,3 +335,40 @@ Object.assign(HG.I18N.de, {"skOpenFl": "In FL Studio öffnen", "skOpenFlHint": "
 Object.assign(HG.I18N.es, {"skOpenFl": "Abrir en FL Studio", "skOpenFlHint": "Abre el proyecto de FL Studio lleno (también se abre solo al terminar la exportación)."});
 Object.assign(HG.I18N.ar, {"skOpenFl": "افتح في FL Studio", "skOpenFlHint": "يفتح مشروع FL Studio الممتلئ (ويفتح تلقائيًا أيضًا بعد انتهاء التصدير)."});
 Object.assign(HG.I18N.hi, {"skOpenFl": "FL Studio में खोलें", "skOpenFlHint": "भरा हुआ FL Studio प्रोजेक्ट खोलता है (एक्सपोर्ट के बाद अपने आप भी खुलता है)।"});
+// ---- 3.1: yeni ses sayfası ve Wavejackers Factory 26 kategorileri
+Object.assign(HG.I18N.en, { cat_Sub: 'Sub', cat_Rolling: 'Rolling bass', cat_Acid: 'Acid', cat_Seq: 'Sequence', cat_Texture: 'Texture', cat_Metal: 'Metal', cat_FX: 'FX',
+  catAll: 'All sounds', bankWf: 'Factory 26', classicSound: 'Classic HitGen sound', sdCat: 'Category', prevSnd: 'Previous sound', nextSnd: 'Next sound',
+  vMacro: 'Macro view', vEdit: 'All parameters', vBrowse: 'Sound browser', octDown: 'Keyboard one octave down', octUp: 'Keyboard one octave up', baseNote: 'Base note',
+  demoPlay: 'Demo', demoHint: 'Plays a short phrase that suits this sound (bass line, chords, lead or effect).', pImportShort: 'Import', useWord: 'Use', orbTitle: 'Sound shape',
+  mBright: 'Brightness', mDrive: 'Drive', mMove: 'Movement', mSpace: 'Space',
+  mBrightHint: 'Opens or closes the filter of this track.', mDriveHint: 'Adds saturation to this track.', mMoveHint: 'Scales the LFOs and the filter envelope: less or more motion.', mSpaceHint: 'Sends more or less of this track to the reverb.' });
+Object.assign(HG.I18N.de, { cat_Sub: 'Sub', cat_Rolling: 'Rolling-Bass', cat_Acid: 'Acid', cat_Seq: 'Sequenz', cat_Texture: 'Textur', cat_Metal: 'Metall', cat_FX: 'FX',
+  catAll: 'Alle Sounds', bankWf: 'Factory 26', classicSound: 'Klassischer HitGen-Sound', sdCat: 'Kategorie', prevSnd: 'Vorheriger Sound', nextSnd: 'Nächster Sound',
+  vMacro: 'Makro-Ansicht', vEdit: 'Alle Parameter', vBrowse: 'Sound-Browser', octDown: 'Tastatur eine Oktave tiefer', octUp: 'Tastatur eine Oktave höher', baseNote: 'Grundton',
+  demoPlay: 'Demo', demoHint: 'Spielt eine kurze, zum Sound passende Phrase (Bassline, Akkorde, Lead oder Effekt).', pImportShort: 'Import', useWord: 'Einsatz', orbTitle: 'Klangform',
+  mBright: 'Helligkeit', mDrive: 'Drive', mMove: 'Bewegung', mSpace: 'Raum',
+  mBrightHint: 'Öffnet oder schließt den Filter dieser Spur.', mDriveHint: 'Fügt dieser Spur Sättigung hinzu.', mMoveHint: 'Skaliert LFOs und Filterhüllkurve: weniger oder mehr Bewegung.', mSpaceHint: 'Schickt mehr oder weniger dieser Spur in den Hall.' });
+Object.assign(HG.I18N.es, { cat_Sub: 'Sub', cat_Rolling: 'Bajo rolling', cat_Acid: 'Acid', cat_Seq: 'Secuencia', cat_Texture: 'Textura', cat_Metal: 'Metal', cat_FX: 'FX',
+  catAll: 'Todos los sonidos', bankWf: 'Factory 26', classicSound: 'Sonido clásico de HitGen', sdCat: 'Categoría', prevSnd: 'Sonido anterior', nextSnd: 'Sonido siguiente',
+  vMacro: 'Vista de macros', vEdit: 'Todos los parámetros', vBrowse: 'Explorador de sonidos', octDown: 'Teclado una octava abajo', octUp: 'Teclado una octava arriba', baseNote: 'Nota base',
+  demoPlay: 'Demo', demoHint: 'Toca una frase corta adecuada a este sonido (bajo, acordes, lead o efecto).', pImportShort: 'Importar', useWord: 'Uso', orbTitle: 'Forma del sonido',
+  mBright: 'Brillo', mDrive: 'Saturación', mMove: 'Movimiento', mSpace: 'Espacio',
+  mBrightHint: 'Abre o cierra el filtro de esta pista.', mDriveHint: 'Añade saturación a esta pista.', mMoveHint: 'Escala los LFO y la envolvente del filtro: menos o más movimiento.', mSpaceHint: 'Envía más o menos de esta pista a la reverb.' });
+Object.assign(HG.I18N.tr, { cat_Sub: 'Sub', cat_Rolling: 'Rolling bas', cat_Acid: 'Acid', cat_Seq: 'Sekans', cat_Texture: 'Doku', cat_Metal: 'Metalik', cat_FX: 'Efekt',
+  catAll: 'Tüm sesler', bankWf: 'Factory 26', classicSound: 'Klasik HitGen sesi', sdCat: 'Kategori', prevSnd: 'Önceki ses', nextSnd: 'Sonraki ses',
+  vMacro: 'Makro görünümü', vEdit: 'Tüm parametreler', vBrowse: 'Ses tarayıcısı', octDown: 'Klavyeyi bir oktav indir', octUp: 'Klavyeyi bir oktav çıkar', baseNote: 'Temel nota',
+  demoPlay: 'Demo', demoHint: 'Bu sese uygun kısa bir cümle çalar (bas hattı, akor, lead ya da efekt).', pImportShort: 'İçe al', useWord: 'Kullanım', orbTitle: 'Ses biçimi',
+  mBright: 'Parlaklık', mDrive: 'Sürüş', mMove: 'Hareket', mSpace: 'Alan',
+  mBrightHint: 'Bu izin filtresini açar ya da kapatır.', mDriveHint: 'Bu ize doygunluk ekler.', mMoveHint: 'LFO\'ları ve filtre zarfını ölçekler: daha az ya da daha çok hareket.', mSpaceHint: 'Bu izin reverb\'e giden miktarını artırır ya da azaltır.' });
+Object.assign(HG.I18N.ar, { cat_Sub: 'صب', cat_Rolling: 'باص متدحرج', cat_Acid: 'أسيد', cat_Seq: 'تسلسل', cat_Texture: 'نسيج', cat_Metal: 'معدني', cat_FX: 'مؤثرات',
+  catAll: 'كل الأصوات', bankWf: 'Factory 26', classicSound: 'صوت HitGen كلاسيكي', sdCat: 'الفئة', prevSnd: 'الصوت السابق', nextSnd: 'الصوت التالي',
+  vMacro: 'عرض الماكرو', vEdit: 'كل المعاملات', vBrowse: 'متصفح الأصوات', octDown: 'خفض لوحة المفاتيح أوكتافًا', octUp: 'رفع لوحة المفاتيح أوكتافًا', baseNote: 'النغمة الأساسية',
+  demoPlay: 'عرض', demoHint: 'يعزف جملة قصيرة تناسب هذا الصوت (خط باص أو كوردات أو لحن أو مؤثر).', pImportShort: 'استيراد', useWord: 'الاستخدام', orbTitle: 'شكل الصوت',
+  mBright: 'السطوع', mDrive: 'التشبع', mMove: 'الحركة', mSpace: 'المساحة',
+  mBrightHint: 'يفتح فلتر هذا المسار أو يغلقه.', mDriveHint: 'يضيف تشبعًا لهذا المسار.', mMoveHint: 'يغيّر عمق LFO وغلاف الفلتر: حركة أقل أو أكثر.', mSpaceHint: 'يرسل قدرًا أكبر أو أقل من هذا المسار إلى الصدى.' });
+Object.assign(HG.I18N.hi, { cat_Sub: 'सब', cat_Rolling: 'रोलिंग बेस', cat_Acid: 'एसिड', cat_Seq: 'सीक्वेंस', cat_Texture: 'टेक्सचर', cat_Metal: 'मेटैलिक', cat_FX: 'FX',
+  catAll: 'सभी साउंड', bankWf: 'Factory 26', classicSound: 'क्लासिक HitGen साउंड', sdCat: 'श्रेणी', prevSnd: 'पिछला साउंड', nextSnd: 'अगला साउंड',
+  vMacro: 'मैक्रो व्यू', vEdit: 'सभी पैरामीटर', vBrowse: 'साउंड ब्राउज़र', octDown: 'कीबोर्ड एक ऑक्टेव नीचे', octUp: 'कीबोर्ड एक ऑक्टेव ऊपर', baseNote: 'बेस नोट',
+  demoPlay: 'डेमो', demoHint: 'इस साउंड के अनुकूल छोटा वाक्यांश बजाता है (बेसलाइन, कॉर्ड, लीड या इफ़ेक्ट)।', pImportShort: 'इम्पोर्ट', useWord: 'उपयोग', orbTitle: 'साउंड का आकार',
+  mBright: 'चमक', mDrive: 'ड्राइव', mMove: 'मूवमेंट', mSpace: 'स्पेस',
+  mBrightHint: 'इस ट्रैक का फ़िल्टर खोलता या बंद करता है।', mDriveHint: 'इस ट्रैक में सैचुरेशन जोड़ता है।', mMoveHint: 'LFO और फ़िल्टर एनवेलप को बढ़ाता या घटाता है: कम या ज़्यादा हलचल।', mSpaceHint: 'इस ट्रैक का ज़्यादा या कम हिस्सा रीवर्ब में भेजता है।' });
