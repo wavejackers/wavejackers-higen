@@ -54,6 +54,20 @@ juce::String Data::soundName (const juce::String& id, const juce::String& lang) 
     return has (o, "name") ? o["name"].toString() : o["n"].toString();
 }
 
+juce::String Data::soundInfo (const juce::String& id, const juce::String& lang, int which) const
+{
+    const auto& v = soundById (id); auto info = v["info"];
+    if (! info.isObject()) return {};
+    auto L = info[juce::Identifier (lang)]; if (! L.isArray()) L = info["en"];
+    return L.isArray() && L.size() > which ? L[which].toString() : juce::String();
+}
+
+juce::StringArray Data::categories() const
+{
+    juce::StringArray r; if (auto* a = json["cats"].getArray()) for (auto& c : *a) r.add (c.toString());
+    return r;
+}
+
 juce::String Data::tr (const juce::String& lang, const juce::String& key) const
 {
     auto v = json["i18n"][juce::Identifier (lang)][juce::Identifier (key)];

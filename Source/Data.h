@@ -31,6 +31,10 @@ public:
     double trim (const juce::String& id) const;
     juce::String soundName (const juce::String& id, const juce::String& lang) const;
     bool isSignature (const juce::String& id) const;
+    // 3.1 fabrika bankası: karakter açıklaması (which 0) ve kullanım (1); dil yoksa İngilizce, bilgi yoksa boş
+    juce::String soundInfo (const juce::String& id, const juce::String& lang, int which) const;
+    bool isFactory (const juce::String& id) const { return soundById (id)["bank"].toString() == "wf"; }
+    juce::StringArray categories() const;   // MB.CATS sırası
 
     // Ölçek ve notalar
     juce::StringArray noteNames, scaleOrder;

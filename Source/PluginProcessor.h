@@ -11,6 +11,7 @@
 #include "MidiLearn.h"
 #include "SampleLib.h"
 #include "CoProducer.h"
+#include "Demo.h"
 #include <mutex>
 #include <optional>
 
@@ -72,6 +73,10 @@ public:
     juce::MidiKeyboardState keyboardState;     // ekran klavyesi
     bool wasSamp = false;                      // yalnızca ses iş parçacığı
     std::atomic<int> auditionPart { -1 };      // ses tasarımı açıkken klavye bu izi çalar (-1: ayara göre)
+    // ses ön dinlemesi: seçili sesin kategorisine uygun 2 ölçülük cümle (part: 0 akor, 1 bas, 2 melodi)
+    void playDemo (int part);
+    void stopDemo() { demoReq.store (-2); }
+    bool demoPlaying() const noexcept { return demoOn.load(); }
     // ---- sanatçı presetleri
     hg::PresetStore presets;
     juce::String userArtist, userPreset;       // yüklü/kaydedilmiş presetin sanatçı ve adı
@@ -189,10 +194,12 @@ private:
     std::array<BlockEv, 1024> blockEv {}; int numBlockEv = 0;
     struct PendingOff { long long at; int ch, note; };
     std::array<PendingOff, 512> offs {}; int numOffs = 0; long long sampleClock = 0;
+    hg::DemoTable demoTab; std::atomic<int> demoReq { -1 }; std::atomic<bool> demoOn { false };
+    bool demoRun = false; int demoKind = 0, demoTrack = 0; double demoBeat = 0;   // yalnızca ses iş parçacığı
 
     std::atomic<float>* p (const char* id) const { return apvts.getRawParameterValue (id); }
     // ses iş parçacığı için önceden çözülmüş parametre işaretçileri (String ayırmadan okunur)
-    struct PartPtrs { std::atomic<float>* vol = nullptr, *mute = nullptr, *cut = nullptr, *res = nullptr, *atk = nullptr, *rel = nullptr, *drv = nullptr, *rev = nullptr, *dly = nullptr; };
+    struct PartPtrs { std::atomic<float>* vol = nullptr, *mute = nullptr, *cut = nullptr, *res = nullptr, *atk = nullptr, *rel = nullptr, *drv = nullptr, *rev = nullptr, *dly = nullptr, *mov = nullptr; };
     std::array<PartPtrs, 4> pp {};
     std::array<std::array<std::atomic<float>*, kDmCtl>, hg::kNumPads> dmPtr {};
     std::array<juce::String, 3> instSamples;

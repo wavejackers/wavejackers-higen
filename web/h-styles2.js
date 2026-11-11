@@ -134,7 +134,7 @@ HG.BP.rumble = [[2,1,1,104],[3,1,1,84],[6,1,1,104],[7,1,1,84],[10,1,1,104],[11,1
     chord: { mode: 'sustain', pats: ['whole', 'long'] }, bass: { pats: ['offbeat8'], oct: 36 },
     drums: { kick: K4, clap: C24, chat: H8O, ohat: OFF, perc: '..x.......x.....', fill: 'snare' },
     mel: { mode: 'hook', hr: ['h3', 'h1', 'h6'], dens: .4, oct: 72, rep: .45 },
-    sound: { chords: 'mq-prog-pad', bass: 'mg-prog-bass', melody: 'mg-pluck-lead', drums: 'club' },
+    sound: { chords: 'wf-pad-horizon', bass: 'wf-roll-velvet', melody: 'wf-pluck-prog', drums: 'club' },
     pump: { chords: [.5, .22], bass: [.5, .2], melody: [.25, .2] },
     arr: [['Intro', 32], ['Build', 16], ['Drop', 32], ['Breakdown', 32], ['Build', 16], ['Drop', 32], ['Outro', 32]],
     var: [{ prog: [0, 5, 2, 6] }, { prog: [0, 6, 3, 4], cm: 'arp' }, { scale: 'major', prog: [0, 4, 5, 3] }, { prog: [5, 3, 0, 4], mm: 'arp', arp: 'pp', md: .6 }] });

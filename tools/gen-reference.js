@@ -1,6 +1,6 @@
 // GenTest.cpp ile aynı listeyi web motoruyla üretir.
 const fs = require('fs'), path = require('path'), dir = process.argv[2];
-const files = ['core.js', 'p3b.js', 'p4w.js', 's2.js', 's3.js', 'h-styles.js', 'h-styles2.js', 'h-gen.js', 'h-synth.js', 'h-synth2.js', 'h-synth3.js', 'h-synth4.js'];
+const files = ['core.js', 'p3b.js', 'p4w.js', 's2.js', 's3.js', 's4.js', 'h-styles.js', 'h-styles2.js', 'h-gen.js', 'h-synth.js', 'h-synth2.js', 'h-synth3.js', 'h-synth4.js'];
 const src = files.map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n');
 new Function(src + `
 const fnv = b => { let h = 2166136261 >>> 0; for (const x of b) { h ^= x; h = Math.imul(h, 16777619) >>> 0; } return h >>> 0; };

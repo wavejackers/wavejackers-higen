@@ -74,6 +74,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout HitGenProcessor::createLayou
         L.add (std::make_unique<AudioParameterFloat> (pid ("dm_" + n + "_high"), "Drum " + N + " high", NormalisableRange<float> (-12, 12, .1f), 0, db));
     }
     hg::addSoundParams (L);
+    // 3.1: Movement makrosu (LFO derinliği ve filtre zarfı). Sona eklenir; eski projelerde yoksa 0 (nötr) kalır.
+    for (int t : { 0, 1, 3 })
+        L.add (std::make_unique<AudioParameterFloat> (juce::ParameterID { "mov_" + String (kPartIds[t]), 3 }, "Movement " + String (kPartIds[t]), NormalisableRange<float> (-1, 1, .01f), 0,
+                                                      AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { const int x = roundToInt (v * 100); return (x > 0 ? "+" : "") + String (x) + "%"; })));
     return L;
 }
 
@@ -101,6 +105,7 @@ HitGenProcessor::HitGenProcessor()
         if (t == 2) continue;
         q.cut = apvts.getRawParameterValue ("cut_" + n); q.res = apvts.getRawParameterValue ("res_" + n); q.atk = apvts.getRawParameterValue ("atk_" + n);
         q.rel = apvts.getRawParameterValue ("rel_" + n); q.drv = apvts.getRawParameterValue ("drv_" + n); q.rev = apvts.getRawParameterValue ("rev_" + n); q.dly = apvts.getRawParameterValue ("dly_" + n);
+        q.mov = apvts.getRawParameterValue ("mov_" + n);
     }
     for (int pad = 0; pad < hg::kNumPads; ++pad)
         for (int k = 0; k < kDmCtl; ++k) dmPtr[(size_t) pad][(size_t) k] = apvts.getRawParameterValue (dmParamId (pad, k));
@@ -232,6 +237,14 @@ void HitGenProcessor::applySoundParams (int part, const float* vals)
 void HitGenProcessor::readSoundParams (int part, float* vals) const
 {
     for (int i = 0; i < hg::kNumSp; ++i) vals[i] = apvts.getRawParameterValue (hg::spId (part, i))->load();
+}
+
+void HitGenProcessor::playDemo (int part)
+{
+    const int t = trackOfPart (juce::jlimit (0, 2, part));
+    const auto& v = data.soundById (sounds[(size_t) t]);
+    const int kind = hg::demoKindFor (v["cat"].toString(), v["demo"].toString());
+    demoOn.store (true); demoReq.store ((t << 8) | kind);
 }
 
 void HitGenProcessor::applyRefToProject (const hg::RefAnalysis& a)
@@ -440,7 +453,7 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         m.volume = q.vol->load(); m.mute = q.mute->load() > .5f;
         if (t == 2) continue;
         m.cutoff = q.cut->load(); m.reso = q.res->load(); m.attack = q.atk->load(); m.release = q.rel->load();
-        m.drive = q.drv->load(); m.reverb = q.rev->load(); m.delay = q.dly->load();
+        m.drive = q.drv->load(); m.reverb = q.rev->load(); m.delay = q.dly->load(); m.movement = q.mov != nullptr ? q.mov->load() : 0.0f;
     }
     const int q = (int) pQuality->load();
     engine.quality = q == 0 ? hg::Quality { 2, 32, false } : q == 2 ? hg::Quality { 7, 8, true } : hg::Quality { 4, 16, true };
@@ -493,6 +506,24 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         if (msg.isNoteOn()) blockEv[(size_t) numBlockEv++] = { meta.samplePosition, 1, keysTrack, msg.getNoteNumber(), msg.getVelocity(), -1 };
         else if (msg.isNoteOff()) blockEv[(size_t) numBlockEv++] = { meta.samplePosition, 2, keysTrack, msg.getNoteNumber(), 0, 0 };
     }
+    if (const int rq = demoReq.exchange (-1); rq != -1)
+    {
+        if (rq == -2) { if (demoRun) engine.allNotesOff(); demoRun = false; demoOn.store (false); }
+        else { demoRun = true; demoTrack = rq >> 8; demoKind = juce::jlimit (0, hg::kNumDemo - 1, rq & 0xff); demoBeat = 0; }
+    }
+    if (demoRun)
+    {
+        const double bps = bpm / 60.0 / sr, b1 = demoBeat + n * bps;
+        const auto& tab = demoTab.notes[(size_t) demoKind];
+        for (int k = 0; k < demoTab.count[(size_t) demoKind] && numBlockEv < (int) blockEv.size(); ++k)
+        {
+            const auto& d = tab[(size_t) k];
+            if (d.beat >= demoBeat && d.beat < b1)
+                blockEv[(size_t) numBlockEv++] = { juce::jlimit (0, n - 1, (int) ((d.beat - demoBeat) / bps)), 3, demoTrack, d.note, d.vel, d.len * 60.0 / bpm };
+        }
+        demoBeat = b1;
+        if (demoBeat >= hg::kDemoBeats) { demoRun = false; demoOn.store (false); }
+    }
     midi.clear();
     if (! run && wasRunning)
     {
@@ -540,6 +571,7 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
                 offs[(size_t) numOffs++] = { sampleClock + e.off + lenS, ch, e.note };
             }
         }
+        else if (e.kind == 3) engine.noteOn (e.track, e.note, e.vel, e.len, 0);   // ön dinleme: MIDI çıkışına gitmez
         else if (e.kind == 1) { if (sampOn && e.track != hg::kDrums) ref.samplerNoteOn (e.note, e.vel, e.off); else engine.noteOn (e.track, e.note, e.vel, -1, 0); }
         else { if (sampOn && e.track != hg::kDrums) ref.samplerNoteOff (e.note); else engine.noteOff (e.track, e.note, 0); }
     }
@@ -1223,7 +1255,7 @@ void HitGenProcessor::renderExportSounds (hg::ExportJobInput& in)
         m.volume = q.vol->load(); m.mute = false;
         if (t == 2) continue;
         m.cutoff = q.cut->load(); m.reso = q.res->load(); m.attack = q.atk->load(); m.release = q.rel->load();
-        m.drive = q.drv->load(); m.reverb = q.rev->load(); m.delay = q.dly->load();
+        m.drive = q.drv->load(); m.reverb = q.rev->load(); m.delay = q.dly->load(); m.movement = q.mov != nullptr ? q.mov->load() : 0.0f;
     }
     {
         auto ki = data.kitIndex (sounds[2]); E->setKit (data.kit (ki >= 0 ? ki : 0));

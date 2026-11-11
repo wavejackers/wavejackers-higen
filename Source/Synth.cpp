@@ -110,6 +110,9 @@ std::unique_ptr<Patch> Patch::fromVar (const juce::var& v, const Data& data, dou
     if (auto* vb = v["vib"].getArray()) { p->hasVib = true; p->vibRate = (float) num ((*vb)[0], 5); p->vibCents = (float) num ((*vb)[1]); p->vibDelay = (float) num ((*vb)[2]); }
     auto vw = v["vow"].toString(); p->vowel = vw == "a" ? 0 : vw == "o" ? 1 : vw == "u" ? 2 : vw == "e" ? 3 : vw == "i" ? 4 : -1;
     p->male = (bool) v["male"];
+    p->glide = (float) juce::jlimit (0.0, 2.0, num (v["gl"])); p->fold = (float) juce::jlimit (0.0, 1.0, num (v["fold"]));
+    if (auto* rg = v["ring"].getArray()) { p->ringRatio = (float) num ((*rg)[0], 1); p->ringMix = (float) juce::jlimit (0.0, 1.0, num ((*rg)[1])); }
+    p->velFilt = (float) juce::jlimit (0.0, 1.0, num (v["vf"])); p->monoHz = (float) juce::jlimit (0.0, 400.0, num (v["mono"])); p->phaseReset = num (v["pr"]) > 0;
     // wavetable (web ile aynı: 48 harmonik, geçiş ve parlaklık 1/16 adımlı)
     bool needWt = false; for (int i = 0; i < p->numOsc; ++i) if (p->osc[(size_t) i].wave == 4) needWt = true;
     p->tableRate = sampleRate;
@@ -161,6 +164,7 @@ void Engine::reset()
     for (int t = 0; t < 3; ++t) for (int c = 0; c < 2; ++c) std::fill (chorusBuf[t][c].begin(), chorusBuf[t][c].end(), 0.0f);
     for (int c = 0; c < 2; ++c) std::fill (dlBuf[c].begin(), dlBuf[c].end(), 0.0f);
     dlLp[0] = dlLp[1] = 0; drumLpS[0] = drumLpS[1] = 0; drumLpR[0] = drumLpR[1] = 0;
+    lastFreq = {}; for (int t = 0; t < 3; ++t) { monoLp[t][0] = monoLp[t][1] = 0; for (int c = 0; c < 2; ++c) dcX[t][c] = dcY[t][c] = 0; }
     reverb.reset(); comp.reset();
     pumpG = { 1, 1, 1, 1 }; pumpWait = { 0, 0, 0, 0 };
 }
@@ -214,6 +218,15 @@ Voice* Engine::findVoice (int track)
     for (auto& v : voices) if (v.active && v.track == track && v.released && v.startClock < oldest) { oldest = v.startClock; best = &v; }
     if (best == nullptr) for (auto& v : voices) if (v.active && v.track == track && v.startClock < oldest) { oldest = v.startClock; best = &v; }
     if (best == nullptr) for (auto& v : voices) if (! v.active) return &v;
+    // çalınan ses tıklamasın: 5 ms içinde sönsün, yeni nota boş bir yuvada başlasın (64 yuva, iz sınırlarının toplamı 56)
+    if (best != nullptr)
+        for (auto& v : voices)
+            if (! v.active)
+            {
+                best->released = true; best->gate = false; best->relT = best->t; best->endT = best->t + .006;
+                best->cR = (float) std::exp (-1.0 / (.0015 * sr));
+                return &v;
+            }
     return best;
 }
 
@@ -265,9 +278,12 @@ void Engine::startVoice (Voice& v, const Patch& p, int track, int note, int vel,
         v.uniDet[u] = pos * p.uniSpread;
         const float pan = pos * .7f, ang = (pan + 1) * juce::MathConstants<float>::pi / 4;
         v.panL[u] = std::cos (ang) * 1.41421356f; v.panR[u] = std::sin (ang) * 1.41421356f;   // ortada 0 dB (web ile aynı seviye)
-        for (int j = 0; j < 3; ++j) v.ph[j][u] = (frand (v.rng) + 1) * .5;
+        for (int j = 0; j < 3; ++j) v.ph[j][u] = (p.phaseReset && u == 0) ? 0.0 : (frand (v.rng) + 1) * .5;
     }
     v.ctl = 0;
+    const size_t ti = (size_t) juce::jlimit (0, 2, track);
+    if (p.glide > 0 && lastFreq[ti] > 0) v.glideFrom = juce::jlimit (.125, 8.0, lastFreq[ti] / v.f0);
+    lastFreq[ti] = v.f0;
 }
 
 void Engine::migrateVoice (Voice& v, const Patch& p)
@@ -288,14 +304,16 @@ void Engine::renderVoice (Voice& v, const Patch& p, const Macros& m, float* L, f
 {
     const double dt = 1.0 / sr; const int CR = quality.controlRate;
     const float uniNorm = 1.0f / std::sqrt ((float) v.uniN);
-    const bool bass = p.cat == "Bas", vox = p.cat == "Vox";
+    const bool bass = p.cat == "Bas" || p.cat == "Sub" || p.cat == "Rolling" || p.cat == "Acid", vox = p.cat == "Vox";
     const float thickG = vox ? 0 : (bass ? .3f : .2f) * thick;
     const float fd = juce::jlimit (0.0f, 1.5f, p.fd + m.drive);
     const double cutMul = std::pow (2.0, m.cutoff * 3);
     double qBase = p.ftype == 2 ? p.q * (1 + m.reso * 3) : qFromDb (p.q + m.reso * 12);
     if (p.slope24 && p.ftype != 2) qBase = qFromDb ((p.q + m.reso * 12) * .7);
     const double c0 = juce::jlimit (60.0, 16000.0, p.cut * cutMul * std::pow (v.f0 / 261.63, (double) p.kt));
-    const double pk = juce::jlimit (60.0, 18000.0, c0 * (1 + p.envAmt));
+    const float mov = juce::jlimit (-1.0f, 1.0f, m.movement), lfoMul = 1 + mov, envMul = juce::jmax (0.0f, 1 + .6f * mov);
+    const float envAmt = p.envAmt * envMul * (1 + p.velFilt * (v.vel * 2 - 1));
+    const double pk = juce::jlimit (60.0, 18000.0, c0 * (1 + envAmt));
     const double lfoHz[3] = { p.lfo[0].sync ? bpm / 60.0 * p.lfo[0].rate : p.lfo[0].rate, p.lfo[1].sync ? bpm / 60.0 * p.lfo[1].rate : p.lfo[1].rate, p.lfo[2].rate };
     const double formScale = p.male ? .85 : 1;
     for (int i = 0; i < n; ++i)
@@ -305,7 +323,7 @@ void Engine::renderVoice (Voice& v, const Patch& p, const Macros& m, float* L, f
             v.ctl = CR;
             // filtre zarfı (web: lineer çıkış ve üstel dönüş)
             double fc = c0;
-            if (p.envAmt > 0)
+            if (envAmt > 0)
             {
                 if (p.envAtk > 0) fc = v.t < p.envAtk ? c0 + (pk - c0) * (v.t / p.envAtk) : c0 + (pk - c0) * std::exp (-(v.t - p.envAtk) / (juce::jmax (.02f, p.envDec) / 3.0));
                 else fc = c0 + (pk - c0) * std::exp (-v.t / (juce::jmax (.02f, p.envDec) / 3.0));
@@ -314,12 +332,14 @@ void Engine::renderVoice (Voice& v, const Patch& p, const Macros& m, float* L, f
             for (int l = 0; l < 3; ++l)
             {
                 const auto& lf = p.lfo[(size_t) l]; if (lf.depth <= 0) continue;
+                const float dep = juce::jmin (lf.target == 2 ? 1.0f : 4.0f, lf.depth * lfoMul);
                 const float w = lfoWave (lf.shape, v.lfoPh[l]); v.lfoPh[l] += lfoHz[l] * CR * dt; v.lfoPh[l] -= std::floor (v.lfoPh[l]);
-                if (lf.target == 0) fc += c0 * lf.depth * w; else if (lf.target == 1) cents += lf.depth * 100 * w; else ampL *= 1 - lf.depth / 2 + lf.depth / 2 * w;
+                if (lf.target == 0) fc += c0 * dep * w; else if (lf.target == 1) cents += dep * 100 * w; else ampL *= 1 - dep / 2 + dep / 2 * w;
             }
             if (p.hasVib) { const double ramp = juce::jlimit (0.0, 1.0, v.t / (p.vibDelay + .25)); cents += std::sin (kTwoPi * v.vibPh) * p.vibCents * ramp; v.vibPh += p.vibRate * CR * dt; v.vibPh -= std::floor (v.vibPh); }
             v.ampLfo = ampL;
             double pm = 1; if (p.hasPe) pm = 1 + (std::pow (2.0, p.peSemi / 12.0) - 1) * std::exp (-v.t / (juce::jmax (.005f, p.peTime) / 3.0));
+            if (v.glideFrom != 1) pm *= std::pow (v.glideFrom, std::exp (-v.t / (juce::jmax (.005f, p.glide) / 3.0)));
             const double cm = std::pow (2.0, cents / 1200.0);
             for (int j = 0; j < p.numOsc; ++j)
             {
@@ -367,10 +387,17 @@ void Engine::renderVoice (Voice& v, const Patch& p, const Macros& m, float* L, f
         }
         if (p.noi > 0) { const float nz = frand (v.rng); float st[2] = { v.nz1, v.nz2 }; mono += svf (nz, v.cfN, st).hp * p.noi; v.nz1 = st[0]; v.nz2 = st[1]; }
         float ch[2] = { l + mono, r + mono };
+        if (p.ringMix > 0)
+        {
+            v.ringPh += v.f0 * p.ringRatio * v.carMul * dt; v.ringPh -= std::floor (v.ringPh);
+            const float rm = 1 - p.ringMix + p.ringMix * (float) std::sin (kTwoPi * v.ringPh);
+            ch[0] *= rm; ch[1] *= rm;
+        }
         for (int c = 0; c < 2; ++c)
         {
             float x = ch[c];
             if (fd > 0) x = sat (x, fd);
+            if (p.fold > 0) { const float k = 1 + p.fold * 5; x = x * (1 - p.fold) + p.fold * std::sin (x * k * 1.5707963f) / (1 + p.fold * .5f); }
             if (p.vowel >= 0)
             {
                 float y = 0; for (int f = 0; f < 3; ++f) y += svf (x, v.cfF[f], v.fsv[c][f]).bp * kFormG[p.vowel][f];
@@ -477,6 +504,18 @@ void Engine::render (juce::AudioBuffer<float>& out, int start, int num)
             const bool own = inst[t].active();   // kendi sesi: sentezleyicinin koro/sürüşü uygulanmaz
             if (! own && p->ch > 0 && quality.chorus) applyChorus (t, p->ch, L, R, n);
             if (! own && p->dr > 0) for (int i = 0; i < n; ++i) { L[i] = sat (L[i], p->dr); R[i] = sat (R[i], p->dr); }
+            {   // DC engelleyici (5 Hz) ve mono bas: yan kanalın alçak frekansları atılır (ortadaki bas tek kanal kalır)
+                const float rdc = (float) std::exp (-kTwoPi * 5.0 / sr);
+                const float ml = (! own && p->monoHz > 0) ? (float) std::exp (-kTwoPi * p->monoHz / sr) : -1.0f;
+                float* x0 = dcX[t]; float* y0 = dcY[t]; float* mlp = monoLp[t];
+                for (int i = 0; i < n; ++i)
+                {
+                    float a = L[i], b = R[i];
+                    if (ml >= 0) { const float M = (a + b) * .5f, S = (a - b) * .5f; mlp[0] = S + (mlp[0] - S) * ml; mlp[1] = mlp[0] + (mlp[1] - mlp[0]) * ml; const float Sh = S - mlp[1]; a = M + Sh; b = M - Sh; }   // 12 dB/oktav
+                    const float ya = a - x0[0] + rdc * y0[0], yb = b - x0[1] + rdc * y0[1];
+                    x0[0] = a; x0[1] = b; y0[0] = ya; y0[1] = yb; L[i] = ya; R[i] = yb;
+                }
+            }
             const float bus = m.mute ? 0.0f : m.volume;
             const float rv = juce::jlimit (0.0f, 1.0f, p->rv + m.reverb), dl = juce::jlimit (0.0f, 1.0f, p->dl + m.delay);
             const int pt = trackMacro[t]; float g = pumpG[(size_t) pt]; int wait = pumpWait[(size_t) pt];

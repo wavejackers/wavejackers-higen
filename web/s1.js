@@ -9,6 +9,7 @@
   const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
   const mtof = n => 440 * Math.pow(2, (n - 69) / 12);
   MB.mtof = mtof;
+  MB.BASS_CATS = ['Bas', 'Sub', 'Rolling', 'Acid'];   // kalınlık katmanı bas gibi (aynı perdede sinüs)
 
   function noiseBuf(ac) {
     if (ac.__nb) return ac.__nb;
@@ -30,6 +31,13 @@
     const n = 1024, c = new Float32Array(n), a = 1 + k * 4, nm = Math.tanh(a);
     for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1; c[i] = Math.tanh(x * a) / nm; }
     return (curves[key] = c);
+  }
+  const foldC = {};
+  function foldCurve(k) {                                             // 3.1: dalga katlayıcı (C++ ile aynı formül)
+    const key = Math.round(k * 100); if (foldC[key]) return foldC[key];
+    const n = 2048, c = new Float32Array(n), g = 1 + k * 5;
+    for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1; c[i] = x * (1 - k) + k * Math.sin(x * g * 1.5707963) / (1 + k * .5); }
+    return (foldC[key] = c);
   }
   function makeIR(ac, sec) {
     if (ac.__ir) return ac.__ir;
@@ -61,6 +69,7 @@
     g.setTargetAtTime(.0001, rs, R / 3);
 
     const mixG = ac.createGain(), oscs = [];
+    const lastF = (ac.__lastF || (ac.__lastF = {}))[p.id]; if (p.gl) ac.__lastF[p.id] = f0;
     // performans: kaliteye göre unison sınırı ve aktif ses sayacı
     const Q = { eco: [2, 28], bal: [4, 56], high: [7, 120] }[ac.__q || 'bal'];
     const vc = ac.__vc || (ac.__vc = []); while (vc.length && vc[0] < t) vc.shift();
@@ -73,15 +82,17 @@
         const o = ac.createOscillator(), og = ac.createGain(), fr = f0 * Math.pow(2, L[2]);
         if (L[0] === 'x') o.setPeriodicWave(HG.wave(ac, p.wt)); else o.type = W[L[0]]; o.frequency.value = fr; o.detune.value = L[1] + spread;
         if (p.pe) { o.frequency.setValueAtTime(fr * Math.pow(2, p.pe[0] / 12), t); o.frequency.setTargetAtTime(fr, t, p.pe[1] / 3); }
+        else if (p.gl && lastF) { o.frequency.setValueAtTime(fr * lastF / f0, t); o.frequency.setTargetAtTime(fr, t, p.gl / 3); }
         og.gain.value = L[3] / Math.sqrt(n);
         o.connect(og); og.connect(mixG); o.start(t); o.stop(stopAt); oscs.push(o);
       }
     }
     const th = ac.__thick || 0;
+    const isBass = MB.BASS_CATS.includes(p.cat);
     if (th > .05 && p.cat !== 'Vox') {                              // kalınlık: bir oktav alt (bas için temel) katmanı
       const o = ac.createOscillator(), og = ac.createGain();
-      o.type = p.cat === 'Bas' ? 'sine' : 'triangle'; o.frequency.value = p.cat === 'Bas' ? f0 : f0 / 2;
-      og.gain.value = (p.cat === 'Bas' ? .3 : .2) * th;
+      o.type = isBass ? 'sine' : 'triangle'; o.frequency.value = isBass ? f0 : f0 / 2;
+      og.gain.value = (isBass ? .3 : .2) * th;
       o.connect(og); og.connect(mixG); o.start(t); o.stop(stopAt);
     }
     if (p.sub) {
@@ -112,8 +123,15 @@
 
     // filtre (12 veya 24 dB), isteğe bağlı sürücü, formant ve LFO'lar
     let src = mixG;
-    if (p.fd) { const ws = ac.createWaveShaper(); ws.curve = satCurve(p.fd); mixG.connect(ws); src = ws; }
-    const F = p.f || ['lowpass', 8000, .7, 0, 0, .2], fls = [ac.createBiquadFilter()];
+    if (p.ring && p.ring[1] > 0) {                                     // halka modülasyonu: kazanç = 1 - karışım + karışım·sin
+      const rn = ac.createGain(), ro = ac.createOscillator(), rg = ac.createGain();
+      rn.gain.value = 1 - p.ring[1]; ro.frequency.value = f0 * p.ring[0]; rg.gain.value = p.ring[1];
+      ro.connect(rg); rg.connect(rn.gain); src.connect(rn); src = rn; ro.start(t); ro.stop(stopAt);
+    }
+    if (p.fd) { const ws = ac.createWaveShaper(); ws.curve = satCurve(p.fd); src.connect(ws); src = ws; }
+    if (p.fold) { const ws = ac.createWaveShaper(); ws.curve = foldCurve(p.fold); src.connect(ws); src = ws; }
+    const F0 = p.f || ['lowpass', 8000, .7, 0, 0, .2], F = p.vf ? F0.slice() : F0, fls = [ac.createBiquadFilter()];
+    if (p.vf) F[3] = F0[3] * (1 + p.vf * (v * 2 - 1));
     if (F[6]) fls.push(ac.createBiquadFilter());
     const c = clamp(F[1] * Math.pow(f0 / 261.63, p.kt == null ? .5 : p.kt), 60, 16000), pk = clamp(c * (1 + F[3]), 60, 18000);
     fls.forEach(fl => {

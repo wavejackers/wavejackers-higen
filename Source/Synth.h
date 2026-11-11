@@ -47,6 +47,8 @@ struct Patch
     bool hasPe = false; float peSemi = 0, peTime = .1f;
     bool hasVib = false; float vibRate = 5, vibCents = 0, vibDelay = 0;
     int vowel = -1; bool male = false; bool chordsHalf = false;
+    // 3.1 fabrika bankası: glide (sn), dalga katlayıcı, halka modülasyonu, hız->filtre zarfı, mono bas (Hz altı tek kanal), faz sıfırlama
+    float glide = 0, fold = 0, ringRatio = 0, ringMix = 0, velFilt = 0, monoHz = 0; bool phaseReset = false;
     WaveTable table;   // wavetable osilatörleri için (A/B/geçiş/parlaklık)
     // cached: aynı wavetable ayarı daha önce kurulduysa tablolar oradan kopyalanır (ses tasarımında hızlı yeniden kurulum)
     static std::unique_ptr<Patch> fromVar (const juce::var& v, const Data& data, double sampleRate, const Patch* cached = nullptr);
@@ -56,7 +58,7 @@ struct Patch
 };
 
 // Kullanıcının parça başına makro ayarları (otomasyonlanabilir parametrelerden okunur)
-struct Macros { float cutoff = 0, reso = 0, attack = 0, release = 0, drive = 0, reverb = 0, delay = 0, volume = 1; bool mute = false; };
+struct Macros { float cutoff = 0, reso = 0, attack = 0, release = 0, drive = 0, reverb = 0, delay = 0, volume = 1, movement = 0; bool mute = false; };   // movement: LFO derinliği ve filtre zarfı (-1..1)
 
 struct Quality { int maxUnison = 4, controlRate = 16; bool chorus = true; };
 
@@ -71,7 +73,8 @@ struct Voice
     double f0 = 440, t = 0, relT = 1e9, endT = 1e9, startClock = 0;
     double ph[3][7] {}, inc[3][7] {};
     float panL[7] {}, panR[7] {}, uniDet[7] {};
-    double fmCar = 0, fmMod = 0, subPh = 0, thPh = 0, vibPh = 0, lfoPh[3] {};
+    double fmCar = 0, fmMod = 0, subPh = 0, thPh = 0, vibPh = 0, lfoPh[3] {}, ringPh = 0;
+    double glideFrom = 1;      // glide: başlangıç perde oranı (önceki nota / bu nota), 1'e doğru akar
     float sv[2][2][2] {};       // [kanal][aşama][durum] SVF
     float fsv[2][3][2] {};      // formant bant geçirenleri
     float nz1 = 0, nz2 = 0;     // gürültü HP
@@ -137,6 +140,8 @@ private:
     std::vector<float> dlBuf[2]; int dlPos = 0; float dlLp[2] {};
     juce::Reverb reverb; juce::dsp::Compressor<float> comp;
     float drumLpS[2] {}, drumLpR[2] {};
+    std::array<double, 3> lastFreq {};                 // glide için iz başına son nota frekansı
+    float dcX[3][2] {}, dcY[3][2] {}, monoLp[3][2] {};    // iz başına DC engelleyici ve mono bas (yan kanal LP durumu)
     juce::AudioBuffer<float> partBuf, sendRv, sendDl, drumBuf;
     int lastActive = 0; double voiceClock = 0;
 

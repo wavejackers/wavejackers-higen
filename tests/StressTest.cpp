@@ -7,6 +7,9 @@
 #include "../Source/FlpWriter.h"
 #include "../Source/AlsWriter.h"
 #include "../Source/AutoMix.h"
+#include "../Source/Demo.h"
+#include "../Source/Synth.h"
+#include "../Source/Data.h"
 #include <juce_dsp/juce_dsp.h>
 #include "../Source/Arrangement.h"
 #include "../Source/CoProducer.h"
@@ -1090,6 +1093,230 @@ static void testTechHouse (const FailFn& fail)
     std::cout << "techhouse ok: " << r->bars << " bars, fills " << fills.size() << " distinct\n";
 }
 
+
+// ---------------------------------------------------------------- 3.1 fabrika bankası: ön dinleme cümlesiyle çevrimdışı çalma ve ölçüm
+struct BankRender { juce::AudioBuffer<float> dry, out; int firstNote = 0, pt = 0; std::vector<int> onsets; };
+static int bankPatchIndex (const juce::String& r) { return r.containsChar ('b') ? 1 : r.containsChar ('m') ? 2 : 0; }
+static BankRender renderBank (const hg::Data& D, const juce::var& snd, double sr, float movement = 0.0f, float bpm = 124.0f)
+{
+    BankRender B;
+    auto E = std::make_unique<hg::Engine>(); E->prepare (sr, 512);
+    E->loudnessOn = false; E->pumpAmt = 0; E->thick = .7f; E->bpm = bpm; E->quality = hg::Quality { 7, 8, true };
+    const int pi = bankPatchIndex (snd["r"].toString()), track = pi == 2 ? hg::kMelody : pi; B.pt = pi == 2 ? 3 : pi;
+    E->macros[(size_t) B.pt].movement = movement;
+    E->setPatch (pi, hg::Patch::fromVar (snd, D, sr));
+    static const hg::DemoTable tab;
+    const int kind = hg::demoKindFor (snd["cat"].toString(), snd["demo"].toString());
+    const double spb = 60.0 / bpm;
+    const int pre = 256, total = pre + (int) ((hg::kDemoBeats * spb + 3.0) * sr);
+    B.out.setSize (2, total); B.out.clear(); B.dry.setSize (2, total); B.dry.clear();
+    struct Ev { int at; hg::DemoNote d; };
+    std::vector<Ev> ev; for (int k = 0; k < tab.count[(size_t) kind]; ++k) { const auto& d = tab.notes[(size_t) kind][(size_t) k]; ev.push_back ({ pre + (int) (d.beat * spb * sr), d }); }
+    std::stable_sort (ev.begin(), ev.end(), [] (const Ev& a, const Ev& b) { return a.at < b.at; });
+    B.firstNote = ev.empty() ? pre : ev.front().at;
+    for (auto& e : ev) if (B.onsets.empty() || B.onsets.back() != e.at) B.onsets.push_back (e.at);
+    E->auxL[B.pt] = B.dry.getWritePointer (0); E->auxR[B.pt] = B.dry.getWritePointer (1);
+    int pos = 0; size_t k = 0;
+    auto renderTo = [&] (int until) { while (pos < until) { const int n = std::min (256, until - pos); E->render (B.out, pos, n); pos += n; } };
+    renderTo (pre);
+    while (pos < total)
+    {
+        const int next = k < ev.size() ? std::min (total, ev[k].at) : total;
+        renderTo (next);
+        while (k < ev.size() && ev[k].at <= pos) { const auto& d = ev[k].d; E->noteOn (track, d.note, d.vel, d.len * spb, 0); ++k; }
+    }
+    return B;
+}
+struct BankStats { double lufs = -70, peak = 0, dcRatio = 0, sideLow = -99, monoLoss = 0, centroid = 0, width = 0, attack = 0, sustain = 0, clickRatio = 0, upper = 0, motion = 0; std::array<double, 26> prof {}; };
+static BankStats bankStats (const BankRender& B, double sr)
+{
+    BankStats S; const auto& x = B.dry; const int N = x.getNumSamples();
+    hg::LoudnessMeter m; m.prepare (sr);
+    for (int i = 0; i + 512 <= N; i += 512) m.add (x.getReadPointer (0, i), x.getReadPointer (1, i), 512);
+    S.lufs = m.integrated();
+    double sum = 0, e = 0, eM = 0, eS = 0, eMono = 0, lpM1 = 0, lpM2 = 0, lpS1 = 0, lpS2 = 0, eML = 0, eSL = 0;
+    const double a = std::exp (-2.0 * juce::MathConstants<double>::pi * 120.0 / sr);
+    for (int i = 0; i < N; ++i)
+    {
+        const double L = x.getSample (0, i), R = x.getSample (1, i), M = (L + R) * .5, Sd = (L - R) * .5;
+        S.peak = std::max (S.peak, std::max (std::abs (L), std::abs (R)));
+        sum += M; e += (L * L + R * R) * .5; eM += M * M; eS += Sd * Sd; eMono += M * M;
+        lpM1 = M + (lpM1 - M) * a; lpM2 = lpM1 + (lpM2 - lpM1) * a; lpS1 = Sd + (lpS1 - Sd) * a; lpS2 = lpS1 + (lpS2 - lpS1) * a;
+        eML += lpM2 * lpM2; eSL += lpS2 * lpS2;
+    }
+    const double rms = std::sqrt (e / std::max (1, N));
+    S.dcRatio = std::abs (sum / std::max (1, N)) / std::max (1e-9, rms);
+    S.sideLow = 10 * std::log10 (std::max (1e-20, eSL) / std::max (1e-20, eML));
+    S.monoLoss = 10 * std::log10 (std::max (1e-20, e) / std::max (1e-20, eMono));
+    S.width = 10 * std::log10 (std::max (1e-20, eS) / std::max (1e-20, eM));
+    // spektral ağırlık merkezi (mono, 4096 FFT, etkin çerçeveler)
+    juce::dsp::FFT fft (12); std::vector<float> buf (8192); double num = 0, den = 0, hi = 0;
+    for (int pos = 0; pos + 4096 <= N; pos += 2048)
+    {
+        std::fill (buf.begin(), buf.end(), 0.f);
+        for (int i = 0; i < 4096; ++i) buf[(size_t) i] = (x.getSample (0, pos + i) + x.getSample (1, pos + i)) * .5f * (.5f - .5f * std::cos (6.2831853f * i / 4096));
+        fft.performFrequencyOnlyForwardTransform (buf.data(), true);
+        for (int k = 1; k < 2048; ++k)
+        {
+            const double p = (double) buf[(size_t) k] * buf[(size_t) k], f = k * sr / 4096.0; num += p * std::log2 (f); den += p; if (f > 250) hi += p;
+            const int b = (int) std::floor (std::log2 (f / 40.0) * 3.0); if (b >= 0 && b < 26) S.prof[(size_t) b] += p;   // 1/3 oktav bantları, 40 Hz'den
+        }
+    }
+    S.centroid = den > 0 ? std::pow (2.0, num / den) : 0;
+    S.upper = 10 * std::log10 ((hi + 1e-20) / (den + 1e-20));   // 250 Hz üstü enerji oranı (harmonik içerik)
+    for (auto& b : S.prof) b = std::max (-60.0, 10 * std::log10 ((b + 1e-20) / (den + 1e-20)));
+    {   // hareket: ilk iki ölçüde 20 ms çerçevelerin seviye değişimi (dB standart sapması, sessiz çerçeveler hariç)
+        std::vector<double> fr; const int w = (int) (sr * .02), end = std::min (N, B.firstNote + (int) (sr * 3.5));
+        for (int p0 = B.firstNote; p0 + w <= end; p0 += w) { double ee = 0; for (int i = 0; i < w; ++i) { const double v = x.getSample (0, p0 + i); ee += v * v; } const double db = 10 * std::log10 (ee / w + 1e-20); if (db > -70) fr.push_back (db); }
+        double mu = 0; for (double d : fr) mu += d; mu /= std::max<size_t> (1, fr.size());
+        double var = 0; for (double d : fr) var += (d - mu) * (d - mu); S.motion = std::sqrt (var / std::max<size_t> (1, fr.size()));
+    }
+    // zarf: ilk notadan sonra tepeye varış süresi ve 2. yarı / 1. yarı enerji (sürdürme)
+    {
+        const int f = B.firstNote, w = std::min (N - f, (int) (sr * .6)); double pk = 0; int at = 0;
+        for (int i = 0; i < w; ++i) { const double v = std::abs (x.getSample (0, f + i)) + std::abs (x.getSample (1, f + i)); if (v > pk) { pk = v; at = i; } }
+        S.attack = at / sr;
+        double e1 = 0, e2 = 0; const int h = (int) (sr * .12);
+        for (int i = 0; i < h && f + 2 * h < N; ++i) { const double v1 = x.getSample (0, f + i), v2 = x.getSample (0, f + h + i); e1 += v1 * v1; e2 += v2 * v2; }
+        S.sustain = 10 * std::log10 ((e2 + 1e-20) / (e1 + 1e-20));
+    }
+    // tıklama: her nota başlangıcındaki ilk 0,3 ms'deki en büyük örnek-örnek sıçrama / o notanın sonraki 20 ms'deki tepe değeri
+    for (int on : B.onsets)
+    {
+        double jump = 0, pk = 1e-6;
+        for (int i = on; i < std::min (N - 1, on + (int) (sr * .0003)); ++i) jump = std::max (jump, (double) std::abs (x.getSample (0, i + 1) - x.getSample (0, i)));
+        for (int i = on; i < std::min (N, on + (int) (sr * .02)); ++i) pk = std::max (pk, (double) std::abs (x.getSample (0, i)));
+        S.clickRatio = std::max (S.clickRatio, jump / pk);
+    }
+    return S;
+}
+
+static void testFactoryBank (const FailFn& fail, bool calibrate)
+{
+    const auto& D = hg::Data::get(); const double sr = 48000;
+    const juce::StringArray bassCats { "Sub", "Rolling", "Acid" };
+    std::map<juce::String, std::vector<std::pair<juce::String, BankStats>>> byCat;
+    juce::String trims; int n = 0;
+    for (int i = 0; i < D.numSounds(); ++i)
+    {
+        const auto& snd = D.sound (i); const auto id = snd["id"].toString();
+        if (snd["bank"].toString() != "wf") continue;
+        ++n;
+        const auto B = renderBank (D, snd, sr); const auto S = bankStats (B, sr);
+        const auto cat = snd["cat"].toString();
+        byCat[cat].push_back ({ id, S });
+        const double target = cat == "Texture" || cat == "FX" ? -22.0 : -18.0;   // doku ve FX arka planda kalır
+        if (calibrate)
+        {
+            std::printf ("%-20s %-8s lufs %6.1f peak %5.2f dc %.4f sideLow %6.1f monoLoss %5.1f width %6.1f cent %6.0f atk %5.3f sus %6.1f click %.3f up %6.1f mot %5.1f\n",
+                         id.toRawUTF8(), cat.toRawUTF8(), S.lufs, S.peak, S.dcRatio, S.sideLow, S.monoLoss, S.width, S.centroid, S.attack, S.sustain, S.clickRatio, S.upper, S.motion);
+            trims << "\"" << id << "\":" << juce::String (D.trim (id) * std::pow (10.0, (target - S.lufs) / 20.0), 3) << ",";
+            continue;
+        }
+        if (! std::isfinite (S.lufs) || S.peak <= 0) { fail ("bank: silent or invalid " + id); continue; }
+        if (std::abs (S.lufs - target) > 1.5) fail ("bank: loudness " + id + " " + juce::String (S.lufs, 1) + " LUFS (target " + juce::String (target, 0) + ")");
+        if (S.peak >= .98) fail ("bank: clipping " + id + " peak " + juce::String (S.peak, 2));
+        if (S.dcRatio > .02) fail ("bank: DC offset " + id + " " + juce::String (S.dcRatio, 4));
+        if (S.clickRatio > .5) fail ("bank: click at note start " + id + " " + juce::String (S.clickRatio, 3));
+        if (bassCats.contains (cat) && snd["r"].toString().containsChar ('b') && S.sideLow > -30) fail ("bank: bass not mono below 120 Hz " + id + " side/mid " + juce::String (S.sideLow, 1) + " dB");
+        if (S.monoLoss > 3.0) fail ("bank: mono sum loses " + juce::String (S.monoLoss, 1) + " dB " + id);
+    }
+    if (calibrate) { std::printf ("TRIMS {%s}\n", trims.dropLastCharacters (1).toRawUTF8()); return; }
+    if (n < 50) fail ("bank: only " + juce::String (n) + " factory sounds");
+    // çeşitlilik: aynı kategoride iki ses ölçülebilir biçimde farklı olmalı (ağırlık merkezi, genişlik, atak, sürdürme)
+    for (auto& [cat, v] : byCat)
+        for (size_t a = 0; a < v.size(); ++a)
+            for (size_t b = a + 1; b < v.size(); ++b)
+            {
+                const auto& x = v[a].second; const auto& y = v[b].second;
+                const double d = std::abs (std::log2 (x.centroid / y.centroid)) / .5 + std::abs (std::max (-60.0, x.width) - std::max (-60.0, y.width)) / 6.0
+                               + std::abs (std::log2 ((x.attack + .005) / (y.attack + .005))) / 1.0 + std::abs (x.sustain - y.sustain) / 6.0
+                               + std::abs (x.upper - y.upper) / 6.0 + std::abs (x.motion - y.motion) / 3.0;
+                double pd = 0; for (size_t q = 0; q < x.prof.size(); ++q) pd += std::abs (x.prof[q] - y.prof[q]);
+                const double dist = d + pd / x.prof.size() / 4.0;   // tını profili: 1/3 oktav bantlarında ortalama 4 dB fark = 1
+                if (dist < 1.5) fail ("bank: too similar in " + cat + ": " + v[a].first + " / " + v[b].first + " (" + juce::String (dist, 2) + ")");
+                if (juce::SystemStats::getEnvironmentVariable ("HITGEN_BANKDIST", {}).isNotEmpty()) std::printf ("dist %-8s %-18s %-18s %.2f (profile %.2f)\n", cat.toRawUTF8(), v[a].first.toRawUTF8(), v[b].first.toRawUTF8(), dist, pd / x.prof.size() / 4.0);
+            }
+    std::cout << "factory bank: " << n << " sounds, " << byCat.size() << " categories\n";
+}
+
+
+// 3.1: ses çalma (voice steal) tıklaması, preset değiştirme, Movement makrosu, eski proje uyumu ve ön dinleme
+static void testBankBehaviour (const FailFn& fail)
+{
+    const auto& D = hg::Data::get(); const double sr = 48000;
+    auto maxJump = [] (const juce::AudioBuffer<float>& b, int from, int to) { double j = 0; for (int c = 0; c < 2; ++c) for (int i = std::max (1, from); i < to; ++i) j = std::max (j, (double) std::abs (b.getSample (c, i) - b.getSample (c, i - 1))); return j; };
+    {   // 1) bas izinde 12 tutulan nota (sınır 8): çalınan sesler kesilmeden 5 ms'de söner
+        auto E = std::make_unique<hg::Engine>(); E->prepare (sr, 512); E->loudnessOn = false; E->pumpAmt = 0;
+        E->setPatch (1, hg::Patch::fromVar (D.soundById ("wf-sub-anchor"), D, sr));
+        juce::AudioBuffer<float> out (2, (int) sr), dry (2, (int) sr); out.clear(); dry.clear();
+        E->auxL[1] = dry.getWritePointer (0); E->auxR[1] = dry.getWritePointer (1);
+        int pos = 0; E->render (out, 0, 256); pos = 256;
+        for (int k = 0; k < 12; ++k) { E->noteOn (hg::kBass, 33 + k, 100, -1, 0); E->render (out, pos, 1440); pos += 1440; }
+        E->render (out, pos, (int) sr - pos);
+        const double j = maxJump (dry, 300, (int) sr);
+        if (j > .05) fail ("voice steal clicks: jump " + juce::String (j, 3));
+    }
+    {   // 2) tutulan nota sürerken preset değiştirme (eski sesle bitir ve canlı geçiş): sayısal hata ya da patlama yok
+        auto E = std::make_unique<hg::Engine>(); E->prepare (sr, 512); E->loudnessOn = false; E->pumpAmt = 0;
+        juce::StringArray ids; for (int i = 0; i < D.numSounds(); ++i) if (D.isFactory (D.sound (i)["id"].toString())) ids.add (D.sound (i)["id"].toString());
+        juce::AudioBuffer<float> out (2, 512); double pk = 0, jump = 0; float prev[2] {};
+        E->setPatch (0, hg::Patch::fromVar (D.soundById (ids[0]), D, sr)); E->render (out, 0, 512);
+        for (int k = 0; k < ids.size() * 2; ++k)
+        {
+            if (k % 3 == 0) { E->noteOn (hg::kChords, 57 + k % 12, 100, -1, 0); E->noteOff (hg::kChords, 57 + (k + 9) % 12, 0); }
+            E->setPatch (0, hg::Patch::fromVar (D.soundById (ids[k % ids.size()]), D, sr), k % 2 == 1);
+            for (int b = 0; b < 8; ++b)
+            {
+                out.clear(); E->render (out, 0, 512);
+                for (int c = 0; c < 2; ++c) for (int i = 0; i < 512; ++i) { const float x = out.getSample (c, i); if (! std::isfinite (x)) { fail ("preset switch: NaN"); return; } pk = std::max (pk, (double) std::abs (x)); jump = std::max (jump, (double) std::abs (x - prev[c])); prev[c] = x; }
+            }
+        }
+        if (pk > 1.0) fail ("preset switch: peak " + juce::String (pk, 2));
+        if (jump > .6) fail ("preset switch: jump " + juce::String (jump, 2));
+        E->collectGarbage();
+    }
+    {   // 3) Movement makrosu gerçekten hareketi değiştirir (LFO'lu sekans: +1 hareket > -1 hareket)
+        const auto lo = bankStats (renderBank (D, D.soundById ("wf-roll-hypno"), sr, -1.0f), sr), hi = bankStats (renderBank (D, D.soundById ("wf-roll-hypno"), sr, 1.0f), sr);
+        const auto tlo = bankStats (renderBank (D, D.soundById ("wf-tex-breath"), sr, -1.0f), sr), thi = bankStats (renderBank (D, D.soundById ("wf-tex-breath"), sr, 1.0f), sr);
+        if (! (thi.motion > tlo.motion + 2.0)) fail ("movement macro: breath motion " + juce::String (tlo.motion, 1) + " -> " + juce::String (thi.motion, 1));
+        if (std::abs (hi.centroid - lo.centroid) < 1 && std::abs (hi.motion - lo.motion) < .5) fail ("movement macro: no audible change on hypno roller");
+    }
+    {   // 4) eklenti: Movement durumu kaydedilir; Movement'sız eski durum varsayılanla açılır; ön dinleme MIDI çıkışına gitmez
+        auto p = std::make_unique<HitGenProcessor>(); FakeHead head; head.playing = false; p->setPlayHead (&head);
+        p->setPlayConfigDetails (0, 2, sr, 256); p->prepareToPlay (sr, 256);
+        auto* mv = p->apvts.getParameter ("mov_bass");
+        if (mv == nullptr) { fail ("movement param missing"); return; }
+        mv->setValueNotifyingHost (mv->convertTo0to1 (.5f));
+        juce::MemoryBlock mb; p->getStateInformation (mb);
+        { auto q = std::make_unique<HitGenProcessor>(); q->setStateInformation (mb.getData(), (int) mb.getSize());
+          if (std::abs (q->apvts.getRawParameterValue ("mov_bass")->load() - .5f) > .01f) fail ("movement: state round trip"); }
+        if (auto xml = juce::AudioProcessor::getXmlFromBinary (mb.getData(), (int) mb.getSize()))
+        {
+            std::vector<juce::XmlElement*> drop;
+            for (auto* e : xml->getChildIterator()) if (e->getStringAttribute ("id").startsWith ("mov_")) drop.push_back (e);
+            std::function<void (juce::XmlElement&)> strip = [&] (juce::XmlElement& x) { for (auto* c = x.getFirstChildElement(); c != nullptr;) { auto* nx = c->getNextElement(); if (c->getStringAttribute ("id").startsWith ("mov_")) x.removeChildElement (c, true); else strip (*c); c = nx; } };
+            strip (*xml);
+            juce::MemoryBlock old; juce::AudioProcessor::copyXmlToBinary (*xml, old);
+            auto q = std::make_unique<HitGenProcessor>(); q->apvts.getParameter ("mov_bass")->setValueNotifyingHost (.9f);
+            q->setStateInformation (old.getData(), (int) old.getSize());
+            if (std::abs (q->apvts.getRawParameterValue ("mov_bass")->load()) > .01f) fail ("movement: old project without the macro should load neutral, got " + juce::String (q->apvts.getRawParameterValue ("mov_bass")->load(), 2));
+        }
+        p->apvts.getParameter ("pattern")->setValueNotifyingHost (0.0f);
+        p->setSound (hg::kBass, "wf-acid-line", true); p->idle();
+        juce::AudioBuffer<float> buf (2, 256); juce::MidiBuffer midi; double e = 0; bool midiSeen = false;
+        p->playDemo (1);
+        const int blocks = (int) (sr * 5.0 / 256);
+        for (int b = 0; b < blocks; ++b) { buf.clear(); midi.clear(); p->processBlock (buf, midi); if (! midi.isEmpty()) midiSeen = true; for (int i = 0; i < 256; ++i) e += buf.getSample (0, i) * buf.getSample (0, i); }
+        if (e < 1.0) fail ("demo: silent (" + juce::String (e, 3) + ")");
+        if (p->demoPlaying()) fail ("demo: did not stop after two bars");
+        if (midiSeen) fail ("demo: notes leaked to MIDI out");
+        p->playDemo (2); for (int b = 0; b < 20; ++b) { buf.clear(); midi.clear(); p->processBlock (buf, midi); }
+        p->stopDemo(); for (int b = 0; b < 2; ++b) { buf.clear(); midi.clear(); p->processBlock (buf, midi); }
+        if (p->demoPlaying()) fail ("demo: stop ignored");
+    }
+}
+
 static void testMultiOut (const FailFn& fail)
 {
     auto measure = [&] (bool aux, std::array<double, 5>& rms)
@@ -1361,6 +1588,8 @@ int main (int argc, char** argv)
     const bool quick = juce::SystemStats::getEnvironmentVariable ("HITGEN_QUICK", {}).isNotEmpty();   // valgrind/sanitizer için kısa tur
     auto fail = [&] (const juce::String& m) { std::cout << "FAIL " << m << "\n"; ++failures; };
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_DEMO", {}).isNotEmpty()) { testLoudness (outDir, fail, false); return failures == 0 ? 0 : 1; }   // yalnızca dinleme demoları
+    if (juce::SystemStats::getEnvironmentVariable ("HITGEN_CALIBRATE", {}).isNotEmpty()) { testFactoryBank (fail, true); return 0; }   // fabrika bankası seviye ayarı
+    if (juce::SystemStats::getEnvironmentVariable ("HITGEN_BANK", {}).isNotEmpty()) { testFactoryBank (fail, false); testBankBehaviour (fail); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
 
     // 1) stiller x kalite
     {
@@ -1608,6 +1837,8 @@ int main (int argc, char** argv)
     testProducer (outDir, fail);
     testTechHouse (fail);
     testMixCore (fail);
+    testFactoryBank (fail, false);
+    testBankBehaviour (fail);
     testMultiOut (fail);
     testReference (outDir, fail); testSampler (fail); testLibrary (fail); testMidiLearn (outDir, fail);
     testLoudness (outDir, fail, quick); testDrumMachine (outDir, fail); testGuideAndAssistant (outDir, fail);
