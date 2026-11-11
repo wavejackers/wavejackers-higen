@@ -22,6 +22,7 @@ juce::AudioBuffer<float> pinkNoise (double sr, double seconds, double rmsDb, uns
 struct MixLane
 {
     juce::String role, name;
+    double pan = 0;          // -1 sol .. +1 sağ (denge/balance, yalnızca zayıflatır)
     double offsetDb = 0;     // tür dengesi (kick biraz önde, pad geride...)
     double audDb = -999;     // gürültüye göre duyulabilirlik, kazançsız (en güçlü 3 bantta ortalama)
     double gainDb = 0;       // örneğe uygulanacak toplam kazanç
@@ -49,5 +50,7 @@ juce::String mixReport (const MixResult& m, const Arrangement& a);
 
 // Tür dengesi tablosu (dB); testler de kullanır
 double roleOffsetDb (const juce::String& role);
+double rolePan (const juce::String& role);                    // tür panorama tablosu (kick/bas/clap/akor/pad/lead ortada)
+void applyPan (juce::AudioBuffer<float>& b, double pan);      // sabit güçlü denge: ortada 0 dB, karşı kanal cos ile azalır
 double fxOffsetDb (const juce::String& cueType);
 }

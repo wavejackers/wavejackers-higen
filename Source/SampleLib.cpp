@@ -394,6 +394,7 @@ bool writeFlpProject (const ExportJobInput& in, ExportResult& R, juce::String& e
     auto applied = [&] (const juce::String& role, juce::AudioBuffer<float> b)
     {
         b.applyGain ((float) std::pow (10.0, mix.gainFor (role) / 20.0));
+        applyPan (b, rolePan (role));
         return b;
     };
     for (auto& L : arr.lanes)

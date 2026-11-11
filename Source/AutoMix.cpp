@@ -152,6 +152,18 @@ double roleOffsetDb (const juce::String& r)
         { "bass", 1.0 }, { "chords", -1.0 }, { "pad", -3.0 }, { "lead", 1.5 }, { "arp", -1.0 }, { "stab", 0.0 }, { "stutter", -2.0 } };
     auto it = m.find (r); return it != m.end() ? it->second : -1.0;
 }
+double rolePan (const juce::String& r)
+{
+    static const std::map<juce::String, double> m {
+        { "hat", 0.25 }, { "ohat", -0.30 }, { "rim", -0.35 }, { "perc", 0.40 }, { "arp", -0.25 }, { "stab", 0.20 }, { "stutter", 0.0 } };
+    auto it = m.find (r); return it != m.end() ? it->second : 0.0;
+}
+void applyPan (juce::AudioBuffer<float>& b, double pan)
+{
+    if (b.getNumChannels() < 2 || std::abs (pan) < 1e-6) return;
+    const double p = juce::jlimit (-1.0, 1.0, pan), q = std::abs (p) * juce::MathConstants<double>::halfPi;
+    b.applyGain (p > 0 ? 0 : 1, 0, b.getNumSamples(), (float) std::cos (q));
+}
 double fxOffsetDb (const juce::String& t)
 {
     static const std::map<juce::String, double> m {
@@ -180,7 +192,7 @@ MixResult autoMix (const Arrangement& a, const std::map<juce::String, juce::Audi
     std::vector<juce::AudioBuffer<float>> sims;
     for (auto& L : a.lanes)
     {
-        MixLane M; M.role = L.role; M.name = L.name; M.offsetDb = roleOffsetDb (L.role);
+        MixLane M; M.role = L.role; M.name = L.name; M.offsetDb = roleOffsetDb (L.role); M.pan = rolePan (L.role);
         juce::AudioBuffer<float> sim (2, 1);
         if (auto it = shots.find (L.role); it != shots.end() && it->second.getNumSamples() > 1)
         {
@@ -188,6 +200,7 @@ MixResult autoMix (const Arrangement& a, const std::map<juce::String, juce::Audi
             const auto an = analyse (sim, sr, -50.0);
             M.audDb = audibilityDb (an, noise);
             M.active = an.frames > 0 && M.audDb > -200;
+            applyPan (sim, M.pan);
         }
         if (M.active) M.gainDb = kTargetAudDb - M.audDb + M.offsetDb;
         R.lanes.push_back (M); sims.push_back (std::move (sim));
@@ -245,14 +258,14 @@ juce::String mixReport (const MixResult& m, const Arrangement& a)
       << "Each sound is compared with the noise in 28 critical (ERB) bands and set so its strongest bands sit "
       << juce::String (kTargetAudDb, 1) << " dB above the noise (just audible). A small genre balance offset is added per role.\n"
       << "Gain staging: one common gain puts the loudest reference section (bars " << m.fromBar + 1 << "-" << m.fromBar + m.bars
-      << ") at a " << juce::String (kMixPeakDb, 1) << " dBFS peak. Mixer faders stay at 0 dB; the gain is written into the samples.\n\n"
+      << ") at a " << juce::String (kMixPeakDb, 1) << " dBFS peak. Mixer faders stay at 0 dB; gain and a gentle role-based pan (balance) are written into the samples. Every lane has its own mixer insert.\n\n"
       << "Common gain: " << juce::String (m.commonDb, 1) << " dB   Mix peak: " << juce::String (m.mixPeakDb, 1) << " dBFS   Mix RMS: " << juce::String (m.mixRmsDb, 1) << " dBFS\n\n"
-      << "Lane                 audibility  offset    gain     peak     rms   (dB)\n";
+      << "Lane                 audibility  offset    gain     peak     rms     pan\n";
     for (auto& l : m.lanes)
     {
         if (! l.active) { s << l.name.paddedRight (' ', 20) << "         -       -       -       -       -   (no sample)\n"; continue; }
         s << l.name.paddedRight (' ', 20) << juce::String (l.audDb, 1).paddedLeft (' ', 10) << juce::String (l.offsetDb, 1).paddedLeft (' ', 8)
-          << juce::String (l.gainDb, 1).paddedLeft (' ', 8) << juce::String (l.peakDb, 1).paddedLeft (' ', 8) << juce::String (l.rmsDb, 1).paddedLeft (' ', 8) << "\n";
+          << juce::String (l.gainDb, 1).paddedLeft (' ', 8) << juce::String (l.peakDb, 1).paddedLeft (' ', 8) << juce::String (l.rmsDb, 1).paddedLeft (' ', 8) << (std::abs (l.pan) < 1e-6 ? juce::String ("C") : juce::String (l.pan < 0 ? "L" : "R") + juce::String ((int) std::lround (std::abs (l.pan) * 100))).paddedLeft (' ', 8) << "\n";
     }
     s << "\nAudio/Pink Noise Reference.wav is the same reference noise. To check the balance yourself: solo it, bring one channel in at a time and "
          "each should sit just above the noise.\nThe offsets are starting points; trust your ears for the final balance. Tempo " << a.P.bpm << " BPM.\n";

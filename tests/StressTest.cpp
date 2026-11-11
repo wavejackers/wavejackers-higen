@@ -591,6 +591,13 @@ static void testMixCore (const FailFn& fail)
         const double dd = 10.0 * std::log10 (band (f * 2, f * 4) / band (f, f * 2));
         if (std::abs (dd) > 1.0) fail ("mix: pink noise octave " + juce::String (f, 0) + " Hz step " + juce::String (dd, 2) + " dB (expected 0)");
     }
+    {   // pan: ortada değişmez, sağda sol kanal azalır, sağ kanal aynı kalır; yalnızca zayıflatır
+        juce::AudioBuffer<float> x (2, 64); for (int c = 0; c < 2; ++c) for (int i = 0; i < 64; ++i) x.setSample (c, i, .5f);
+        auto y = x; hg::applyPan (y, 0.0); if (std::abs (y.getSample (0, 3) - .5f) > 1e-6f) fail ("mix: pan center changed");
+        y = x; hg::applyPan (y, 0.5); if (std::abs (y.getSample (1, 3) - .5f) > 1e-6f || std::abs (y.getSample (0, 3) - .5f * (float) std::cos (juce::MathConstants<double>::pi / 4)) > 1e-4f) fail ("mix: pan right");
+        y = x; hg::applyPan (y, -1.0); if (y.getMagnitude (0, 0, 64) < .49f || y.getMagnitude (1, 0, 64) > 1e-4f) fail ("mix: pan hard left");
+        if (hg::rolePan ("kick") != 0 || hg::rolePan ("bass") != 0 || hg::rolePan ("hat") == 0 || hg::rolePan ("perc") == hg::rolePan ("hat")) fail ("mix: pan table");
+    }
     // duyulabilirlik ölçüsü doğrusal: gürültü +6 dB yükselince gereken kazanç tam 6 dB azalır
     hg::MixResult m;
     auto loud = hg::pinkNoise (sr, 5.0, hg::kRefNoiseRmsDb + 6.0, 3), quiet = hg::pinkNoise (sr, 5.0, hg::kRefNoiseRmsDb, 3);
@@ -612,6 +619,7 @@ static void checkMixExport (const hg::ExportResult& er, const juce::File& proj, 
         juce::AudioBuffer<float> b (2, (int) std::min<juce::int64> (rd->lengthInSamples, (juce::int64) (rd->sampleRate * 10))); rd->read (&b, 0, b.getNumSamples(), 0, true, true);
         if (std::abs (rmsDbOf (b) - hg::kRefNoiseRmsDb) > .3) fail ("mix: reference noise rms " + juce::String (rmsDbOf (b), 2));
     }
+    if (er.mixReport.loadFileAsString().contains ("pan") == false) fail ("mix: report has no pan column");
     if (std::abs (er.mixPeakDb - hg::kMixPeakDb) > .3) fail ("mix: peak " + juce::String (er.mixPeakDb, 2));
     if (er.mixRmsDb < -30 || er.mixRmsDb > -8) fail ("mix: rms " + juce::String (er.mixRmsDb, 2));
     for (auto& f : proj.getChildFile ("Samples").findChildFiles (juce::File::findFiles, true, "*.wav"))
