@@ -8,6 +8,8 @@ namespace hg
 {
 class Data;
 
+// Şerit otomasyonu (yalnızca MIDI dosyasına yazılır): pitch bend (0..16383, 8192 = orta) ya da MIDI CC
+struct ArrAuto { double s = 0; int kind = 0, value = 0; };   // kind: -1 = pitch bend, 0..127 = CC numarası; s: 16'lık adım
 struct ArrLane
 {
     juce::String name, role;      // role: kick, clap, snare, hat, ohat, rim, perc, bass, chords, melody
@@ -15,6 +17,8 @@ struct ArrLane
     int gm = -1;                  // davul şeridi: GM nota; melodik şerit: -1
     int midiChannel = 0;          // 0 tabanlı (davullar 9)
     std::vector<NoteEv> notes;    // 16'lık adım cinsinden, tam şarkı zamanında
+    std::vector<ArrAuto> autos;   // pitch bend / CC (Stutter şeridi: buildup yükselişi)
+    int bendRange = 0;            // autos'ta pitch bend varsa: yarım ton aralığı (RPN 0'a yazılır)
 };
 
 struct Arrangement

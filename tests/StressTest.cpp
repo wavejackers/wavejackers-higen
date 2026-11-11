@@ -20,6 +20,7 @@
 #include <iostream>
 #include <functional>
 #include <set>
+#include <map>
 #include <memory>
 
 struct FakeHead : juce::AudioPlayHead
@@ -424,6 +425,66 @@ static void checkBridges (const hg::ExportResult& er, const hg::Skeleton& sk, co
             int inDrop = 0, inBreak = 0;
             for (auto& n : arp->notes) for (auto& x : sk.secs) if (n.s >= x.bar * 16 && n.s < (x.bar + x.bars) * 16) { if (x.kind == "drop") ++inDrop; if (x.kind == "break") ++inBreak; }
             if (inDrop == 0 || inBreak != 0) fail ("bridges: arp placement drop " + juce::String (inDrop) + " break " + juce::String (inBreak));
+        }
+    }
+    {   // "Blessings" teknikleri: seyrek perküsyon, oktav yükselen stab, hızlanan buildup + pitch bend
+        const hg::ArrLane* stab = nullptr; const hg::ArrLane* stut = nullptr; const hg::ArrLane* perc = nullptr;
+        for (auto& L : arr.lanes) { if (L.role == "stab") stab = &L; if (L.role == "stutter") stut = &L; if (L.role == "perc") perc = &L; }
+        const bool organic = arr.profile == "organic";
+        if (organic != (stab != nullptr)) fail ("bridges: stab lane only for organic");
+        if (organic && perc != nullptr)
+        {
+            std::map<int, int> perBar; for (auto& n : perc->notes) ++perBar[(int) (n.s / 16.0)];
+            for (auto& [b, c] : perBar) if (c > 2) { fail ("bridges: perc not thinned, bar " + juce::String (b) + " has " + juce::String (c)); break; }
+        }
+        if (stab != nullptr)
+        {
+            int mains = 0, lowest = 999, highestFirst = -1, lowestLater = 999;
+            for (auto& x : sk.secs) if (x.kind == "drop" || x.kind == "groove")
+            {
+                int lo = 999, hi = -1;
+                for (auto& n : stab->notes) if (n.s >= x.bar * 16 && n.s < (x.bar + x.bars) * 16) { lo = std::min (lo, n.n); hi = std::max (hi, n.n); }
+                if (lo == 999) continue;
+                if (mains == 0) { lowest = lo; highestFirst = hi; } else lowestLater = std::min (lowestLater, lo);
+                ++mains;
+            }
+            if (mains == 0 || lowest != highestFirst) fail ("bridges: stab first drop must be a single pitch");
+            if (mains > 1 && lowestLater != lowest + 12) fail ("bridges: stab later drops must be one octave up");
+            for (auto& n : stab->notes) if (n.n < 36 || n.n > 59) { fail ("bridges: stab note range"); break; }
+        }
+        int builds = 0; for (auto& x : sk.secs) if (x.kind == "build" && x.bars >= 4) ++builds;
+        if (builds > 0)
+        {
+            if (stut == nullptr) fail ("bridges: stutter lane missing");
+            else
+            {
+                int bendUp = 0, resets = 0, maxBend = 0;
+                for (auto& e : stut->autos) if (e.kind < 0)
+                {
+                    maxBend = std::max (maxBend, e.value);
+                    bool atEnd = false; for (auto& x : sk.secs) if (x.kind == "build" && e.s == (x.bar + x.bars) * 16.0) atEnd = true;
+                    if (atEnd && e.value == 8192) ++resets; else if (e.value > 8192) ++bendUp;
+                }
+                if (bendUp == 0 || resets != builds || maxBend <= 8192 || maxBend > 16383 || (stut->bendRange != 12 && stut->bendRange != 24)) fail ("bridges: stutter pitch bend ramp");
+                for (auto& x : sk.secs) if (x.kind == "build" && x.bars >= 4)
+                {   // son ölçüde ilk ölçüden daha çok nota: hızlanma
+                    const double end = (x.bar + x.bars) * 16.0; int first = 0, last = 0;
+                    for (auto& n : stut->notes) { if (n.s >= end - 64 && n.s < end - 48) ++first; if (n.s >= end - 16 && n.s < end) ++last; }
+                    if (! (first > 0 && last >= first * 4)) { fail ("bridges: stutter does not accelerate (" + juce::String (first) + " -> " + juce::String (last) + ")"); break; }
+                }
+                juce::FileInputStream in (er.midi); juce::MidiFile mf;
+                if (in.openedOk() && mf.readFrom (in))
+                {
+                    int bends = 0, rpn = 0;
+                    for (int t = 1; t < mf.getNumTracks(); ++t)
+                    {
+                        bool isStut = false; int b = 0, r = 0;
+                        for (auto* e : *mf.getTrack (t)) { if (e->message.isTrackNameEvent() && e->message.getTextFromTextMetaEvent() == "Stutter") isStut = true; if (e->message.isPitchWheel()) ++b; if (e->message.isController() && e->message.getControllerNumber() == 101) ++r; }
+                        if (isStut) { bends = b; rpn = r; }
+                    }
+                    if (bends != (int) std::count_if (stut->autos.begin(), stut->autos.end(), [] (const hg::ArrAuto& e) { return e.kind < 0; }) || rpn != 1) fail ("bridges: stutter midi bend/RPN events " + juce::String (bends) + "/" + juce::String (rpn));
+                }
+            }
         }
     }
     {

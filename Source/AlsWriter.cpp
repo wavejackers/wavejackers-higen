@@ -79,7 +79,7 @@ void setSampleRef (X* sr, const juce::File& f, const juce::File& setDir, const A
 int colourFor (const juce::String& role)
 {
     static const std::map<juce::String, int> m { { "kick", 14 }, { "clap", 1 }, { "snare", 2 }, { "hat", 4 }, { "ohat", 5 }, { "rim", 3 },
-        { "perc", 6 }, { "bass", 22 }, { "chords", 18 }, { "pad", 19 }, { "lead", 25 }, { "arp", 26 }, { "melody", 25 } };
+        { "perc", 6 }, { "bass", 22 }, { "chords", 18 }, { "pad", 19 }, { "lead", 25 }, { "arp", 26 }, { "stab", 23 }, { "stutter", 28 }, { "melody", 25 } };
     if (auto it = m.find (role); it != m.end()) return it->second;
     return 13;
 }

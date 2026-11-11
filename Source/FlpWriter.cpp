@@ -216,7 +216,8 @@ FlpProject buildFlp (const Arrangement& arr, const FlpSources& src, const juce::
     static const std::map<juce::String, juce::uint32> colours {
         { "kick", rgb (226, 87, 76) }, { "clap", rgb (240, 160, 70) }, { "snare", rgb (236, 190, 80) }, { "hat", rgb (227, 187, 98) },
         { "ohat", rgb (210, 200, 120) }, { "rim", rgb (180, 160, 110) }, { "perc", rgb (170, 140, 90) },
-        { "bass", rgb (90, 150, 230) }, { "chords", rgb (150, 110, 220) }, { "lead", rgb (90, 200, 170) }, { "pad", rgb (120, 140, 230) }, { "arp", rgb (110, 210, 230) } };
+        { "bass", rgb (90, 150, 230) }, { "chords", rgb (150, 110, 220) }, { "lead", rgb (90, 200, 170) }, { "pad", rgb (120, 140, 230) }, { "arp", rgb (110, 210, 230) },
+        { "stab", rgb (80, 120, 200) }, { "stutter", rgb (230, 120, 200) } };
     // kanal + iz: aranjmandaki her şerit (davul vuruşları, bas, akor, pad, lead, arp)
     for (size_t i = 0; i < arr.lanes.size(); ++i)
     {

@@ -119,6 +119,8 @@ Ableton Live için `<ad>.als` dosyasını aç. İstersen `HitGen Arrangement.mid
 
 **Pad / Lead / Arp şeritleri:** aranjmanda akordan türetilen Pad (uzun akor sesleri, kök + üst ses) ve Arp (16'lık akor arpeji, drop ve groove bölümlerinde) şeritleri ile Lead (eski Melody) ayrı izlerdir; MIDI, stem, .flp ve .als hepsinde ayrı gelir.
 
+**"Blessings" teknikleri (Liva K anlatımından):** aranjman çıktılarına üç kural eklendi. (1) *Stab* şeridi (yalnızca organic profil): ton kökünde seyrek, tresillo benzeri vuruşlar; ilk drop alçak oktavda, sonraki drop'lar bir oktav yukarıda, buildup'larda dört ölçüde bir ipucu. (2) *Seyrek perküsyon* (organic): Perc şeridinde ölçü başına en fazla 2 vuruş (en güçlüler) kalır. (3) *Stutter* şeridi: her buildup'ın son 4 ölçüsünde tek nota dörtlük, sekizlik, 16'lık, 32'lik diye hızlanır; aynı şeritte son 4-8 ölçüde pitch bend (+12, 16 ölçü ve üstü buildup'ta +24 yarım ton, RPN ile aralık ayarlı) ve CC74 yükselir, drop'ta sıfırlanır. Pitch bend ve CC yalnızca `HitGen Arrangement.mid` dosyasına yazılır; HitGen'in kendi motoru, stem'ler, FL Sampler ve Ableton Simpler bunları işlemez. Kendi synth'inde bend aralığını okuyup uygular.
+
 **Çok çıkış (multi-out):** eklentinin 4 ek stereo çıkışı var (Chords, Bass, Drums, Melody), varsayılan kapalı. DAW'da açınca o iz ana karışımdan çıkıp kendi çıkışına gider (ör. FL Studio: eklenti ayarları > Outputs; Ableton: izin girişini "HitGen > Bass" seç). Çıkışlarda -1 dBFS yumuşak sınırlayıcı var.
 
 **FL Studio MIDI scripting neden yok:** FL'nin MIDI controller script API'si playlist'e pattern/klip yerleştiremez, sample yükleyemez; aranjmanı otomatik doldurmak için işe yaramaz. Bu yüzden aranjman doğrudan .flp dosyası olarak yazılıyor ve FL'de kendiliğinden açılıyor; piyano rulosu için ayrıca Piano Roll script'leri var.
@@ -136,6 +138,7 @@ Ableton Live için `<ad>.als` dosyasını aç. İstersen `HitGen Arrangement.mid
 | Auto Producer (5 tür) | Evet (stil, tempo, ton, süre) | Dinlenerek değerlendirilmedi |
 | .als Ableton seti | Kendi testimiz: gzip XML ayrıştırma, iz/klip/nota/Locator sayıları, tempo, benzersiz otomasyon kimlikleri, çakışan klip yok, her sample yolu diskte | Hayır (Ableton Live'da açılmadı) |
 | Pad / Arp / Lead şeritleri ve şerit başına stem'ler | Evet | Dinlenerek değerlendirilmedi |
+| Stab, seyrek perküsyon, Stutter + pitch bend/CC74 | Evet (oktav kuralı, ölçü başına ≤2 perc, hızlanma, bend/RPN olayları MIDI'de) | Hayır, dinlenerek değerlendirilmedi |
 | Çok çıkış (4 ek stereo bus) | Evet (bus düzeni, çıkışlarda ses, ana karışımda düşüş, tepe < -1 dBFS) + pluginval 10 | Hayır |
 | Dışa aktarma sonrası FL'de otomatik açılma | Kod yolu var; Linux'ta açılacak FL olmadığından test edilmedi | Hayır |
 | Ableton Max for Live cihazı, FL MIDI scripting | Yapılmadı: .als ve .flp dosyaları aynı işi eklentisiz yapıyor | — |

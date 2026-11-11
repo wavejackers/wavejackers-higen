@@ -46,6 +46,86 @@ static bool arpIn (const juce::String& profile, const SkSection& s, int bi)
     if (main) return true;
     return k == "build" && bi >= s.bars / 2;
 }
+static bool mainSec (const SkSection& s) { return s.kind == "drop" || s.kind == "groove"; }
+
+// ---- "Blessings" (Liva K) anlatımından: az eleman, tek tonal çapa, oktav yükselen stab, seyrek perküsyon, hızlanan buildup.
+// Stab (yalnızca organic): ton kökü, tresillo benzeri seyrek vuruşlar; ilk drop alçak, sonrakiler bir oktav yukarıda;
+// buildup'larda dört ölçüde bir ipucu verir (drop'ta duyulacak sesi önceden ezberletir).
+static void deriveStab (Arrangement& a, const Skeleton& sk)
+{
+    if (a.profile != "organic") return;
+    ArrLane st; st.name = "Stab"; st.role = "stab"; st.part = kBass; st.midiChannel = 5;
+    const int root = ((a.P.key % 12) + 12) % 12;
+    static const int steps[] = { 0, 3, 6, 10 }; static const int vel[] = { 100, 78, 88, 78 };
+    int mains = 0;
+    for (auto& s : sk.secs)
+    {
+        if (mainSec (s))
+        {
+            const int base = 36 + root + (mains > 0 ? 12 : 0);
+            for (int b = 0; b < s.bars; ++b)
+                for (int k = 0; k < 4; ++k) st.notes.push_back ({ (s.bar + b) * 16.0 + steps[k], 1.5, base, vel[k] });
+            ++mains;
+        }
+        else if (s.kind == "build")
+            for (int b = 0; b < s.bars; b += 4) st.notes.push_back ({ (s.bar + b) * 16.0, 1.5, 36 + root, 58 });
+    }
+    if (! st.notes.empty()) a.lanes.push_back (std::move (st));
+}
+
+// Stutter: her buildup'ın son 4 ölçüsünde tek nota hızlanarak tekrarlanır (dörtlük, sekizlik, 16'lık, 32'lik) ve
+// pitch bend (+12, uzun buildup'ta +24 yarım ton) ile CC74 son 4-8 ölçüde yükselir; drop'ta sıfırlanır.
+static void deriveBuildAuto (Arrangement& a, const Skeleton& sk)
+{
+    ArrLane st; st.name = "Stutter"; st.role = "stutter"; st.part = kMelody; st.midiChannel = 6;
+    const int root = ((a.P.key % 12) + 12) % 12;
+    for (auto& s : sk.secs)
+    {
+        if (s.kind != "build" || s.bars < 4) continue;
+        const int hit = juce::jmin (4, s.bars), ramp = juce::jmin (8, s.bars);
+        static const double rate[] = { 4, 2, 1, 0.5 };
+        for (int k = 0; k < hit; ++k)
+        {
+            const double bar0 = (s.bar + s.bars - hit + k) * 16.0, r = rate[k];
+            const int v = 60 + (k * 55) / juce::jmax (1, hit - 1);
+            for (double t = 0; t < 16.0 - 1e-9; t += r) st.notes.push_back ({ bar0 + t, r * .8, 72 + root, juce::jlimit (1, 127, v + (int) (t * 2)) });
+        }
+        st.bendRange = s.bars >= 16 ? 24 : 12;
+        const double a0 = (s.bar + s.bars - ramp) * 16.0, a1 = (s.bar + s.bars) * 16.0;
+        for (double t = a0; t < a1 - 1e-9; t += 4.0)
+        {
+            const double x = (t - a0) / (a1 - a0), e = x * x;   // yavaş başlar, drop'a doğru hızlanır
+            st.autos.push_back ({ t, -1, 8192 + juce::roundToInt (e * 8191) });
+            st.autos.push_back ({ t, 74, juce::roundToInt (e * 127) });
+        }
+        st.autos.push_back ({ a1, -1, 8192 }); st.autos.push_back ({ a1, 74, 0 });
+    }
+    if (! st.notes.empty()) a.lanes.push_back (std::move (st));
+}
+
+// Perküsyon inceltme (organic): kalabalık loop yerine ölçü başına en fazla 2 vuruş (en güçlüler kalır)
+static void thinPerc (Arrangement& a)
+{
+    if (a.profile != "organic") return;
+    for (auto& L : a.lanes)
+    {
+        if (L.role != "perc") continue;
+        std::vector<NoteEv> out;
+        for (size_t i = 0; i < L.notes.size();)
+        {
+            const int bar = (int) (L.notes[i].s / 16.0); size_t j = i;
+            while (j < L.notes.size() && (int) (L.notes[j].s / 16.0) == bar) ++j;
+            std::vector<size_t> idx; for (size_t k = i; k < j; ++k) idx.push_back (k);
+            std::stable_sort (idx.begin(), idx.end(), [&] (size_t x, size_t y) { return L.notes[x].v > L.notes[y].v; });
+            if (idx.size() > 2) idx.resize (2);
+            std::sort (idx.begin(), idx.end());
+            for (auto k : idx) out.push_back (L.notes[k]);
+            i = j;
+        }
+        L.notes = std::move (out);
+    }
+}
+
 static std::vector<int> chordPcs (const ChordInfo& c)
 {
     std::vector<int> pcs; for (int m : c.midi) { const int pc = ((m % 12) + 12) % 12; if (std::find (pcs.begin(), pcs.end(), pc) == pcs.end()) pcs.push_back (pc); }
@@ -102,7 +182,10 @@ Arrangement buildArrangement (const Skeleton& sk)
         for (auto& n : sk.song.tracks[(size_t) d.part]) if (d.gm < 0 || n.n == d.gm) L.notes.push_back (n);
         if (! L.notes.empty()) a.lanes.push_back (std::move (L));
     }
+    thinPerc (a);
     deriveLayers (a, sk);
+    deriveStab (a, sk);
+    deriveBuildAuto (a, sk);
     return a;
 }
 
@@ -127,6 +210,17 @@ juce::MemoryBlock arrangementMidi (const Data& data, const Arrangement& a)
     {
         juce::MidiMessageSequence s;
         s.addEvent (juce::MidiMessage::textMetaEvent (3, L.name), 0);
+        if (! L.autos.empty())
+        {
+            const int ch = L.midiChannel + 1;
+            if (L.bendRange > 0)
+                for (auto cc : { std::pair<int, int> { 101, 0 }, { 100, 0 }, { 6, L.bendRange }, { 38, 0 } }) s.addEvent (juce::MidiMessage::controllerEvent (ch, cc.first, cc.second), 0);
+            for (auto& e : L.autos)
+            {
+                const double t = (double) tickOf (e.s, P.swing);
+                s.addEvent (e.kind < 0 ? juce::MidiMessage::pitchWheel (ch, juce::jlimit (0, 16383, e.value)) : juce::MidiMessage::controllerEvent (ch, e.kind, juce::jlimit (0, 127, e.value)), t);
+            }
+        }
         for (auto& n : L.notes)   // önce bitişler: aynı tick'te kapanış açılıştan önce gelsin
             s.addEvent (juce::MidiMessage::noteOff (L.midiChannel + 1, juce::jlimit (0, 127, n.n)), (double) juce::jmax (tickOf (n.s, P.swing) + 1, tickOf (n.s + n.l, P.swing) - 1));
         for (auto& n : L.notes)
