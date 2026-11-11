@@ -1267,6 +1267,7 @@ static void testBankBehaviour (const FailFn& fail)
         {
             if (k % 3 == 0) { E->noteOn (hg::kChords, 57 + k % 12, 100, -1, 0); E->noteOff (hg::kChords, 57 + (k + 9) % 12, 0); }
             E->setPatch (0, hg::Patch::fromVar (D.soundById (ids[k % ids.size()]), D, sr), k % 2 == 1);
+            E->collectGarbage();   // eklentide ileti iş parçacığı bunu zamanlayıcıyla yapar
             for (int b = 0; b < 8; ++b)
             {
                 out.clear(); E->render (out, 0, 512);
