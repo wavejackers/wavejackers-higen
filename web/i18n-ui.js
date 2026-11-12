@@ -372,3 +372,9 @@ Object.assign(HG.I18N.hi, { cat_Sub: 'सब', cat_Rolling: 'रोलिंग 
   demoPlay: 'डेमो', demoHint: 'इस साउंड के अनुकूल छोटा वाक्यांश बजाता है (बेसलाइन, कॉर्ड, लीड या इफ़ेक्ट)।', pImportShort: 'इम्पोर्ट', useWord: 'उपयोग', orbTitle: 'साउंड का आकार',
   mBright: 'चमक', mDrive: 'ड्राइव', mMove: 'मूवमेंट', mSpace: 'स्पेस',
   mBrightHint: 'इस ट्रैक का फ़िल्टर खोलता या बंद करता है।', mDriveHint: 'इस ट्रैक में सैचुरेशन जोड़ता है।', mMoveHint: 'LFO और फ़िल्टर एनवेलप को बढ़ाता या घटाता है: कम या ज़्यादा हलचल।', mSpaceHint: 'इस ट्रैक का ज़्यादा या कम हिस्सा रीवर्ब में भेजता है।' });
+Object.assign(HG.I18N.en, { surpriseSnd: 'Surprise me: a library sound for this style' });
+Object.assign(HG.I18N.de, { surpriseSnd: 'Überrasch mich: ein Bibliothekssound für diesen Stil' });
+Object.assign(HG.I18N.es, { surpriseSnd: 'Sorpréndeme: un sonido de la biblioteca para este estilo' });
+Object.assign(HG.I18N.tr, { surpriseSnd: 'Beni şaşırt: bu stile uygun kütüphane sesi' });
+Object.assign(HG.I18N.ar, { surpriseSnd: 'فاجئني: صوت من المكتبة يناسب هذا الأسلوب' });
+Object.assign(HG.I18N.hi, { surpriseSnd: 'सरप्राइज़ करें: इस स्टाइल के लिए लाइब्रेरी साउंड' });

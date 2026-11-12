@@ -55,6 +55,10 @@ public:
     void applyStyleDefaults();          // stil değişince ses, tempo ve pump ayarları
     void regenerateNow();
     void newIdea();
+    // Kütüphaneden sürpriz ses: stilin türüne ve izin rolüne uyan Factory 26 seslerinden biri (şu ankinden farklı).
+    // Yeni fikirde elle seçilmemiş izler için kullanılır; ses kutusundaki "Sürpriz ses" de bunu çağırır.
+    juce::String librarySoundFor (int track, juce::Random& rnd) const;
+    void surpriseSound (int track);
     void suggestAlternative (int track);   // yalnızca o izin MIDI'sini başka bir fikirle değiştir
     juce::String lang = "en";
     hg::RefEngine ref;                     // referans ses: yükleme, SMART DETECT, orijinali çalma

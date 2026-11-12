@@ -405,6 +405,28 @@ static void testOwnSoundAndEdit (const juce::File& outDir, const FailFn& fail)
     if (p.result()->tracks[hg::kMelody][0].n != n0) fail ("roll: undo failed");
     roll.redo();
     if (p.result()->tracks[hg::kMelody][0].n != n0 + 1) fail ("roll: redo failed");
+    {   // boyama (sol tuş basılı sürükle) ve yol boyunca silme (sağ tuş basılı sürükle)
+        auto empty = std::make_shared<hg::Result> (*p.result()); empty->tracks[hg::kMelody].clear(); p.applyEditedResult (empty);
+        roll.setEditing (true, hg::kMelody);
+        auto src = juce::Desktop::getInstance().getMainMouseSource();
+        auto ev = [&] (juce::Point<float> pos, juce::ModifierKeys mods, juce::Point<float> down) {
+            return juce::MouseEvent (src, pos, mods, 1.0f, 0, 0, 0, 0, &roll, &roll, juce::Time::getCurrentTime(), down, juce::Time::getCurrentTime(), 1, pos != down); };
+        const auto b = roll.getLocalBounds().toFloat(); const float y = b.getCentreY();
+        const juce::Point<float> a (b.getX() + b.getWidth() * .25f, y), z (b.getX() + b.getWidth() * .75f, y);
+        const auto L = juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier), R = juce::ModifierKeys (juce::ModifierKeys::rightButtonModifier);
+        roll.mouseDown (ev (a, L, a));
+        for (int k = 1; k <= 20; ++k) roll.mouseDrag (ev (a + (z - a) * (k / 20.0f), L, a));
+        roll.mouseUp (ev (z, L, a));
+        const auto painted = p.result()->tracks[hg::kMelody].size();
+        if (painted < 4) fail ("roll: paint drag made only " + juce::String ((int) painted) + " notes");
+        roll.mouseDown (ev (z, R, z));
+        roll.mouseDrag (ev (a, R, z));   // tek büyük adım: aradaki notalar da silinmeli
+        roll.mouseUp (ev (a, R, z));
+        if (! p.result()->tracks[hg::kMelody].empty()) fail ("roll: right-drag erase left " + juce::String ((int) p.result()->tracks[hg::kMelody].size()) + " notes");
+        roll.undo();
+        if (p.result()->tracks[hg::kMelody].size() != painted) fail ("roll: undo after erase");
+        std::cout << "roll paint/erase ok: " << (int) painted << " notes painted\n";
+    }
     p.clearInstSample (0); p.clearInstSample (2); out.clear(); p.engine.render (out, 0, 256); p.engine.collectGarbage();
     if (p.instSamplePath (2).isNotEmpty()) fail ("own sound: clear failed");
     dir.deleteRecursively();
@@ -1349,6 +1371,67 @@ static void testSoundPageUi (const juce::File& outDir, const FailFn& fail, bool 
     if (std::abs (p.apvts.getRawParameterValue ("mov_melody")->load() - .6f) > .02f) fail ("sound page: movement param not settable");
 }
 
+
+// Hook kuralları (A B A B' motif): tekrar, tek tepe, akor tonunda bitiş, aralık, son ölçüde köke iniş
+static void testHookRules (const FailFn& fail)
+{
+    const auto& D = hg::Data::get(); int checked = 0;
+    for (int si = 0; si < D.numStyles(); ++si)
+    {
+        const auto& S = D.style (si);
+        for (int vi = 0; vi < 4; ++vi)
+        {
+            const auto& V = S["var"][vi];
+            const auto mode = V.hasProperty ("mm") ? V["mm"].toString() : S["mel"]["mode"].toString();
+            if (mode != "hook") continue;
+            for (int seed : { 1, 7, 42, 999, 54321, 2026 })
+            {
+                hg::GenParams P; P.style = D.styleId (si); P.vi = vi; P.seed = seed; P.bars = 8; P.key = (int) S["key"]; P.thick = 0; P.human = 0;
+                const auto r = hg::generate (D, P); ++checked;
+                std::array<std::vector<hg::NoteEv>, 8> bar;
+                for (auto& n : r.tracks[hg::kMelody]) bar[(size_t) juce::jlimit (0, 7, (int) (n.s / 16))].push_back (n);
+                const juce::String tag = P.style + " v" + juce::String (vi) + " s" + juce::String (seed);
+                auto sig = [] (const std::vector<hg::NoteEv>& v) { juce::String x; for (auto& n : v) x << std::fmod (n.s, 16.0) << ":" << n.n << " "; return x; };
+                if (sig (bar[0]) != sig (bar[4]) || sig (bar[1]) != sig (bar[5])) fail ("hook: bars 1-2 do not repeat in bars 5-6 (" + tag + ")");
+                for (int b = 0; b < 8; ++b)
+                {
+                    if (bar[(size_t) b].empty()) { fail ("hook: empty bar " + juce::String (b + 1) + " (" + tag + ")"); continue; }
+                    int lo = 127, hi = 0; for (auto& n : bar[(size_t) b]) { lo = std::min (lo, n.n); hi = std::max (hi, n.n); }
+                    if (hi - lo > 14) fail ("hook: bar range " + juce::String (hi - lo) + " semitones (" + tag + ")");
+                    int peaks = 0; for (auto& n : bar[(size_t) b]) if (n.v >= 108) { ++peaks; if (n.n != hi && n.n < hi - 2) fail ("hook: accented note is not the peak (" + tag + ")"); }
+                    if (peaks != 1) fail ("hook: " + juce::String (peaks) + " peak notes in a bar (" + tag + ")");
+                    const auto& c = r.chords[(size_t) b]; const auto& last = bar[(size_t) b].back();
+                    bool tone = false; for (int m : c.midi) if ((m - last.n) % 12 == 0) tone = true;
+                    if (! tone) fail ("hook: bar " + juce::String (b + 1) + " ends off the chord (" + tag + ")");
+                    if (b == 7 && (last.n % 12) != c.pc) fail ("hook: last bar does not land on the root (" + tag + ")");
+                }
+            }
+        }
+    }
+    if (checked < 50) fail ("hook: only " + juce::String (checked) + " cases");
+    {   // yeni fikir: elle seçilmemiş izlere stile uygun kütüphane sesleri, her fikirde değişir; elle seçilen korunur
+        auto p = std::make_unique<HitGenProcessor>();
+        p->apvts.getParameter ("style")->setValueNotifyingHost (p->apvts.getParameter ("style")->convertTo0to1 ((float) D.styleIndex ("charlotte"))); p->idle();
+        p->setSound (hg::kMelody, "wf-lead-ghost", true);
+        std::set<juce::String> seen;
+        for (int k = 0; k < 6; ++k)
+        {
+            p->newIdea(); p->idle();
+            for (int t : { hg::kChords, hg::kBass })
+            {
+                const auto id = p->soundId (t); seen.insert (id);
+                const auto& v = D.soundById (id);
+                if (! D.isFactory (id)) fail ("surprise: not a library sound " + id);
+                if (! v["r"].toString().containsChar (t == hg::kBass ? 'b' : 'c')) fail ("surprise: wrong role " + id);
+                if (t == hg::kBass && ! juce::StringArray { "Sub", "Rolling", "Acid" }.contains (v["cat"].toString())) fail ("surprise: bass category " + id);
+            }
+            if (p->soundId (hg::kMelody) != "wf-lead-ghost") fail ("surprise: manual melody sound was replaced");
+        }
+        if (seen.size() < 5) fail ("surprise: sounds do not change between ideas (" + juce::String ((int) seen.size()) + ")");
+    }
+    std::cout << "hook rules: " << checked << " cases\n";
+}
+
 static void testMultiOut (const FailFn& fail)
 {
     auto measure = [&] (bool aux, std::array<double, 5>& rms)
@@ -1622,7 +1705,7 @@ int main (int argc, char** argv)
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_DEMO", {}).isNotEmpty()) { testLoudness (outDir, fail, false); return failures == 0 ? 0 : 1; }   // yalnızca dinleme demoları
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_CALIBRATE", {}).isNotEmpty()) { testFactoryBank (fail, true); return 0; }   // fabrika bankası seviye ayarı
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_SHOT", {}).isNotEmpty()) { testSoundPageUi (outDir, fail, true); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
-    if (juce::SystemStats::getEnvironmentVariable ("HITGEN_BANK", {}).isNotEmpty()) { testFactoryBank (fail, false); testBankBehaviour (fail); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
+    if (juce::SystemStats::getEnvironmentVariable ("HITGEN_BANK", {}).isNotEmpty()) { testHookRules (fail); testFactoryBank (fail, false); testBankBehaviour (fail); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
 
     // 1) stiller x kalite
     {
@@ -1870,6 +1953,7 @@ int main (int argc, char** argv)
     testProducer (outDir, fail);
     testTechHouse (fail);
     testMixCore (fail);
+    testHookRules (fail);
     testFactoryBank (fail, false);
     testBankBehaviour (fail);
     testSoundPageUi (outDir, fail, false);

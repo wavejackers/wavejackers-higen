@@ -104,7 +104,7 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
         muteBa.push_back (std::make_unique<BA> (A, String ("mute_") + kPart[t], m));
         auto& ab = altBtns[(size_t) t]; addC (ab); ab.setButtonText (juce::String (juce::CharPointer_UTF8 ("\xe2\x86\xbb"))); ab.onClick = [this, t] { proc.suggestAlternative (t); };
         auto& sb = soundBoxes[(size_t) t]; addC (sb);
-        sb.onChange = [this, t] { if (soundBoxes[(size_t) t].getSelectedId() >= 900) { chooseOwnSound (t); return; } const int i = soundBoxes[(size_t) t].getSelectedId() - 1; if (i >= 0 && i < soundIds[(size_t) t].size() && soundIds[(size_t) t][i] != proc.soundId (t)) { proc.setSound (t, soundIds[(size_t) t][i], true); shownSounds[(size_t) t] = soundIds[(size_t) t][i]; } };
+        sb.onChange = [this, t] { if (soundBoxes[(size_t) t].getSelectedId() == 902) { proc.surpriseSound (t); fillSoundBoxes(); return; } if (soundBoxes[(size_t) t].getSelectedId() >= 900) { chooseOwnSound (t); return; } const int i = soundBoxes[(size_t) t].getSelectedId() - 1; if (i >= 0 && i < soundIds[(size_t) t].size() && soundIds[(size_t) t][i] != proc.soundId (t)) { proc.setSound (t, soundIds[(size_t) t][i], true); shownSounds[(size_t) t] = soundIds[(size_t) t][i]; } };
         auto& tl = tiles[(size_t) t]; addC (tl); tl.palette = palFn; tl.font = fontFn; tl.colour = lnf.pal().track[t];
         tl.makeFile = [this, t] { return proc.writeMidi (t); };
         tl.onSaved = [this] (const File& f) { status.setText (fill (T ("pSavedTo"), "f", f.getFullPathName()), sendNotificationAsync); };
@@ -503,22 +503,24 @@ void HitGenEditor::fillSoundBoxes()
         if (t == hg::kDrums) { for (int k = 0; k < data.numKits(); ++k) { ids.add (data.kit (k)["id"].toString()); sb.addItem (data.soundName (ids[k], lang), k + 1); } }
         else
         {
-            // önce imza sesler, sonra kategoriler
-            for (int pass = 0; pass < 2; ++pass)
+            // önce Factory 26 (kategoriyle), sonra imza sesler, sonra klasik banka
+            for (int pass = 0; pass < 3; ++pass)
             {
-                if (pass == 1) sb.addSeparator();
+                if (pass > 0) sb.addSeparator();
                 for (int s = 0; s < data.numSounds(); ++s)
                 {
                     const auto& v = data.sound (s); const auto id = v["id"].toString();
                     if (! v["r"].toString().containsChar ((juce_wchar) roleOf[t])) continue;
-                    if (data.isSignature (id) != (pass == 0)) continue;
-                    ids.add (id); sb.addItem (data.soundName (id, lang) + (pass == 1 ? "  (" + T ("cat_" + v["cat"].toString()) + ")" : String()), ids.size());
+                    const int grp = data.isFactory (id) ? 0 : data.isSignature (id) ? 1 : 2;
+                    if (grp != pass) continue;
+                    ids.add (id); sb.addItem (data.soundName (id, lang) + (pass != 1 ? "  (" + T ("cat_" + v["cat"].toString()) + ")" : String()), ids.size());
                 }
             }
         }
         sb.addSeparator();
         const int pt = partOfTrack (t); const auto own = pt >= 0 ? proc.instSamplePath (pt) : String();
         if (own.isNotEmpty()) sb.addItem (fill (T ("ownActive"), "n", File (own).getFileNameWithoutExtension()), 901);
+        if (t != hg::kDrums) sb.addItem (T ("surpriseSnd"), 902);
         sb.addItem (t == hg::kDrums ? T ("ownDrums") : T ("ownLoad"), 900);
         const int cur = ids.indexOf (proc.soundId (t));
         sb.setSelectedId (own.isNotEmpty() ? 901 : cur + 1, dontSendNotification);

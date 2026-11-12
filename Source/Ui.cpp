@@ -356,17 +356,18 @@ void PianoRoll::mouseDown (const MouseEvent& e)
     grabKeyboardFocus();
     auto& v = work->tracks[(size_t) lane];
     bool edge = false; int i = hitNote (e.position, edge);
-    if (e.mods.isPopupMenu())   // sağ tık: sil
+    if (e.mods.isPopupMenu())   // sağ tık: sil; basılı tutup sürüklersen yol boyunca siler
     {
-        if (i >= 0) { beginChange(); v.erase (v.begin() + i); sel = -1; changed = true; commit(); repaint(); }
+        beginChange(); sel = -1; drag = Drag::erase; lastPos = e.position;
+        if (i >= 0) { v.erase (v.begin() + i); changed = true; repaint(); }
         return;
     }
     beginChange();
-    if (i < 0)   // boş yere tıkla: nota ekle (davulda 1, diğerlerinde 2 adım), sürüklersen uzar
+    if (i < 0)   // boş yere tıkla: nota ekle (davulda 1, diğerlerinde 2 adım); basılı sürüklersen sağa/sola boyar
     {
         hg::NoteEv n; n.s = std::floor (stepAt (e.position.x)); n.l = lane == hg::kDrums ? 1.0 : 2.0; n.n = noteAtY (e.position.y); n.v = 100;
         if (n.s >= work->bars * 16) n.s = work->bars * 16 - 1;
-        v.push_back (n); i = (int) v.size() - 1; changed = true; drag = lane == hg::kDrums ? Drag::none : Drag::resize;
+        v.push_back (n); i = (int) v.size() - 1; changed = true; drag = Drag::paint; lastPaint = n.s;
     }
     else drag = edge ? Drag::resize : Drag::move;
     sel = i; orig = v[(size_t) i]; grabOff = stepAt (e.position.x) - orig.s;
@@ -374,7 +375,34 @@ void PianoRoll::mouseDown (const MouseEvent& e)
 }
 void PianoRoll::mouseDrag (const MouseEvent& e)
 {
-    if (! editing || ! work || sel < 0 || drag == Drag::none) return;
+    if (! editing || ! work || drag == Drag::none) return;
+    auto& v = work->tracks[(size_t) lane];
+    if (drag == Drag::erase)
+    {
+        const float dist = lastPos.getDistanceFrom (e.position); const int stepsN = jmax (1, (int) std::ceil (dist / 3.0f));
+        for (int k = 1; k <= stepsN; ++k)
+        {
+            const auto p = lastPos + (e.position - lastPos) * ((float) k / (float) stepsN);
+            bool edge = false; int i;
+            while ((i = hitNote (p, edge)) >= 0) { v.erase (v.begin() + i); changed = true; }
+        }
+        lastPos = e.position; if (changed) repaint();
+        return;
+    }
+    if (drag == Drag::paint)
+    {
+        if (sel < 0 || sel >= (int) v.size()) return;
+        const double L = orig.l, total = work->bars * 16.0;
+        const double s = orig.s + std::floor ((stepAt (e.position.x) - orig.s) / L) * L;
+        if (s == lastPaint || s < 0 || s + 1 > total) return;
+        lastPaint = s;
+        const int note = noteAtY (e.position.y);
+        for (auto& o : v) if (o.n == note && o.s < s + L && o.s + o.l > s) return;   // o hücrede zaten nota var
+        hg::NoteEv n; n.s = s; n.l = std::min (L, total - s); n.n = note; n.v = orig.v;
+        v.push_back (n); changed = true; repaint();
+        return;
+    }
+    if (sel < 0) return;
     auto& n = work->tracks[(size_t) lane][(size_t) sel]; const double total = work->bars * 16.0; const auto before = n;
     if (drag == Drag::move)
     {

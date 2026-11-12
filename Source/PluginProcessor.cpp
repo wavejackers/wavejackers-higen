@@ -374,6 +374,56 @@ void HitGenProcessor::newIdea()
     if (auto* bp = S["bpm"].getArray()) if (bp->size() == 2)
         setP ("bpm", (float) ((int) (*bp)[0] + rnd.nextInt (juce::jmax (1, (int) (*bp)[1] - (int) (*bp)[0] + 1))));
     setP ("seed", (float) rnd.nextInt ({ 1, 99999 }));
+    // sesler de şaşırtsın: elle seçilmemiş izlere kütüphaneden stile uygun yeni sesler
+    for (int t : { hg::kChords, hg::kBass, hg::kMelody })
+        if (! manual[(size_t) t]) { const auto id = librarySoundFor (t, rnd); if (id.isNotEmpty()) setSound (t, id, false); }
+}
+
+juce::String HitGenProcessor::librarySoundFor (int track, juce::Random& rnd) const
+{
+    if (track == hg::kDrums) return {};
+    const int si = juce::jlimit (0, data.numStyles() - 1, (int) p ("style")->load());
+    const auto& S = data.style (si); const int vi = juce::jlimit (0, 3, (int) p ("variation")->load());
+    const auto& V = S["var"][vi];
+    const auto grp = S["grp"].toString();
+    // stil grubu -> ses etiketleri
+    juce::StringArray tags;
+    if (grp == "techno") tags = { "techno", "mtechno" }; else if (grp == "house") tags = { "house", "deep" }; else if (grp == "trance") tags = { "trance", "mtechno" };
+    else if (grp == "afro") tags = { "afro", "deep", "mtechno" }; else if (grp == "hard") tags = { "techno", "trance" }; else tags = { "mtechno", "house", "trance" };
+    // iz rolü ve çalış biçimi -> kategoriler
+    juce::StringArray cats; char role = 'c';
+    if (track == hg::kChords)
+    {
+        const auto cm = V.hasProperty ("cm") ? V["cm"].toString() : S["chord"]["mode"].toString();
+        cats = cm == "stab" ? juce::StringArray { "Stab", "Pluck" } : cm == "arp" ? juce::StringArray { "Pluck", "Seq", "Stab" } : juce::StringArray { "Pad", "Stab", "Texture" };
+    }
+    else if (track == hg::kBass) { role = 'b'; cats = grp == "techno" || grp == "hard" ? juce::StringArray { "Rolling", "Acid", "Sub" } : juce::StringArray { "Rolling", "Sub" }; }
+    else
+    {
+        role = 'm';
+        const auto mm = V.hasProperty ("mm") ? V["mm"].toString() : S["mel"]["mode"].toString();
+        cats = mm == "arp" ? juce::StringArray { "Seq", "Pluck" } : mm == "riff" ? juce::StringArray { "Seq", "Acid", "Metal", "Lead" } : mm == "chop" ? juce::StringArray { "Pluck", "Seq" } : juce::StringArray { "Lead", "Pluck", "Seq" };
+    }
+    const auto cur = sounds[(size_t) track];
+    for (int pass = 0; pass < 2; ++pass)   // önce etiket eşleşmesi, yoksa yalnızca rol ve kategori
+    {
+        juce::StringArray pool;
+        for (int i = 0; i < data.numSounds(); ++i)
+        {
+            const auto& v = data.sound (i); const auto id = v["id"].toString();
+            if (! data.isFactory (id) || id == cur || ! v["r"].toString().containsChar ((juce::juce_wchar) role) || ! cats.contains (v["cat"].toString())) continue;
+            bool tag = pass == 1; if (! tag) if (auto* g = v["g"].getArray()) for (auto& x : *g) if (tags.contains (x.toString())) tag = true;
+            if (tag) pool.add (id);
+        }
+        if (! pool.isEmpty()) return pool[rnd.nextInt (pool.size())];
+    }
+    return {};
+}
+
+void HitGenProcessor::surpriseSound (int track)
+{
+    const auto id = librarySoundFor (track, juce::Random::getSystemRandom());
+    if (id.isNotEmpty()) setSound (track, id, true);
 }
 
 void HitGenProcessor::suggestAlternative (int track)

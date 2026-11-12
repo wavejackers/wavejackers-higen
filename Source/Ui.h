@@ -70,8 +70,8 @@ public:
     std::function<const Palette&()> palette;
     std::array<juce::Rectangle<int>, 4> laneBounds() const;
 
-    // ---- düzenleme: bir izi tam yükseklikte gösterir; tıkla = nota ekle, sürükle = taşı, sağ kenar = uzat,
-    // sağ tık / çift tık / Delete = sil, tekerlek = şiddet, oklar = taşı, Ctrl+Z / Ctrl+Y = geri al / yinele
+    // ---- düzenleme: bir izi tam yükseklikte gösterir; tıkla = nota ekle, boş yerde basılı sürükle = boya (FL'deki paint gibi),
+    // notayı sürükle = taşı, sağ kenar = uzat, sağ tık / çift tık / Delete = sil, sağ tuş basılı sürükle = yol boyunca sil, tekerlek = şiddet, oklar = taşı, Ctrl+Z / Ctrl+Y = geri al / yinele
     void setEditing (bool on, int track);
     bool isEditing() const noexcept { return editing; }
     int editTrack() const noexcept { return lane; }
@@ -94,7 +94,8 @@ private:
     bool editing = false; int lane = 3, lo = 48, hi = 72; double view0 = 0;   // düzenlemede görünen pencere: 4 ölçü, tekerlekle kaydırılır
     double viewLen() const noexcept { return work ? std::min (64.0, work->bars * 16.0) : 64.0; }
     std::shared_ptr<hg::Result> work;               // düzenlenen kopya
-    int sel = -1; enum class Drag { none, move, resize } drag = Drag::none; hg::NoteEv orig; bool changed = false; double grabOff = 0;
+    int sel = -1; enum class Drag { none, move, resize, paint, erase } drag = Drag::none; hg::NoteEv orig; bool changed = false; double grabOff = 0;
+    double lastPaint = -1; juce::Point<float> lastPos;   // boyama: son boyanan adım; silme: son fare konumu (hızlı sürüklemede ara noktalar da silinir)
     std::vector<std::shared_ptr<const hg::Result>> undoStack, redoStack;
     juce::Rectangle<float> editArea() const;
     int rows() const noexcept;

@@ -275,37 +275,57 @@ Result generate (const Data& data, const GenParams& P)
     auto addM = [&] (int b, double s, double l, int m, double v) { int x = m; while (x > 96) x -= 12; while (x < 36) x += 12; add (kMelody, b * 16 + s, std::max (1.0, l), x, v); };
     if (mmode == "hook")
     {
+        // Tek akılda kalan motif ve cevap (A B A B'): web h-gen.js ile birebir aynı (RNG çağrı sırası dahil)
         std::vector<juce::String> hrk;
         auto hv2 = has (V, "hr") ? V["hr"] : mel["hr"];
         if (auto* a = hv2.getArray()) for (auto& x : *a) hrk.push_back (x.toString());
-        std::vector<std::vector<std::vector<double>>> tpls;
-        for (auto& k : hrk) tpls.push_back (rows (data.root()["hr"][juce::Identifier (k)]));
-        const double rep = has (mel, "rep") ? num (mel["rep"]) : .4, leap = .12;   // özgünlük melodiye eklenmez
-        int cur = 3 + (int) std::floor (rm() * 3);
+        const auto tp = rows (data.root()["hr"][juce::Identifier (hrk[(size_t) std::floor (rm() * (double) hrk.size())])]);
+        const double rep = has (mel, "rep") ? num (mel["rep"]) : .4;   // özgünlük melodiye eklenmez
+        const double keep = clampT (.5 + dens, .55, 1.0);
+        std::vector<std::vector<double>> hits;
+        for (size_t j = 0; j < tp.size(); ++j) if (j == 0 || rm() <= keep) hits.push_back (tp[j]);
+        const int n = (int) hits.size();
+        std::vector<int> strong; for (int j = 1; j < n; ++j) if (((int) hits[(size_t) j][0]) % 4 == 0) strong.push_back (j);
+        int peak;
+        if (n < 2 || rm() < .25) peak = 0;
+        else if (! strong.empty()) peak = strong[(size_t) std::floor (rm() * (double) strong.size())];
+        else peak = 1 + (int) std::floor (rm() * (n - 1));
+        std::vector<int> rel { 0 }; int prevSt = 1;
+        for (int j = 1; j < n; ++j)
+        {
+            const double r = rm(); int st;
+            if (j < peak) st = r < .6 ? 1 : r < .85 ? 0 : 2;
+            else if (j == peak) st = r < .5 ? 2 : r < .8 ? 3 : 4;
+            else st = r < rep * .4 ? 0 : r < .75 ? -1 : -2;
+            if (st == 0 && prevSt == 0) st = j <= peak ? 1 : -1;   // aynı nota en çok iki kez üst üste
+            prevSt = st; rel.push_back (peak == 0 ? clampT (rel[(size_t) j - 1] + st, -5, 0) : clampT (rel[(size_t) j - 1] + st, -2, 5));
+        }
+        const int A0 = (peak == 0 ? 6 : 3) + (int) std::floor (rm() * 3);   // inen hook daha yüksekten başlar
+        auto snapFix = [] (int m, const std::vector<int>& tones)
+        {
+            auto in = [&] (int x) { return std::find (tones.begin(), tones.end(), mod7 (x)) != tones.end(); };
+            for (int d = 0; d <= 3; ++d) { if (in (m - d)) return m - d; if (in (m + d)) return m + d; }
+            return m;
+        };
+        const bool dropLast = n > 2 && peak != n - 1;   // cevap son notayı düşürür (tepe son notaysa düşmez)
         for (int b = 0; b < bars; ++b)
         {
-            const auto& c = R.chords[(size_t) b]; const auto& tp = tpls[(size_t) ((b >> 1) % (int) tpls.size())]; const bool odd = b % 2 == 1;
-            std::vector<std::vector<double>> T2 = tp;
-            if (odd) T2.resize ((size_t) std::max (2, (int) tp.size() - 1));
-            const double keep = clampT (.5 + dens, .55, 1.0);
-            for (size_t j = 0; j < T2.size(); ++j)
+            const auto& c = R.chords[(size_t) b]; const int role = b % 4; const bool cad = b == bars - 1;
+            const int anchor = snapFix (A0, cTones (c)), seqShift = role == 3 ? -1 : 0;
+            const int cnt = ((role == 1 || role == 3) && dropLast && ! cad) ? n - 1 : n;
+            for (int j = 0; j < cnt; ++j)
             {
-                double s = T2[j][0], l = T2[j][1];
-                if (j > 0 && rm() > keep) continue;
-                if (j == 0) cur = snapDeg (cur, cTones (c));
-                else if (rm() < rep) {}
-                else
+                int dg = clampT (anchor + rel[(size_t) j] + seqShift, 0, 10);
+                if (j == cnt - 1)
                 {
-                    double r = rm(); int mag = r < .6 ? 1 : r < .85 ? 2 : (rm() < leap * 4 ? 4 : 3);
-                    bool up = rm() < .5;
-                    if (cur > 8) up = rm() < .3; else if (cur < 2) up = rm() < .75;
-                    cur += up ? mag : -mag;
+                    const auto tones = cad ? std::vector<int> { c.d % 7 } : role == 1 ? std::vector<int> { (c.d + 2) % 7, (c.d + 4) % 7 } : cTones (c);
+                    dg = snapFix (dg, tones);
+                    const int pk = clampT (anchor + rel[(size_t) peak] + seqShift, 0, 10);
+                    if (j != peak && dg > pk) { dg = pk - 1; while (dg > pk - 7 && std::find (tones.begin(), tones.end(), mod7 (dg)) == tones.end()) --dg; }   // tepeyi aşmaz
                 }
-                cur = clampT (cur, 0, 10);
-                const bool last = j == T2.size() - 1;
-                if (last && odd) cur = snapDeg (cur, { c.d % 7, (c.d + 4) % 7 });
-                double nx = j + 1 < T2.size() ? T2[j + 1][0] : 16;
-                addM (b, s, std::min (l, nx - s), mbase + deg (cur), ((int) s) % 4 == 0 ? 100 : 84);
+                const double s = hits[(size_t) j][0], nx = j + 1 < cnt ? hits[(size_t) j + 1][0] : 16;
+                const double l = cad && j == cnt - 1 ? 16 - s : std::min (hits[(size_t) j][1], nx - s);
+                addM (b, s, l, mbase + deg (dg), j == peak ? 108 : ((int) s) % 4 == 0 ? 100 : 84);
             }
         }
     }

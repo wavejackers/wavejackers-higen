@@ -1876,23 +1876,45 @@ HG.generate = function (P) {
   const snapDeg = (m, tones) => { let best = m, bd = 99; for (let k = m - 3; k <= m + 3; k++) { if (!tones.includes(((k % 7) + 7) % 7)) continue; const d = Math.abs(k - m) + rm() * .1; if (d < bd) { bd = d; best = k; } } return best; };
   const addM = (b, s, l, m, v) => { let x = m; while (x > 96) x -= 12; while (x < 36) x += 12; add('melody', b * 16 + s, Math.max(1, l), x, v); };
   if (mmode === 'hook') {
-    const hrk = V.hr || S.mel.hr, tpls = hrk.map(k => HG.HR[k]), rep = S.mel.rep == null ? .4 : S.mel.rep, leap = .12;   // özgünlük melodiye eklenmez
-    let cur = 3 + Math.floor(rm() * 3);
+    // Tek akılda kalan motif ve cevap (A B A B'): ritim ve çalan notalar bir kez seçilir, her ölçü aynı motifi akora göre
+    // ölçek içinde kaydırır. Tepe notası güçlü vuruşta ve tektir; sıçrama yalnızca tepeye çıkarken, sonra adımla iner.
+    // B: cevap (son nota düşer, açık bir akor tonunda biter), B': bir derece aşağı dizi, son ölçü kökte uzun biter.
+    const hrk = V.hr || S.mel.hr, tp = HG.HR[hrk[Math.floor(rm() * hrk.length)]], rep = S.mel.rep == null ? .4 : S.mel.rep;   // özgünlük melodiye eklenmez
+    const keep = clamp(.5 + dens, .55, 1), hits = [];
+    tp.forEach((h, j) => { if (j === 0 || rm() <= keep) hits.push(h); });
+    const n = hits.length;
+    const strong = []; for (let j = 1; j < n; j++) if (hits[j][0] % 4 === 0) strong.push(j);
+    let peak;   // %25 inen hook (tepe ilk notada), aksi halde güçlü vuruşlardan biri
+    if (n < 2 || rm() < .25) peak = 0; else if (strong.length) peak = strong[Math.floor(rm() * strong.length)]; else peak = 1 + Math.floor(rm() * (n - 1));
+    const rel = [0]; let prevSt = 1;
+    for (let j = 1; j < n; j++) {
+      const r = rm(); let st;
+      if (j < peak) st = r < .6 ? 1 : r < .85 ? 0 : 2;
+      else if (j === peak) st = r < .5 ? 2 : r < .8 ? 3 : 4;
+      else st = r < rep * .4 ? 0 : r < .75 ? -1 : -2;
+      if (st === 0 && prevSt === 0) st = j <= peak ? 1 : -1;   // aynı nota en çok iki kez üst üste
+      prevSt = st; rel.push(peak === 0 ? clamp(rel[j - 1] + st, -5, 0) : clamp(rel[j - 1] + st, -2, 5));
+    }
+    const A0 = (peak === 0 ? 6 : 3) + Math.floor(rm() * 3);   // inen hook daha yüksekten başlar
+    // rastgelesiz en yakın akor tonu (eşitlikte aşağı: çözülme): aynı akor her seferinde aynı perdeyi verir, motif birebir tekrar eder
+    const snapFix = (m, tones) => { for (let d = 0; d <= 3; d++) { if (tones.includes(((m - d) % 7 + 7) % 7)) return m - d; if (tones.includes(((m + d) % 7 + 7) % 7)) return m + d; } return m; };
+    const dropLast = n > 2 && peak !== n - 1;   // cevap son notayı düşürür (tepe son notaysa düşmez)
     for (let b = 0; b < bars; b++) {
-      const c = chords[b], tp = tpls[(b >> 1) % tpls.length], odd = b % 2 === 1;
-      let T2 = odd ? tp.slice(0, Math.max(2, tp.length - 1)) : tp;
-      const keep = clamp(.5 + dens, .55, 1);
-      T2.forEach(([s, l], j) => {
-        if (j > 0 && rm() > keep) return;
-        if (j === 0) cur = snapDeg(cur, cTones(c));
-        else if (rm() < rep) { /* aynı nota */ }
-        else { const r = rm(), mag = r < .6 ? 1 : r < .85 ? 2 : (rm() < leap * 4 ? 4 : 3); let up = rm() < .5; if (cur > 8) up = rm() < .3; else if (cur < 2) up = rm() < .75; cur += up ? mag : -mag; }
-        cur = clamp(cur, 0, 10);
-        const last = j === T2.length - 1;
-        if (last && odd) cur = snapDeg(cur, [c.d % 7, (c.d + 4) % 7]);
-        const nx = j + 1 < T2.length ? T2[j + 1][0] : 16;
-        addM(b, s, Math.min(l, nx - s), mbase + deg(cur), s % 4 === 0 ? 100 : 84);
-      });
+      const c = chords[b], role = b % 4, cad = b === bars - 1;
+      const anchor = snapFix(A0, cTones(c)), seqShift = role === 3 ? -1 : 0;
+      const cnt = ((role === 1 || role === 3) && dropLast && !cad) ? n - 1 : n;
+      for (let j = 0; j < cnt; j++) {
+        let dg = clamp(anchor + rel[j] + seqShift, 0, 10);
+        if (j === cnt - 1) {
+          const tones = cad ? [c.d % 7] : role === 1 ? [(c.d + 2) % 7, (c.d + 4) % 7] : cTones(c);
+          dg = snapFix(dg, tones);
+          const pk = clamp(anchor + rel[peak] + seqShift, 0, 10);
+          if (j !== peak && dg > pk) { dg = pk - 1; while (dg > pk - 7 && !tones.includes(((dg % 7) + 7) % 7)) dg--; }   // tepeyi aşmaz
+        }
+        const s = hits[j][0], nx = j + 1 < cnt ? hits[j + 1][0] : 16;
+        const l = cad && j === cnt - 1 ? 16 - s : Math.min(hits[j][1], nx - s);
+        addM(b, s, l, mbase + deg(dg), j === peak ? 108 : s % 4 === 0 ? 100 : 84);
+      }
     }
   } else if (mmode === 'arp') {
     const seq = HG.ARP[V.arp || S.mel.arp || 'trance'];
@@ -2749,6 +2771,12 @@ Object.assign(HG.I18N.hi, { cat_Sub: 'सब', cat_Rolling: 'रोलिंग 
   demoPlay: 'डेमो', demoHint: 'इस साउंड के अनुकूल छोटा वाक्यांश बजाता है (बेसलाइन, कॉर्ड, लीड या इफ़ेक्ट)।', pImportShort: 'इम्पोर्ट', useWord: 'उपयोग', orbTitle: 'साउंड का आकार',
   mBright: 'चमक', mDrive: 'ड्राइव', mMove: 'मूवमेंट', mSpace: 'स्पेस',
   mBrightHint: 'इस ट्रैक का फ़िल्टर खोलता या बंद करता है।', mDriveHint: 'इस ट्रैक में सैचुरेशन जोड़ता है।', mMoveHint: 'LFO और फ़िल्टर एनवेलप को बढ़ाता या घटाता है: कम या ज़्यादा हलचल।', mSpaceHint: 'इस ट्रैक का ज़्यादा या कम हिस्सा रीवर्ब में भेजता है।' });
+Object.assign(HG.I18N.en, { surpriseSnd: 'Surprise me: a library sound for this style' });
+Object.assign(HG.I18N.de, { surpriseSnd: 'Überrasch mich: ein Bibliothekssound für diesen Stil' });
+Object.assign(HG.I18N.es, { surpriseSnd: 'Sorpréndeme: un sonido de la biblioteca para este estilo' });
+Object.assign(HG.I18N.tr, { surpriseSnd: 'Beni şaşırt: bu stile uygun kütüphane sesi' });
+Object.assign(HG.I18N.ar, { surpriseSnd: 'فاجئني: صوت من المكتبة يناسب هذا الأسلوب' });
+Object.assign(HG.I18N.hi, { surpriseSnd: 'सरप्राइज़ करें: इस स्टाइल के लिए लाइब्रेरी साउंड' });
 // ---- Stil metinleri: [etiket, açıklama, [varyasyon adı, not] x4]
 HG.ST = {};
 HG.ST.en = {
