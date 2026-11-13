@@ -378,3 +378,9 @@ Object.assign(HG.I18N.es, { surpriseSnd: 'Sorpréndeme: un sonido de la bibliote
 Object.assign(HG.I18N.tr, { surpriseSnd: 'Beni şaşırt: bu stile uygun kütüphane sesi' });
 Object.assign(HG.I18N.ar, { surpriseSnd: 'فاجئني: صوت من المكتبة يناسب هذا الأسلوب' });
 Object.assign(HG.I18N.hi, { surpriseSnd: 'सरप्राइज़ करें: इस स्टाइल के लिए लाइब्रेरी साउंड' });
+Object.assign(HG.I18N.en, { gBass: 'Bass', gUrban: 'Rap & R&B', gChill: 'Chill' });
+Object.assign(HG.I18N.de, { gBass: 'Bass', gUrban: 'Rap & R&B', gChill: 'Chill' });
+Object.assign(HG.I18N.es, { gBass: 'Bass', gUrban: 'Rap y R&B', gChill: 'Chill' });
+Object.assign(HG.I18N.tr, { gBass: 'Bass', gUrban: 'Rap ve R&B', gChill: 'Chill' });
+Object.assign(HG.I18N.ar, { gBass: 'بيس', gUrban: 'راب و R&B', gChill: 'هادئ' });
+Object.assign(HG.I18N.hi, { gBass: 'बेस', gUrban: 'रैप और R&B', gChill: 'चिल' });

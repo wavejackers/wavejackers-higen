@@ -6,7 +6,7 @@ using namespace juce;
 namespace
 {
 const char* const kPart[4] = { "chords", "bass", "drums", "melody" };
-const char* const kGroupKeys[8] = { "gAll", "gTechno", "gHouse", "gMain", "gTrance", "gHard", "gAfro", "gMine" };
+const char* const kGroupKeys[] = { "gAll", "gTechno", "gHouse", "gMain", "gTrance", "gHard", "gAfro", "gBass", "gUrban", "gChill", "gMine" };
 const char* const kTabKeys[9] = { "navRef", "navDetect", "navDna", "navGen", "navMidi", "tabSound", "tabPresets", "navDrums", "tabProject" };
 inline int tabIndexOf (int i) { return i < 4 ? -1 : i == 7 ? 4 : i == 8 ? 5 : i - 4; }   // gezinme düğmesi -> sayfa (MIDI Studio 0, Ses 1, Preset 2, Davul 4, Proje 5)
 const char* const kAwardKeys[][2] = { { "house", "awHouse" }, { "techno", "awTechno" }, { "trance", "awTrance" }, { "psy", "awPsy" }, { "hard", "awHard" }, { "group", "awGroup" } };
@@ -54,7 +54,7 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
     presetBtn.onClick = [this] { showPresetMenu(); }; saveBtn.onClick = [this] { showSaveDialog(); };
     settingsBtn.setClickingTogglesState (false); settingsBtn.onClick = [this] { toggleSettings (! settingsOpen); }; helpBtn.onClick = [this] { showHelpMenu(); };
     addC (loudBtn); ba.push_back (std::make_unique<BA> (A, "loudness", loudBtn)); hgui::tagParam (loudBtn, "loudness");
-    for (int i = 0; i < 8; ++i)
+    for (int i = 0; i < kNumGroups; ++i)
     {
         auto& b = groupBtns[(size_t) i]; addC (b); b.setClickingTogglesState (true); b.setRadioGroupId (101);
         b.onClick = [this, i] { if (groupBtns[(size_t) i].getToggleState()) { group = i; refreshStyleList(); } };
@@ -334,7 +334,7 @@ void HitGenEditor::relabel()
     orb.setTitle (T ("asName")); orb.setTooltip (T ("asTip")); orb.setHelpText (T ("asTip"));
     bubble.footer = T ("asFooter"); bubble.rtl = rtl; bubble.nextBtn.setButtonText (T ("asNext")); bubble.guideBtn.setButtonText (T ("gdStart")); bubble.closeBtn.setTitle (T ("asClose"));
     guide.backText = T ("gdBack"); guide.nextText = T ("gdNext"); guide.doneText = T ("gdDone"); guide.skipText = T ("gdSkip"); guide.stepWord = T ("gdStep"); guide.rtl = rtl;
-    for (int i = 0; i < 8; ++i) groupBtns[(size_t) i].setButtonText (T (kGroupKeys[i]));
+    for (int i = 0; i < kNumGroups; ++i) groupBtns[(size_t) i].setButtonText (T (kGroupKeys[i]));
     presetBtn.setButtonText (proc.userArtist.isNotEmpty() ? proc.userArtist + " - " + proc.userPreset : T ("hdPreset")); saveBtn.setButtonText (T ("hdSave")); settingsBtn.setButtonText (T ("hdSettings")); helpBtn.setButtonText (T ("hdHelp"));
     for (int i = 0; i < 9; ++i) { tabBtns[(size_t) i].setButtonText (T (kTabKeys[i]).toUpperCase()); tabBtns[(size_t) i].setTooltip ((juce::SystemStats::getOperatingSystemType() & juce::SystemStats::MacOSX) != 0 ? "Cmd+" + String (i + 1) : "Ctrl+" + String (i + 1)); }
     styleList.setTitle (T ("pStyleList"));
@@ -735,7 +735,7 @@ void HitGenEditor::layoutContent()
     place (langLabel, { 780, 108, 110, 28 }); place (langBox, { 900, 108, 240, 28 });
     place (qualityLabel, { 780, 144, 110, 28 }); place (qualityBox, { 900, 144, 240, 28 });
     place (sizeLabel, { 0, 0, 0, 0 }); place (sizeBox, { 900, 180, 240, 28 }); place (contrastBtn, { 780, 218, 180, 28 }); place (motionBtn, { 968, 218, 172, 28 });
-    for (int i = 0; i < 8; ++i) place (groupBtns[(size_t) i], { 16 + (i % 3) * 110, 106 + (i / 3) * 32, 104, 28 });
+    for (int i = 0; i < kNumGroups; ++i) place (groupBtns[(size_t) i], { 16 + (i % 4) * 82, 106 + (i / 4) * 32, 79, 28 });
     place (styleList, { 16, 204, 324, 218 });
     place (varLabel, { 16, 428, 324, 18 });
     for (int i = 0; i < 4; ++i) place (varBtns[(size_t) i], { 16 + (i % 2) * 164, 448 + (i / 2) * 38, 160, 34 });
@@ -964,7 +964,7 @@ void HitGenEditor::startGuide()
     auto add = [&] (const char* key, std::function<Rectangle<int>()> target, std::function<void()> enter)
     { st.push_back ({ T (String (key) + "_t"), T (key), std::move (target), std::move (enter) }); };
     add ("gd1", nullptr, [this] { setTab (0); });
-    add ("gd2", [this, bnd] { return bnd ({ &groupBtns[0], &groupBtns[7], &styleList, &varBtns[3] }); }, [this] { setTab (0); });
+    add ("gd2", [this, bnd] { return bnd ({ &groupBtns[0], &groupBtns[kNumGroups - 1], &styleList, &varBtns[3] }); }, [this] { setTab (0); });
     add ("gd3", [this, bnd] { return bnd ({ &playBtn, &hostLabel }); }, [this] { setTab (0); });
     add ("gd4", [this, bnd] { return bnd ({ &seed, &newBtn }); }, [this] { setTab (0); });
     add ("gd5", [this, bnd] { return bnd ({ &chords, &trackLabels[0], &soundBoxes[3], &tiles[3], &roll }); }, [this] { setTab (0); });

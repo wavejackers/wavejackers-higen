@@ -373,7 +373,7 @@ const UI = {};
 
   // ---------- Stil duvarı ve kontroller
   const AW = { house: 'awHouse', techno: 'awTechno', trance: 'awTrance', psy: 'awPsy', hard: 'awHard', group: 'awGroup' };
-  const GK = { all: 'gAll', techno: 'gTechno', house: 'gHouse', main: 'gMain', trance: 'gTrance', hard: 'gHard', afro: 'gAfro' };
+  const GK = { all: 'gAll', techno: 'gTechno', house: 'gHouse', main: 'gMain', trance: 'gTrance', hard: 'gHard', afro: 'gAfro', bass: 'gBass', urban: 'gUrban', chill: 'gChill' };
   function buildGroups() {
     const h = $('groups'); h.innerHTML = '';
     HG.GROUPS.forEach(g => {

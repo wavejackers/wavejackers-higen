@@ -351,28 +351,28 @@ Result generate (const Data& data, const GenParams& P)
     }
     else if (mmode == "riff")
     {
-        const std::vector<int> cand { 0, 2, 3, 4, 6, 7, 8, 10, 11, 12, 14, 15 }, offs { 0, 0, 0, 7, 10, 12, 3, 5 };
+        // riff: gam içinde kalan kısa kalıp; her ölçü aynen tekrar eder, 4. ölçüler tek notayı geçici olarak değiştirir (dönüş)
+        const std::vector<int> cand { 0, 2, 3, 4, 6, 7, 8, 10, 11, 12, 14, 15 }, offs { 0, 0, 0, 4, 6, 7, 2, 3 };
         const int cnt = (int) jsRound (3 + dens * 8);
-        std::vector<std::pair<int, int>> riff; auto pool = cand;
+        struct RN { int s, o; double l; };
+        std::vector<RN> riff; auto pool = cand;
         while ((int) riff.size() < cnt && ! pool.empty())
         {
             size_t i = (size_t) std::floor (rm() * (double) pool.size());
             int s = pool[i]; pool.erase (pool.begin() + (long) i);
-            riff.push_back ({ s, pickFrom (rm, offs) });
+            const int o = pickFrom (rm, offs); riff.push_back ({ s, o, rm() < .3 ? 2.0 : 1.0 });
         }
-        std::stable_sort (riff.begin(), riff.end(), [] (auto& a, auto& z) { return a.first < z.first; });
+        std::stable_sort (riff.begin(), riff.end(), [] (auto& a, auto& z) { return a.s < z.s; });
         const int oc = (int) orDef (mel["oct"], 60);
         for (int b = 0; b < bars; ++b)
         {
-            const auto& c = R.chords[(size_t) b];
-            if (b % 4 == 3 && riff.size() > 2 && rm() < .4) { size_t i = (size_t) std::floor (rm() * (double) riff.size()); riff[i] = { riff[i].first, pickFrom (rm, offs) }; }
+            const auto& c = R.chords[(size_t) b]; int ti = -1, to = 0;
+            if (b % 4 == 3 && riff.size() > 2 && rm() < .4) { ti = (int) std::floor (rm() * (double) riff.size()); to = pickFrom (rm, offs); }
             const int rootM = oc + ((c.pc - (oc % 12) + 12) % 12);
             for (size_t j = 0; j < riff.size(); ++j)
             {
-                int s = riff[j].first, o = riff[j].second;
-                double nx = j + 1 < riff.size() ? riff[j + 1].first : 16;
-                double len = std::min (nx - s, rm() < .3 ? 2.0 : 1.0);
-                addM (b, s, len, rootM + o, s % 4 == 0 ? 102 : 84);
+                const int s = riff[j].s; const double nx = j + 1 < riff.size() ? riff[j + 1].s : 16;
+                addM (b, s, std::min (nx - s, riff[j].l), rootM + deg (c.d + ((int) j == ti ? to : riff[j].o)) - deg (c.d), s % 4 == 0 ? 102 : 84);
             }
         }
     }
@@ -400,7 +400,7 @@ Result generate (const Data& data, const GenParams& P)
             }
         }
     }
-    else // chop
+    else // chop: iki ritim kalıbı (A, B) ve her vuruşa sabit akor sesi; ölçüler aynı şekli yeni akorda tekrar eder
     {
         const std::vector<int> cand { 0, 2, 3, 5, 6, 7, 10, 11, 14 };
         const int cnt = (int) jsRound (3 + dens * 6);
@@ -413,20 +413,23 @@ Result generate (const Data& data, const GenParams& P)
         auto A = mk(); auto B = A;
         { size_t i = (size_t) std::floor (rm() * (double) B.size()); B[i] = pickFrom (rm, cand); }
         { std::vector<int> u; for (auto x : B) if (std::find (u.begin(), u.end(), x) == u.end()) u.push_back (x); std::stable_sort (u.begin(), u.end()); B = u; }
+        int tone[16], last = 0; double len[16]; std::fill (tone, tone + 16, -1);
+        for (auto* h : { &A, &B }) for (int s : *h)
+        {
+            if (tone[s] >= 0) continue;
+            if (rm() >= .45) last = (int) std::floor (rm() * 6);
+            tone[s] = last; len[s] = rm() < .5 ? 1.0 : 2.0;
+        }
         const int oc = (int) orDef (mel["oct"], 72);
         for (int b = 0; b < bars; ++b)
         {
             const auto& c = R.chords[(size_t) b]; const auto& hits = (b % 2 == 0) ? A : B;
+            const int tn[6] = { 0, c.third, c.fifth, 12, 12 + c.third, 12 + c.fifth };
             const int rootM = oc + ((c.pc - (oc % 12) + 12) % 12) - 12;
-            int last = 0;
             for (size_t j = 0; j < hits.size(); ++j)
             {
-                int s = hits[j];
-                int off = rm() < .45 ? last : pickFrom (rm, std::vector<int> { 0, c.third, c.fifth, 12, 12 + c.third, 12 + c.fifth });
-                last = off;
-                double nx = j + 1 < hits.size() ? hits[j + 1] : 16;
-                double len = std::min (nx - s, rm() < .5 ? 1.0 : 2.0);
-                addM (b, s, len, rootM + off, s % 4 == 0 ? 100 : 82);
+                const int s = hits[j]; const double nx = j + 1 < hits.size() ? hits[j + 1] : 16;
+                addM (b, s, std::min (nx - s, len[s]), rootM + tn[tone[s]], s % 4 == 0 ? 100 : 82);
             }
         }
     }
@@ -577,6 +580,31 @@ juce::String skName (const juce::String& k)
     if (k == "verse") return "Verse";
     return k;
 }
+double ideaScore (const Result& r)
+{
+    const auto& mel = r.tracks[kMelody];
+    if (mel.empty() || r.bars < 1 || r.chords.empty()) return -100;
+    std::map<int, int> top;   // adım -> en tiz nota (kalınlık katlaması dışarıda kalır)
+    for (auto& n : mel) { auto& t = top[(int) std::floor (n.s)]; t = std::max (t, n.n); }
+    std::set<int> bassOn; for (auto& n : r.tracks[kBass]) bassOn.insert ((int) std::floor (n.s));
+    int lo = 127, hi = 0, leaps = 0, clash = 0, prev = -1, same = 0, first = 0;
+    for (auto& [s, n] : top)
+    {
+        lo = std::min (lo, n); hi = std::max (hi, n);
+        if (prev >= 0 && std::abs (n - prev) > 7) ++leaps;
+        if (bassOn.count (s)) ++clash;
+        if (s < 32) { ++first; if (top.count (s + 64)) ++same; }   // ilk iki ölçünün ritmi 5-6. ölçülerde geri geliyor mu
+        prev = n;
+    }
+    const double N = (double) top.size(), per = N / r.bars; const int range = hi - lo;
+    double sc = -1.5 * std::max (0, range - 14) - 2.0 * std::max (0, 4 - range) - 12.0 * leaps / N - 6.0 * clash / N
+              - std::max (0.0, per - 8) - 3.0 * std::max (0.0, 2 - per);
+    if (r.bars >= 8 && first > 0) sc += 6.0 * same / first;
+    const auto& c = r.chords.back(); const int pc = ((prev - c.pc) % 12 + 12) % 12;
+    if (pc == 0 || pc == c.third || pc == c.fifth) sc += 3;   // akor sesinde bitiş
+    return sc;
+}
+
 juce::String skProfile (const juce::var& style)
 {
     const auto g = style["grp"].toString();

@@ -261,3 +261,26 @@ Doğrulama: pembe gürültü RMS ±0.2 dB ve oktav başına eşit enerji ±1 dB,
 **Sürpriz sesler.** "Yeni fikir" artık elle seçilmemiş akor, bas ve melodi izlerine stilin türüne ve izin çalış biçimine uygun Factory 26 seslerinden yenilerini seçer (stab akor kipinde Stab/Pluck, techno basta Rolling/Acid/Sub, arpejde Seq/Pluck...). Elle seçtiğin ses korunur. Ses kutularında Factory 26 en üstte; "Beni şaşırt" seçeneği o ize tek seferde yeni bir kütüphane sesi verir. Stil değiştirmek stilin kendi seslerine döner.
 
 **MIDI düzenleyici.** Boş yere sol tuşla basılı sürüklemek sağa/sola boyar (FL Studio'daki paint gibi: aynı uzunlukta, imlecin satırındaki perdeden, dolu hücreyi atlar). Sağ tık notayı siler; sağ tuş basılı sürüklemek yol boyunca tüm notaları siler (hızlı sürüklemede aradakiler de). Her boyama ya da silme hareketi tek adımda geri alınır. Not: bu yalnızca eklentide; web sürümünün düzenleyicisi değişmedi.
+
+## Tür stilleri, riff/chop melodisi ve aday seçimi / Genre styles, riff and chop melodies, best-of-eight ideas
+
+**Türkçe.** 30 yeni tür stili eklendi (toplam 57 stil, her biri 4 varyasyon). Üç yeni grup var: **Bass**, **Rap ve R&B**, **Chill**.
+
+| Grup | Yeni stiller |
+|---|---|
+| Techno | Minimal, Acid Techno, Dub Techno |
+| House | Deep House, Future House, Bass House, Nu-Disco, Piano House, Slap House |
+| Afro | Amapiano |
+| Ana sahne, Trance, Hard | Electro House, Psytrance, Uplifting Trance, Hardstyle, Hardcore |
+| Bass | Liquid Drum & Bass, Neurofunk, Dubstep, Future Bass, UK Garage, Breakbeat |
+| Chill | Lo-fi Hip-Hop, Downtempo, Synthwave |
+| Rap ve R&B | Boom Bap, Trap, Drill, R&B, Trap Soul, Phonk |
+
+- Yeni stiller listenin sonuna eklendi; eski projelerdeki stil seçimi değişmez.
+- **Riff** melodileri artık her akorda gamın içinde kalır ve her ölçü aynen tekrar eder; yalnızca 4. ölçülerde tek nota değişir.
+- **Chop** melodileri her vuruşa sabit bir akor sesi verir; aynı şekil her akorda tekrar eder (eskiden her ölçü rastgeleydi).
+- **Yeni fikir** sekiz aday üretir ve en yüksek puanlıyı seçer (melodi aralığı, sıçramalar, tekrar, bas ile çakışma, akor sesinde bitiş). Yalnızca eklentide.
+- Bass, Chill ve Rap/R&B stillerinde sürpriz sesler türün kendi paletinden gelir (808, Rhodes, çan, reese gibi).
+- Sınırlar: trap hat ruloları (1/32) ve 808 kaymaları yok; davul kalıbı her ölçüde aynıdır. Kulakla ve DAW'da doğrulanmadı.
+
+**English.** 30 new genre styles (57 total), three new groups (Bass, Rap & R&B, Chill). Riff melodies stay in key and repeat every bar; chop melodies keep one shape across chords. "New idea" generates eight candidates and keeps the best-scoring one (plugin only). Not yet verified by ear or in a DAW.

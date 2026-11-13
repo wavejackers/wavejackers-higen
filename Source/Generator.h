@@ -58,6 +58,10 @@ struct Rng
 class Data;   // JSON veri kümesi (Data.h)
 
 Result generate (const Data& data, const GenParams& p);
+
+// Fikir puanı (yüksek daha iyi): melodi aralığı, sıçramalar, tekrar, bas ile çakışma, yoğunluk ve bitiş notası.
+// Yalnızca "Yeni fikir"in aday tohumlarını sıralamak için kullanılır; üretimin kendisini değiştirmez.
+double ideaScore (const Result& r);
 Result assemble (const Data& data, const Result& loop);
 
 // Aranjman: bölüm adı (maske adı belirler), uzunluk ve iskelet türü (profil kuralları için; boş = stil aranjmanı)

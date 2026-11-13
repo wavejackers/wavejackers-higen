@@ -1373,6 +1373,33 @@ static void testSoundPageUi (const juce::File& outDir, const FailFn& fail, bool 
 
 
 // Hook kuralları (A B A B' motif): tekrar, tek tepe, akor tonunda bitiş, aralık, son ölçüde köke iniş
+// Riff ve chop melodileri: ritim her ölçüde (chop: iki ölçüde bir) tekrar eder, riff notaları gamın içindedir; fikir puanı sonlu.
+static void testRiffChopRules (const FailFn& fail)
+{
+    const auto& D = hg::Data::get(); int checked = 0;
+    auto onsets = [] (const hg::Result& r, int bar) { std::set<int> o; for (auto& n : r.tracks[hg::kMelody]) if ((int) n.s / 16 == bar) o.insert ((int) n.s % 16); return o; };
+    for (int si = 0; si < D.numStyles(); ++si) for (int vi = 0; vi < 4; ++vi)
+    {
+        const auto& S = D.style (si); const auto& V = S["var"][vi];
+        const auto mode = V.hasProperty ("mm") ? V["mm"].toString() : S["mel"]["mode"].toString();
+        for (int seed : { 1, 7, 42, 999 })
+        {
+            hg::GenParams P; P.style = D.styleId (si); P.vi = vi; P.seed = seed; P.key = (int) S["key"]; P.orig = 0; P.human = 0; P.thick = 0;
+            const auto r = hg::generate (D, P); const auto tag = P.style + "/" + juce::String (vi) + "/" + juce::String (seed);
+            if (! std::isfinite (hg::ideaScore (r))) fail ("idea score not finite: " + tag);
+            if (mode != "riff" && mode != "chop") continue;
+            ++checked;
+            if (onsets (r, 0) != onsets (r, mode == "riff" ? 1 : 2)) fail ("melody rhythm does not repeat: " + tag);
+            if (mode == "riff")
+            {
+                bool in[12] = {}; if (auto* iv = D.root()["scales"][juce::Identifier (r.P.scale)].getArray()) for (auto& x : *iv) in[((int) x + P.key) % 12] = true;
+                for (auto& n : r.tracks[hg::kMelody]) if (! in[n.n % 12]) { fail ("riff note out of scale: " + tag); break; }
+            }
+        }
+    }
+    std::cout << "riff/chop rules: " << checked << " cases\n";
+}
+
 static void testHookRules (const FailFn& fail)
 {
     const auto& D = hg::Data::get(); int checked = 0;
@@ -1705,7 +1732,7 @@ int main (int argc, char** argv)
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_DEMO", {}).isNotEmpty()) { testLoudness (outDir, fail, false); return failures == 0 ? 0 : 1; }   // yalnızca dinleme demoları
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_CALIBRATE", {}).isNotEmpty()) { testFactoryBank (fail, true); return 0; }   // fabrika bankası seviye ayarı
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_SHOT", {}).isNotEmpty()) { testSoundPageUi (outDir, fail, true); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
-    if (juce::SystemStats::getEnvironmentVariable ("HITGEN_BANK", {}).isNotEmpty()) { testHookRules (fail); testFactoryBank (fail, false); testBankBehaviour (fail); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
+    if (juce::SystemStats::getEnvironmentVariable ("HITGEN_BANK", {}).isNotEmpty()) { testHookRules (fail); testRiffChopRules (fail); testFactoryBank (fail, false); testBankBehaviour (fail); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
 
     // 1) stiller x kalite
     {
@@ -1953,7 +1980,7 @@ int main (int argc, char** argv)
     testProducer (outDir, fail);
     testTechHouse (fail);
     testMixCore (fail);
-    testHookRules (fail);
+    testHookRules (fail); testRiffChopRules (fail);
     testFactoryBank (fail, false);
     testBankBehaviour (fail);
     testSoundPageUi (outDir, fail, false);

@@ -182,16 +182,17 @@ HG.generate = function (P) {
       }
     }
   } else if (mmode === 'riff') {
-    const cand = [0, 2, 3, 4, 6, 7, 8, 10, 11, 12, 14, 15], offs = [0, 0, 0, 7, 10, 12, 3, 5];
+    // riff: gam içinde kalan kısa kalıp; her ölçü aynen tekrar eder, 4. ölçüler tek notayı geçici olarak değiştirir (dönüş)
+    const cand = [0, 2, 3, 4, 6, 7, 8, 10, 11, 12, 14, 15], offs = [0, 0, 0, 4, 6, 7, 2, 3];   // derece: kök, beşli, yedili, oktav, üçlü, dörtlü
     const cnt = Math.round(3 + dens * 8);
-    let riff = [], pool = cand.slice();
-    while (riff.length < cnt && pool.length) { const i = Math.floor(rm() * pool.length); riff.push([pool.splice(i, 1)[0], pick(rm, offs)]); }
+    const riff = [], pool = cand.slice();
+    while (riff.length < cnt && pool.length) { const i = Math.floor(rm() * pool.length); riff.push([pool.splice(i, 1)[0], pick(rm, offs), rm() < .3 ? 2 : 1]); }
     riff.sort((a, z) => a[0] - z[0]);
     for (let b = 0; b < bars; b++) {
-      const c = chords[b];
-      if (b % 4 === 3 && riff.length > 2 && rm() < .4) { const i = Math.floor(rm() * riff.length); riff[i] = [riff[i][0], pick(rm, offs)]; }
+      const c = chords[b]; let ti = -1, to = 0;
+      if (b % 4 === 3 && riff.length > 2 && rm() < .4) { ti = Math.floor(rm() * riff.length); to = pick(rm, offs); }
       const rootM = (S.mel.oct || 60) + ((c.pc - ((S.mel.oct || 60) % 12) + 12) % 12);
-      riff.forEach(([s, o], j) => { const nx = j + 1 < riff.length ? riff[j + 1][0] : 16; addM(b, s, Math.min(nx - s, rm() < .3 ? 2 : 1), rootM + o, s % 4 === 0 ? 102 : 84); });
+      riff.forEach(([s, o, l], j) => { const nx = j + 1 < riff.length ? riff[j + 1][0] : 16; addM(b, s, Math.min(nx - s, l), rootM + deg(c.d + (j === ti ? to : o)) - deg(c.d), s % 4 === 0 ? 102 : 84); });
     }
   } else if (mmode === 'motif') {
     // kulüp hook'u: 2-5 notalık tek ölçülük kısa motif; her ölçü tekrar edilir, çift ölçüler "cevap" olarak son notayı boş bırakır,
@@ -209,15 +210,16 @@ HG.generate = function (P) {
         addM(b, s, Math.min(lens[j], nx - s), mbase + deg(dg), s % 4 === 0 ? 104 : 90);
       }
     }
-  } else { // chop
+  } else { // chop: iki ritim kalıbı (A, B) ve her vuruşa sabit akor sesi; ölçüler aynı şekli yeni akorda tekrar eder
     const cand = [0, 2, 3, 5, 6, 7, 10, 11, 14], cnt = Math.round(3 + dens * 6);
     const mk = () => { const p = cand.slice(), out = []; while (out.length < cnt && p.length) out.push(p.splice(Math.floor(rm() * p.length), 1)[0]); return out.sort((a, z) => a - z); };
     let A = mk(), B = A.slice(); B[Math.floor(rm() * B.length)] = pick(rm, cand); B = Array.from(new Set(B)).sort((a, z) => a - z);
+    const tone = {}, len = {}; let last = 0;   // adım -> akor sesi dizini (0 kök, 1 üçlü, 2 beşli, 3-5 bir oktav üstü) ve uzunluk
+    A.concat(B).forEach(s => { if (tone[s] != null) return; if (rm() >= .45) last = Math.floor(rm() * 6); tone[s] = last; len[s] = rm() < .5 ? 1 : 2; });
     for (let b = 0; b < bars; b++) {
-      const c = chords[b], hits = (b % 2 === 0) ? A : B, tones = [0, 4, 7, 12, 16, 19].map(o => o);
+      const c = chords[b], hits = (b % 2 === 0) ? A : B, tn = [0, c.third, c.fifth, 12, 12 + c.third, 12 + c.fifth];
       const rootM = (S.mel.oct || 72) + ((c.pc - ((S.mel.oct || 72) % 12) + 12) % 12) - 12;
-      let last = 0;
-      hits.forEach((s, j) => { const off = rm() < .45 ? last : pick(rm, [0, c.third, c.fifth, 12, 12 + c.third, 12 + c.fifth]); last = off; const nx = j + 1 < hits.length ? hits[j + 1] : 16; addM(b, s, Math.min(nx - s, rm() < .5 ? 1 : 2), rootM + off, s % 4 === 0 ? 100 : 82); });
+      hits.forEach((s, j) => { const nx = j + 1 < hits.length ? hits[j + 1] : 16; addM(b, s, Math.min(nx - s, len[s]), rootM + tn[tone[s]], s % 4 === 0 ? 100 : 82); });
     }
   }
   // ---- kalınlık: akor kökünü bir oktav alta, yüksek değerde melodiyi de alt oktavla katla

@@ -373,7 +373,15 @@ void HitGenProcessor::newIdea()
     setP ("swing", juce::jlimit (0.0f, 60.0f, (float) (double) S["swing"] + (float) rnd.nextInt (9) - 3.0f));
     if (auto* bp = S["bpm"].getArray()) if (bp->size() == 2)
         setP ("bpm", (float) ((int) (*bp)[0] + rnd.nextInt (juce::jmax (1, (int) (*bp)[1] - (int) (*bp)[0] + 1))));
-    setP ("seed", (float) rnd.nextInt ({ 1, 99999 }));
+    // sekiz aday tohum üret, kurallara göre en yüksek puanlıyı seç (diğer ayarlar yukarıda belirlendi)
+    auto gp = currentParams(); int best = 1; double bestScore = -1e9;
+    for (int i = 0; i < 8; ++i)
+    {
+        gp.seed = rnd.nextInt ({ 1, 99999 });
+        const double sc = hg::ideaScore (hg::generate (data, gp));
+        if (sc > bestScore) { bestScore = sc; best = gp.seed; }
+    }
+    setP ("seed", (float) best);
     // sesler de şaşırtsın: elle seçilmemiş izlere kütüphaneden stile uygun yeni sesler
     for (int t : { hg::kChords, hg::kBass, hg::kMelody })
         if (! manual[(size_t) t]) { const auto id = librarySoundFor (t, rnd); if (id.isNotEmpty()) setSound (t, id, false); }
@@ -405,6 +413,11 @@ juce::String HitGenProcessor::librarySoundFor (int track, juce::Random& rnd) con
         cats = mm == "arp" ? juce::StringArray { "Seq", "Pluck" } : mm == "riff" ? juce::StringArray { "Seq", "Acid", "Metal", "Lead" } : mm == "chop" ? juce::StringArray { "Pluck", "Seq" } : juce::StringArray { "Lead", "Pluck", "Seq" };
     }
     const auto cur = sounds[(size_t) track];
+    if (auto* pal = S["pal"][juce::Identifier (juce::String::charToString ((juce::juce_wchar) role))].getArray())   // türün kendi paleti (rap, R&B, bass, chill)
+    {
+        juce::StringArray pool; for (auto& x : *pal) if (x.toString() != cur) pool.add (x.toString());
+        if (! pool.isEmpty()) return pool[rnd.nextInt (pool.size())];
+    }
     for (int pass = 0; pass < 2; ++pass)   // önce etiket eşleşmesi, yoksa yalnızca rol ve kategori
     {
         juce::StringArray pool;
