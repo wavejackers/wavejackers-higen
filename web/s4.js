@@ -281,3 +281,117 @@
   MB.SOUNDS.forEach(s => { MB.byId[s.id] = s; });
   MB.CATS = MB.CATS.concat(['Sub', 'Rolling', 'Acid', 'Seq', 'Texture', 'Metal', 'FX']);
 })();
+
+// ---- Factory 26 genişlemesi (3.3): rap, R&B, bass müzik, house ve hard türleri için 24 yeni ses (özgün sentez, sample yok)
+(function () {
+  const F = (id, name, cat, r, g, en, tr, o) => {
+    const s = Object.assign({ id, name, cat, r, g: g.split(' '), vol: .2, bank: 'wf', info: { en, tr } }, o);
+    MB.SOUNDS.push(s); MB.byId[id] = s;
+  };
+  const BASS = { mono: 150, pr: 1, kt: .3 };
+  const U = 'trap lofi', B = 'dnb trap', H = 'house deep';
+
+  // ---------- 808 ve bas
+  F('wf-808-clean', 'Clean 808', 'Sub', 'b', U + ' dnb',
+    ['Sine 808 with a short pitch drop and a long, even tail.', 'Trap and R&B bass lines. Let notes ring.'],
+    ['Kısa perde düşüşlü, uzun ve düzgün kuyruklu sinüs 808.', 'Trap ve R&B bas hatları. Notaları uzun bırak.'],
+    Object.assign({ o: [['s', 0, 0, 1]], pe: [9, .04], f: ['lowpass', 700, .5, 0, 0, .2], a: [.002, 1.6, .5, .5] }, BASS));
+  F('wf-808-dirt', 'Dirt 808', 'Sub', 'b', U,
+    ['Overdriven 808: the saturation adds harmonics that cut through phone speakers.', 'Drill, phonk and hard trap.'],
+    ['Doyurulmuş 808: eklenen harmonikler telefon hoparlöründe de duyulur.', 'Drill, phonk ve sert trap.'],
+    Object.assign({ o: [['s', 0, 0, 1], ['t', 0, 1, .15]], pe: [12, .03], fold: .25, fd: .7, f: ['lowpass', 1400, .6, 0, 0, .2], a: [.002, 1.1, .45, .35] }, BASS));
+  F('wf-808-slide', 'Slide 808', 'Sub', 'b', U,
+    ['808 that glides between overlapping notes.', 'Drill slides: overlap two notes to bend.'],
+    ['Üst üste binen notalar arasında kayan 808.', 'Drill kaymaları: iki notayı üst üste bindir.'],
+    Object.assign({ o: [['s', 0, 0, 1], ['s', 0, 1, .1]], gl: .11, pe: [5, .05], fd: .3, f: ['lowpass', 900, .5, 0, 0, .2], a: [.003, 1.3, .7, .3] }, BASS));
+  F('wf-bass-reese', 'Night Reese', 'Bas', 'b', B + ' techno',
+    ['Two detuned saws beating against each other, mono below 150 Hz.', 'Drum & bass and breakbeat long notes.'],
+    ['Birbirine vuran iki detune testere, 150 Hz altı mono.', 'Drum & bass ve breakbeat uzun notaları.'],
+    Object.assign({ o: [['w', -19, 0, .6], ['w', 19, 0, .6], ['s', 0, -1, .7]], f: ['lowpass', 640, 2, 1.5, .02, .6], lf: [.35, .35], a: [.012, .4, .9, .22], fd: .3 }, BASS));
+  F('wf-bass-wobble', 'Wobble', 'Bas', 'b', B,
+    ['Saw and square through a filter that opens and closes three times a second.', 'Dubstep and bass house drops.'],
+    ['Saniyede üç kez açılıp kapanan filtreden geçen testere ve kare.', 'Dubstep ve bass house drop\'ları.'],
+    Object.assign({ o: [['w', 0, 0, .7], ['q', 0, -1, .5]], f: ['lowpass', 420, 6, 2, 0, .5], lf: [3, .8], a: [.004, .3, .9, .12], fd: .5 }, BASS));
+  F('wf-bass-log', 'Log Drum', 'Bas', 'b', 'afro deep house',
+    ['Knocking FM tone with a fast pitch drop: the amapiano log drum.', 'Short syncopated bass hits.'],
+    ['Hızlı perde düşüşlü, tok FM tonu: amapiano log drum\'ı.', 'Kısa, senkoplu bas vuruşları.'],
+    Object.assign({ fm: [2, 1.4, .12, 0], o: [['s', 0, 0, .9]], pe: [7, .05], f: ['lowpass', 1800, .5, 0, 0, .2], a: [.001, .45, 0, .2] }, BASS));
+  F('wf-bass-slap', 'Slap Pluck', 'Bas', 'b', H,
+    ['Square bass with a very fast filter snap: the slap house bounce.', 'Bouncing off-beat patterns.'],
+    ['Çok hızlı filtre vuruşlu kare bas: slap house zıplaması.', 'Zıplayan off-beat kalıpları.'],
+    Object.assign({ o: [['q', 0, 0, .8], ['w', 7, 0, .3]], f: ['lowpass', 300, 4, 5, 0, .09], vf: .5, a: [.001, .22, .25, .08] }, BASS));
+  F('wf-bass-felt', 'Felt Upright', 'Bas', 'b', 'lofi deep',
+    ['Soft triangle with a rounded attack, like a muted upright.', 'Lo-fi and boom bap walking lines.'],
+    ['Yuvarlak ataklı yumuşak üçgen; susturulmuş kontrbas gibi.', 'Lo-fi ve boom bap yürüyen hatları.'],
+    Object.assign({ o: [['t', 0, 0, .9], ['s', 0, 1, .25]], f: ['lowpass', 520, 1, 1.5, 0, .15], a: [.012, .5, .2, .14] }, BASS));
+
+  // ---------- tuşlular
+  F('wf-keys-tine', 'Tine Keys', 'Keys', 'cm', U + ' ' + H,
+    ['FM electric piano: bell-like attack that mellows as the note holds.', 'R&B and deep house seventh chords.'],
+    ['FM elektrikli piyano: çan gibi atak, nota sürdükçe yumuşar.', 'R&B ve deep house yedili akorları.'],
+    { fm: [1, 1.1, .5, .15], o: [['s', 0, 0, .3]], f: ['lowpass', 5200, .5, 0, 0, .3], vf: .4, a: [.003, 1.2, .25, .5], ch: .5, rv: .25 });
+  F('wf-keys-dusty', 'Dusty Keys', 'Keys', 'cm', 'lofi trap',
+    ['Dark, slightly wobbly keys with tape hiss.', 'Lo-fi chords and sleepy melodies.'],
+    ['Karanlık, hafif dalgalanan, bant hışırtılı tuşlu.', 'Lo-fi akorlar ve uykulu melodiler.'],
+    { o: [['t', 0, 0, .8], ['s', 0, 1, .2]], f: ['lowpass', 1500, .7, 1, 0, .4], noi: .03, vib: [.7, 14, 0], a: [.006, .9, .3, .5], rv: .3 });
+  F('wf-keys-house', 'House Piano', 'Keys', 'cm', H,
+    ['Bright, hard-hitting piano-style stack that cuts through a full mix.', 'Piano house chord stabs.'],
+    ['Dolu mix\'i delen parlak, sert vuruşlu piyano tadında katman.', 'Piano house akor vuruşları.'],
+    { o: [['w', 0, 0, .5], ['t', 0, 1, .4], ['s', 0, 0, .5]], f: ['lowpass', 2600, 1, 4, 0, .5], vf: .5, a: [.002, 1, .15, .4], rv: .3 });
+  F('wf-keys-organ', 'Garage Organ', 'Keys', 'c', H + ' dnb',
+    ['Percussive drawbar organ with a hollow top.', 'UK garage and house off-beat stabs.'],
+    ['Oyuk tınılı, vurmalı drawbar org.', 'UK garage ve house off-beat vuruşları.'],
+    { o: [['s', 0, 0, .8], ['s', 0, 1, .6], ['s', 0, 1.58, .4]], f: ['lowpass', 5000, .5, 0, 0, .3], a: [.002, .25, .5, .07], ch: .4, rv: .2 });
+
+  // ---------- pad ve akor
+  F('wf-pad-tape', 'Tape Pad', 'Pad', 'c', 'lofi trap deep',
+    ['Soft detuned pad with slow tape wobble.', 'Trap soul, downtempo and intros.'],
+    ['Yavaş bant dalgalanmalı, yumuşak detune pad.', 'Trap soul, downtempo ve girişler.'],
+    { u: [3, 14], o: [['t', 0, 0, .7], ['w', 0, 0, .25]], f: ['lowpass', 1300, .7, 1, 1.2, 1], vib: [.5, 16, 0], a: [.5, 1, .85, 1.4], rv: .5 });
+  F('wf-pad-festival', 'Festival Saw', 'Pad', 'c', 'trance house',
+    ['Seven-voice supersaw wall, wide and bright.', 'Trance, hardstyle and future bass breakdowns.'],
+    ['Yedi sesli supersaw duvarı; geniş ve parlak.', 'Trance, hardstyle ve future bass breakdown\'ları.'],
+    { u: [7, 30], o: [['w', 0, 0, .6], ['w', 0, 1, .25]], f: ['lowpass', 5200, .7, 1, .3, 1], a: [.12, .6, .9, .9], rv: .45 });
+  F('wf-stab-future', 'Future Chord', 'Stab', 'c', 'house trance trap',
+    ['Wide supersaw chord that decays quickly, made to pump.', 'Future bass and future house chords.'],
+    ['Hızlı sönen geniş supersaw akoru; pompalamak için.', 'Future bass ve future house akorları.'],
+    { u: [7, 24], o: [['w', 0, 0, .6], ['q', 0, 1, .2]], f: ['lowpass', 3800, 1, 3, 0, .6], a: [.004, .7, .35, .3], rv: .3 });
+  F('wf-stab-tape', 'Tape Chord', 'Stab', 'c', 'deep lofi dnb',
+    ['Muffled chord hit thrown into a long delay.', 'Dub techno, liquid and lo-fi stabs.'],
+    ['Uzun delay\'e gönderilen boğuk akor vuruşu.', 'Dub techno, liquid ve lo-fi vuruşları.'],
+    { o: [['w', 0, 0, .6], ['t', 8, 0, .5]], f: ['lowpass', 850, 2, 2, 0, .25], a: [.004, .3, 0, .25], dl: .55, rv: .35 });
+
+  // ---------- lead ve pluck
+  F('wf-lead-whistle', 'Night Whistle', 'Lead', 'm', U + ' deep',
+    ['Breathy sine whistle with late vibrato and a slide between notes.', 'Trap, R&B and slap house hooks.'],
+    ['Geç gelen vibratolu, notalar arası kayan nefesli sinüs ıslık.', 'Trap, R&B ve slap house hook\'ları.'],
+    { o: [['s', 0, 1, .9]], gl: .05, noi: .04, vib: [5.5, 18, .3], f: ['lowpass', 5000, .5, 0, 0, .3], a: [.05, .2, .9, .25], rv: .35, dl: .2 });
+  F('wf-lead-screech', 'Hard Screech', 'Lead', 'm', 'techno trance',
+    ['Folded saw with a screaming resonant filter.', 'Hardstyle, hardcore and psy leads.'],
+    ['Çığlık atan rezonanslı filtreden geçen katlanmış testere.', 'Hardstyle, hardcore ve psy lead\'leri.'],
+    { o: [['w', 0, 0, .8], ['q', 0, 1, .3]], fold: .55, f: ['bandpass', 1500, 6, 3, 0, .35], fd: .6, a: [.003, .3, .8, .12], dl: .2 });
+  F('wf-lead-anthem', 'Anthem Saw', 'Lead', 'm', 'trance house',
+    ['Seven-voice supersaw lead with a fast attack and wide stereo.', 'Uplifting trance and hardstyle melodies.'],
+    ['Hızlı ataklı, geniş stereolu yedi sesli supersaw lead.', 'Uplifting trance ve hardstyle melodileri.'],
+    { u: [7, 20], o: [['w', 0, 0, .7]], f: ['lowpass', 6500, .7, 1, 0, .4], a: [.006, .4, .8, .3], rv: .4, dl: .25 });
+  F('wf-pluck-trapbell', 'Trap Bell', 'Pluck', 'cm', U + ' dnb',
+    ['Glassy FM bell with a long ringing tail.', 'Dark trap and drill motifs.'],
+    ['Uzun çınlayan kuyruklu, camsı FM çan.', 'Karanlık trap ve drill motifleri.'],
+    { fm: [3.5, 1.2, .5, 0], o: [['s', 0, 0, .3]], f: ['lowpass', 8000, .5, 0, 0, .3], a: [.001, 1.4, 0, 1.1], rv: .5, dl: .3 });
+  F('wf-pluck-pizz', 'Cold Pizz', 'Pluck', 'cm', U,
+    ['Very short string pluck, dry and tight.', 'Drill and trap staccato lines.'],
+    ['Çok kısa, kuru ve sıkı yaylı çekmesi.', 'Drill ve trap staccato hatları.'],
+    { o: [['w', 0, 0, .7], ['t', 0, 0, .4]], f: ['lowpass', 900, 1.5, 5, 0, .07], a: [.001, .16, 0, .12], rv: .3 });
+  F('wf-pluck-future', 'Future Pluck', 'Pluck', 'cm', 'house trance trap',
+    ['Five-voice saw pluck, bright and wide.', 'Future house chops and melodic arps.'],
+    ['Parlak ve geniş, beş sesli testere pluck.', 'Future house chop\'ları ve melodik arp\'lar.'],
+    { u: [5, 16], o: [['w', 0, 0, .7]], f: ['lowpass', 1200, 2, 5, 0, .16], a: [.001, .3, 0, .22], rv: .3, dl: .3 });
+  F('wf-metal-cowbell', 'Phonk Bell', 'Metal', 'cm', U,
+    ['Two clashing squares through a band-pass: a tuned cowbell.', 'Phonk riffs. Play it high.'],
+    ['Band geçirenden geçen iki çatışan kare: akortlu cowbell.', 'Phonk riff\'leri. Tiz çal.'],
+    { o: [['q', 0, 0, .7], ['q', 680, 0, .6]], f: ['bandpass', 2200, 3, 0, 0, .2], kt: 1, fd: .4, a: [.001, .28, 0, .18], rv: .2 });
+  F('wf-vox-chop', 'Vocal Chop', 'Vox', 'cm', 'house deep trap dnb',
+    ['Short vowel-shaped saw: a pitched vocal slice.', 'Future bass and UK garage chops.'],
+    ['Sesli harf biçimli kısa testere: perdeli vokal dilimi.', 'Future bass ve UK garage chop\'ları.'],
+    { u: [3, 10], o: [['w', 0, 0, .7]], vow: 'e', gl: .03, a: [.006, .18, .3, .12], dl: .3, rv: .3, vol: .5 });
+})();

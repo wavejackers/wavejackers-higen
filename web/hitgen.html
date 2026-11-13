@@ -1388,6 +1388,120 @@ MB.CATS = ['Bas', 'Pad', 'Stab', 'Pluck', 'Lead', 'Keys', 'Vox'];
   MB.SOUNDS.forEach(s => { MB.byId[s.id] = s; });
   MB.CATS = MB.CATS.concat(['Sub', 'Rolling', 'Acid', 'Seq', 'Texture', 'Metal', 'FX']);
 })();
+
+// ---- Factory 26 genişlemesi (3.3): rap, R&B, bass müzik, house ve hard türleri için 24 yeni ses (özgün sentez, sample yok)
+(function () {
+  const F = (id, name, cat, r, g, en, tr, o) => {
+    const s = Object.assign({ id, name, cat, r, g: g.split(' '), vol: .2, bank: 'wf', info: { en, tr } }, o);
+    MB.SOUNDS.push(s); MB.byId[id] = s;
+  };
+  const BASS = { mono: 150, pr: 1, kt: .3 };
+  const U = 'trap lofi', B = 'dnb trap', H = 'house deep';
+
+  // ---------- 808 ve bas
+  F('wf-808-clean', 'Clean 808', 'Sub', 'b', U + ' dnb',
+    ['Sine 808 with a short pitch drop and a long, even tail.', 'Trap and R&B bass lines. Let notes ring.'],
+    ['Kısa perde düşüşlü, uzun ve düzgün kuyruklu sinüs 808.', 'Trap ve R&B bas hatları. Notaları uzun bırak.'],
+    Object.assign({ o: [['s', 0, 0, 1]], pe: [9, .04], f: ['lowpass', 700, .5, 0, 0, .2], a: [.002, 1.6, .5, .5] }, BASS));
+  F('wf-808-dirt', 'Dirt 808', 'Sub', 'b', U,
+    ['Overdriven 808: the saturation adds harmonics that cut through phone speakers.', 'Drill, phonk and hard trap.'],
+    ['Doyurulmuş 808: eklenen harmonikler telefon hoparlöründe de duyulur.', 'Drill, phonk ve sert trap.'],
+    Object.assign({ o: [['s', 0, 0, 1], ['t', 0, 1, .15]], pe: [12, .03], fold: .25, fd: .7, f: ['lowpass', 1400, .6, 0, 0, .2], a: [.002, 1.1, .45, .35] }, BASS));
+  F('wf-808-slide', 'Slide 808', 'Sub', 'b', U,
+    ['808 that glides between overlapping notes.', 'Drill slides: overlap two notes to bend.'],
+    ['Üst üste binen notalar arasında kayan 808.', 'Drill kaymaları: iki notayı üst üste bindir.'],
+    Object.assign({ o: [['s', 0, 0, 1], ['s', 0, 1, .1]], gl: .11, pe: [5, .05], fd: .3, f: ['lowpass', 900, .5, 0, 0, .2], a: [.003, 1.3, .7, .3] }, BASS));
+  F('wf-bass-reese', 'Night Reese', 'Bas', 'b', B + ' techno',
+    ['Two detuned saws beating against each other, mono below 150 Hz.', 'Drum & bass and breakbeat long notes.'],
+    ['Birbirine vuran iki detune testere, 150 Hz altı mono.', 'Drum & bass ve breakbeat uzun notaları.'],
+    Object.assign({ o: [['w', -19, 0, .6], ['w', 19, 0, .6], ['s', 0, -1, .7]], f: ['lowpass', 640, 2, 1.5, .02, .6], lf: [.35, .35], a: [.012, .4, .9, .22], fd: .3 }, BASS));
+  F('wf-bass-wobble', 'Wobble', 'Bas', 'b', B,
+    ['Saw and square through a filter that opens and closes three times a second.', 'Dubstep and bass house drops.'],
+    ['Saniyede üç kez açılıp kapanan filtreden geçen testere ve kare.', 'Dubstep ve bass house drop\'ları.'],
+    Object.assign({ o: [['w', 0, 0, .7], ['q', 0, -1, .5]], f: ['lowpass', 420, 6, 2, 0, .5], lf: [3, .8], a: [.004, .3, .9, .12], fd: .5 }, BASS));
+  F('wf-bass-log', 'Log Drum', 'Bas', 'b', 'afro deep house',
+    ['Knocking FM tone with a fast pitch drop: the amapiano log drum.', 'Short syncopated bass hits.'],
+    ['Hızlı perde düşüşlü, tok FM tonu: amapiano log drum\'ı.', 'Kısa, senkoplu bas vuruşları.'],
+    Object.assign({ fm: [2, 1.4, .12, 0], o: [['s', 0, 0, .9]], pe: [7, .05], f: ['lowpass', 1800, .5, 0, 0, .2], a: [.001, .45, 0, .2] }, BASS));
+  F('wf-bass-slap', 'Slap Pluck', 'Bas', 'b', H,
+    ['Square bass with a very fast filter snap: the slap house bounce.', 'Bouncing off-beat patterns.'],
+    ['Çok hızlı filtre vuruşlu kare bas: slap house zıplaması.', 'Zıplayan off-beat kalıpları.'],
+    Object.assign({ o: [['q', 0, 0, .8], ['w', 7, 0, .3]], f: ['lowpass', 300, 4, 5, 0, .09], vf: .5, a: [.001, .22, .25, .08] }, BASS));
+  F('wf-bass-felt', 'Felt Upright', 'Bas', 'b', 'lofi deep',
+    ['Soft triangle with a rounded attack, like a muted upright.', 'Lo-fi and boom bap walking lines.'],
+    ['Yuvarlak ataklı yumuşak üçgen; susturulmuş kontrbas gibi.', 'Lo-fi ve boom bap yürüyen hatları.'],
+    Object.assign({ o: [['t', 0, 0, .9], ['s', 0, 1, .25]], f: ['lowpass', 520, 1, 1.5, 0, .15], a: [.012, .5, .2, .14] }, BASS));
+
+  // ---------- tuşlular
+  F('wf-keys-tine', 'Tine Keys', 'Keys', 'cm', U + ' ' + H,
+    ['FM electric piano: bell-like attack that mellows as the note holds.', 'R&B and deep house seventh chords.'],
+    ['FM elektrikli piyano: çan gibi atak, nota sürdükçe yumuşar.', 'R&B ve deep house yedili akorları.'],
+    { fm: [1, 1.1, .5, .15], o: [['s', 0, 0, .3]], f: ['lowpass', 5200, .5, 0, 0, .3], vf: .4, a: [.003, 1.2, .25, .5], ch: .5, rv: .25 });
+  F('wf-keys-dusty', 'Dusty Keys', 'Keys', 'cm', 'lofi trap',
+    ['Dark, slightly wobbly keys with tape hiss.', 'Lo-fi chords and sleepy melodies.'],
+    ['Karanlık, hafif dalgalanan, bant hışırtılı tuşlu.', 'Lo-fi akorlar ve uykulu melodiler.'],
+    { o: [['t', 0, 0, .8], ['s', 0, 1, .2]], f: ['lowpass', 1500, .7, 1, 0, .4], noi: .03, vib: [.7, 14, 0], a: [.006, .9, .3, .5], rv: .3 });
+  F('wf-keys-house', 'House Piano', 'Keys', 'cm', H,
+    ['Bright, hard-hitting piano-style stack that cuts through a full mix.', 'Piano house chord stabs.'],
+    ['Dolu mix\'i delen parlak, sert vuruşlu piyano tadında katman.', 'Piano house akor vuruşları.'],
+    { o: [['w', 0, 0, .5], ['t', 0, 1, .4], ['s', 0, 0, .5]], f: ['lowpass', 2600, 1, 4, 0, .5], vf: .5, a: [.002, 1, .15, .4], rv: .3 });
+  F('wf-keys-organ', 'Garage Organ', 'Keys', 'c', H + ' dnb',
+    ['Percussive drawbar organ with a hollow top.', 'UK garage and house off-beat stabs.'],
+    ['Oyuk tınılı, vurmalı drawbar org.', 'UK garage ve house off-beat vuruşları.'],
+    { o: [['s', 0, 0, .8], ['s', 0, 1, .6], ['s', 0, 1.58, .4]], f: ['lowpass', 5000, .5, 0, 0, .3], a: [.002, .25, .5, .07], ch: .4, rv: .2 });
+
+  // ---------- pad ve akor
+  F('wf-pad-tape', 'Tape Pad', 'Pad', 'c', 'lofi trap deep',
+    ['Soft detuned pad with slow tape wobble.', 'Trap soul, downtempo and intros.'],
+    ['Yavaş bant dalgalanmalı, yumuşak detune pad.', 'Trap soul, downtempo ve girişler.'],
+    { u: [3, 14], o: [['t', 0, 0, .7], ['w', 0, 0, .25]], f: ['lowpass', 1300, .7, 1, 1.2, 1], vib: [.5, 16, 0], a: [.5, 1, .85, 1.4], rv: .5 });
+  F('wf-pad-festival', 'Festival Saw', 'Pad', 'c', 'trance house',
+    ['Seven-voice supersaw wall, wide and bright.', 'Trance, hardstyle and future bass breakdowns.'],
+    ['Yedi sesli supersaw duvarı; geniş ve parlak.', 'Trance, hardstyle ve future bass breakdown\'ları.'],
+    { u: [7, 30], o: [['w', 0, 0, .6], ['w', 0, 1, .25]], f: ['lowpass', 5200, .7, 1, .3, 1], a: [.12, .6, .9, .9], rv: .45 });
+  F('wf-stab-future', 'Future Chord', 'Stab', 'c', 'house trance trap',
+    ['Wide supersaw chord that decays quickly, made to pump.', 'Future bass and future house chords.'],
+    ['Hızlı sönen geniş supersaw akoru; pompalamak için.', 'Future bass ve future house akorları.'],
+    { u: [7, 24], o: [['w', 0, 0, .6], ['q', 0, 1, .2]], f: ['lowpass', 3800, 1, 3, 0, .6], a: [.004, .7, .35, .3], rv: .3 });
+  F('wf-stab-tape', 'Tape Chord', 'Stab', 'c', 'deep lofi dnb',
+    ['Muffled chord hit thrown into a long delay.', 'Dub techno, liquid and lo-fi stabs.'],
+    ['Uzun delay\'e gönderilen boğuk akor vuruşu.', 'Dub techno, liquid ve lo-fi vuruşları.'],
+    { o: [['w', 0, 0, .6], ['t', 8, 0, .5]], f: ['lowpass', 850, 2, 2, 0, .25], a: [.004, .3, 0, .25], dl: .55, rv: .35 });
+
+  // ---------- lead ve pluck
+  F('wf-lead-whistle', 'Night Whistle', 'Lead', 'm', U + ' deep',
+    ['Breathy sine whistle with late vibrato and a slide between notes.', 'Trap, R&B and slap house hooks.'],
+    ['Geç gelen vibratolu, notalar arası kayan nefesli sinüs ıslık.', 'Trap, R&B ve slap house hook\'ları.'],
+    { o: [['s', 0, 1, .9]], gl: .05, noi: .04, vib: [5.5, 18, .3], f: ['lowpass', 5000, .5, 0, 0, .3], a: [.05, .2, .9, .25], rv: .35, dl: .2 });
+  F('wf-lead-screech', 'Hard Screech', 'Lead', 'm', 'techno trance',
+    ['Folded saw with a screaming resonant filter.', 'Hardstyle, hardcore and psy leads.'],
+    ['Çığlık atan rezonanslı filtreden geçen katlanmış testere.', 'Hardstyle, hardcore ve psy lead\'leri.'],
+    { o: [['w', 0, 0, .8], ['q', 0, 1, .3]], fold: .55, f: ['bandpass', 1500, 6, 3, 0, .35], fd: .6, a: [.003, .3, .8, .12], dl: .2 });
+  F('wf-lead-anthem', 'Anthem Saw', 'Lead', 'm', 'trance house',
+    ['Seven-voice supersaw lead with a fast attack and wide stereo.', 'Uplifting trance and hardstyle melodies.'],
+    ['Hızlı ataklı, geniş stereolu yedi sesli supersaw lead.', 'Uplifting trance ve hardstyle melodileri.'],
+    { u: [7, 20], o: [['w', 0, 0, .7]], f: ['lowpass', 6500, .7, 1, 0, .4], a: [.006, .4, .8, .3], rv: .4, dl: .25 });
+  F('wf-pluck-trapbell', 'Trap Bell', 'Pluck', 'cm', U + ' dnb',
+    ['Glassy FM bell with a long ringing tail.', 'Dark trap and drill motifs.'],
+    ['Uzun çınlayan kuyruklu, camsı FM çan.', 'Karanlık trap ve drill motifleri.'],
+    { fm: [3.5, 1.2, .5, 0], o: [['s', 0, 0, .3]], f: ['lowpass', 8000, .5, 0, 0, .3], a: [.001, 1.4, 0, 1.1], rv: .5, dl: .3 });
+  F('wf-pluck-pizz', 'Cold Pizz', 'Pluck', 'cm', U,
+    ['Very short string pluck, dry and tight.', 'Drill and trap staccato lines.'],
+    ['Çok kısa, kuru ve sıkı yaylı çekmesi.', 'Drill ve trap staccato hatları.'],
+    { o: [['w', 0, 0, .7], ['t', 0, 0, .4]], f: ['lowpass', 900, 1.5, 5, 0, .07], a: [.001, .16, 0, .12], rv: .3 });
+  F('wf-pluck-future', 'Future Pluck', 'Pluck', 'cm', 'house trance trap',
+    ['Five-voice saw pluck, bright and wide.', 'Future house chops and melodic arps.'],
+    ['Parlak ve geniş, beş sesli testere pluck.', 'Future house chop\'ları ve melodik arp\'lar.'],
+    { u: [5, 16], o: [['w', 0, 0, .7]], f: ['lowpass', 1200, 2, 5, 0, .16], a: [.001, .3, 0, .22], rv: .3, dl: .3 });
+  F('wf-metal-cowbell', 'Phonk Bell', 'Metal', 'cm', U,
+    ['Two clashing squares through a band-pass: a tuned cowbell.', 'Phonk riffs. Play it high.'],
+    ['Band geçirenden geçen iki çatışan kare: akortlu cowbell.', 'Phonk riff\'leri. Tiz çal.'],
+    { o: [['q', 0, 0, .7], ['q', 680, 0, .6]], f: ['bandpass', 2200, 3, 0, 0, .2], kt: 1, fd: .4, a: [.001, .28, 0, .18], rv: .2 });
+  F('wf-vox-chop', 'Vocal Chop', 'Vox', 'cm', 'house deep trap dnb',
+    ['Short vowel-shaped saw: a pitched vocal slice.', 'Future bass and UK garage chops.'],
+    ['Sesli harf biçimli kısa testere: perdeli vokal dilimi.', 'Future bass ve UK garage chop\'ları.'],
+    { u: [3, 10], o: [['w', 0, 0, .7]], vow: 'e', gl: .03, a: [.006, .18, .3, .12], dl: .3, rv: .3, vol: .5 });
+})();
 // ---- Sanatçı ilhamlı stil kütüphanesi
 // Her stil, o ismin genel üslubunu (tempo, armoni dili, ritim hissi, ses paleti) taşır.
 // Hiçbir parçanın notaları kopyalanmaz; her üretim tohuma göre özgündür.
@@ -2785,6 +2899,8 @@ Object.assign(HG.I18N.es, { gBass: 'Bass', gUrban: 'Rap y R&B', gChill: 'Chill' 
 Object.assign(HG.I18N.tr, { gBass: 'Bass', gUrban: 'Rap ve R&B', gChill: 'Chill' });
 Object.assign(HG.I18N.ar, { gBass: 'بيس', gUrban: 'راب و R&B', gChill: 'هادئ' });
 Object.assign(HG.I18N.hi, { gBass: 'बेस', gUrban: 'रैप और R&B', gChill: 'चिल' });
+Object.assign(HG.I18N.en, { tabLoop: 'Loop', lfLoad: 'Load sample', lfCapture: 'Capture', lfCaptureTip: 'Takes the loudest hit from the last 30 seconds HitGen played', lfPlay: 'Play loop', lfExport: 'Drag loop to DAW', lfExportTip: 'Drag this onto a DAW track: a seamless 24-bit WAV with the effect tail wrapped around', lfBars: 'Loop length in bars', lfSteps: 'Steps', lfPulses: 'Pulses', lfRot: 'Rotation', lfSwing: 'Swing', lfHuman: 'Humanize', lfSpace: 'Space', lfDrive: 'Drive', lfMotion: 'Motion', lfMutate: 'Generate / mutate', lfSubtle: 'Subtle variation', lfEuclid: 'Full Euclidean', lfArp: 'Melodic arpeggio', lfVel: 'Velocity', lfCut: 'Filter', lfPan: 'Pan', lfDecay: 'Decay', lfDrop: 'Drop a one-shot here (WAV, AIFF, FLAC) or press Capture', lfNoSample: 'Load or capture a sound first', lfCaptured: 'Captured the loudest hit', lfCaptureFail: 'Nothing to capture yet: play something first', lfLoadFail: 'Could not read that file', lfTrig: 'Trigger', lfPitch: 'Pitch', lfRev: 'Reverse', lfRatchet: 'Ratchet' });
+Object.assign(HG.I18N.tr, { tabLoop: 'Loop', lfLoad: 'Ses yükle', lfCapture: 'Yakala', lfCaptureTip: 'HitGen\'in son 30 saniyede çaldığı en güçlü vuruşu alır', lfPlay: 'Döngüyü çal', lfExport: 'Döngüyü DAW\'a sürükle', lfExportTip: 'Bunu bir DAW kanalına sürükle: efekt kuyruğu başa sarılmış, dikişsiz 24 bit WAV', lfBars: 'Döngü uzunluğu (ölçü)', lfSteps: 'Adım', lfPulses: 'Vuruş', lfRot: 'Döndürme', lfSwing: 'Swing', lfHuman: 'İnsan dokunuşu', lfSpace: 'Alan', lfDrive: 'Sürüş', lfMotion: 'Hareket', lfMutate: 'Üret / değiştir', lfSubtle: 'Küçük değişiklik', lfEuclid: 'Tam Öklid', lfArp: 'Melodik arpej', lfVel: 'Hız', lfCut: 'Filtre', lfPan: 'Pan', lfDecay: 'Sönüm', lfDrop: 'Tek vuruşluk bir sesi buraya bırak (WAV, AIFF, FLAC) ya da Yakala\'ya bas', lfNoSample: 'Önce bir ses yükle ya da yakala', lfCaptured: 'En güçlü vuruş yakalandı', lfCaptureFail: 'Yakalanacak ses yok: önce bir şey çal', lfLoadFail: 'Dosya okunamadı', lfTrig: 'Tetik', lfPitch: 'Perde', lfRev: 'Ters', lfRatchet: 'Ratchet' });
 // ---- Stil metinleri: [etiket, açıklama, [varyasyon adı, not] x4]
 HG.ST = {};
 HG.ST.en = {
@@ -3038,9 +3154,9 @@ Object.assign(HG.ST.hi, {
   const PUMP = { hard: { chords: [.5, .22], bass: [.5, .2], melody: [.25, .2] }, soft: { chords: [.1, .2], bass: [.1, .2], melody: [0, .2] } };
   // "Beni şaşırt" ve yeni fikir için tür paleti (kütüphanedeki tekno ağırlıklı sesler bu türlere uymaz)
   const PAL = {
-    bass:  { c: ['rhodes', 'dark-drone', 'super-stab', 'vapor-stab', 'evolving-pad', 'organ-stab', 'wf-pad-nocturne', 'wf-tex-drone'], b: ['reese', 'neuro-lite', 'sub-sine', 'deep-bass', 'wf-sub-pressure', 'wf-roll-grit', 'ws-reese-wide'], m: ['fm-lead', 'vox-chop', 'aah-female', 'pulse-lead', 'wf-lead-razor', 'square-lead'] },
-    urban: { c: ['rhodes', 'e-piano', 'wurli', 'lofi-keys', 'sad-pad', 'tape-pad', 'choir-pad', 'warm-pad'], b: ['808-long', 'sub-sine', 'deep-bass', 'upright'], m: ['bell-pluck', 'pizz', 'harp', 'sine-lead', 'whistle-lead', 'vox-chop', 'kalimba', 'muted-pluck', 'marimba'] },
-    chill: { c: ['lofi-keys', 'rhodes', 'e-piano', 'tape-pad', 'warm-pad', 'string-machine', 'glass-pad'], b: ['upright', 'deep-bass', 'sub-sine', 'pluck-bass'], m: ['harp', 'bell-pluck', 'sine-lead', 'kalimba', 'pulse-lead', 'glass-lead', 'marimba'] }
+    bass:  { c: ['rhodes', 'dark-drone', 'wf-stab-future', 'wf-stab-tape', 'wf-keys-organ', 'wf-pad-festival', 'wf-pad-nocturne', 'wf-tex-drone'], b: ['wf-bass-reese', 'wf-bass-wobble', 'reese', 'neuro-lite', 'sub-sine', 'wf-sub-pressure', 'wf-roll-grit'], m: ['fm-lead', 'wf-vox-chop', 'aah-female', 'wf-pluck-future', 'wf-lead-razor', 'square-lead'] },
+    urban: { c: ['wf-keys-tine', 'wf-keys-dusty', 'wf-pad-tape', 'rhodes', 'wurli', 'sad-pad', 'choir-pad'], b: ['wf-808-clean', 'wf-808-dirt', 'wf-808-slide', 'wf-bass-felt', '808-long', 'sub-sine'], m: ['wf-pluck-trapbell', 'wf-pluck-pizz', 'wf-lead-whistle', 'wf-metal-cowbell', 'wf-vox-chop', 'harp', 'sine-lead', 'kalimba', 'muted-pluck'] },
+    chill: { c: ['wf-keys-dusty', 'wf-keys-tine', 'wf-pad-tape', 'wf-stab-tape', 'rhodes', 'string-machine', 'glass-pad'], b: ['wf-bass-felt', 'upright', 'deep-bass', 'sub-sine', 'pluck-bass'], m: ['wf-lead-whistle', 'harp', 'bell-pluck', 'sine-lead', 'kalimba', 'pulse-lead', 'marimba'] }
   };
   const soft = { urban: 1, chill: 1 };
   // add(kimlik, ad, grup, renk, [bpm alt, üst, varsayılan], ton, gamlar, swing, parçalar, [İngilizce metin], [Türkçe metin])
@@ -3086,7 +3202,7 @@ Object.assign(HG.ST.hi, {
   add('futurehouse', 'Future House', 'house', '#3de0ff', [124, 128, 126], 7, ['minor'], 0, {
     chord: { mode: 'stab', pats: ['push', 'offbeat'] }, bass: { pats: ['bounce'], oct: 36 },
     drums: { kick: K4, clap: C24, chat: H16, ohat: OFF, fill: 'snare' },
-    mel: { mode: 'chop', dens: .45, oct: 72 }, sound: snd('super-stab', 'fm-bass', 'classic-pluck', 'house'),
+    mel: { mode: 'chop', dens: .45, oct: 72 }, sound: snd('super-stab', 'fm-bass', 'wf-pluck-future', 'house'),
     var: [{ prog: [0, 5, 2, 6] }, { prog: [0, 3, 5, 4] }, { prog: [5, 6, 0, 0], mm: 'hook', hr: ['h1', 'h3'] }, { prog: [0, 0, 5, 6], bp: 'hook' }] },
     ['Future house', 'Metallic bouncing bass, bright stabs and a clean, punchy drop.', ['Drop', 'Classic four-chord drop.'], ['Lift', 'A rising progression.'], ['Hook', 'A singable lead line.'], ['Bass lead', 'The bass carries the hook.']],
     ['Future house', 'Metalik zıplayan bas, parlak stab\'ler ve temiz, vurucu drop.', ['Drop', 'Klasik dört akorlu drop.'], ['Yükseliş', 'Yükselen akor yürüyüşü.'], ['Hook', 'Söylenebilir lead hattı.'], ['Bas lead', 'Hook\'u bas taşır.']]);
@@ -3107,21 +3223,21 @@ Object.assign(HG.ST.hi, {
   add('pianohouse', 'Piano House', 'house', '#ffb86b', [122, 126, 124], 0, ['major', 'minor'], 4, {
     chord: { mode: 'stab', pats: ['tres', 'house'] }, bass: { pats: ['offbeat8'], oct: 36 },
     drums: { kick: K4, clap: C24, chat: H8, ohat: OFF, fill: 'snare' },
-    mel: { mode: 'hook', hr: ['h2', 'h5', 'h1'], dens: .35, oct: 72, rep: .5 }, sound: snd('ws-grand-warm', 'punch-bass', 'aah-female', 'house'),
+    mel: { mode: 'hook', hr: ['h2', 'h5', 'h1'], dens: .35, oct: 72, rep: .5 }, sound: snd('wf-keys-house', 'punch-bass', 'aah-female', 'house'),
     var: [{ scale: 'major', prog: [0, 4, 5, 3] }, { scale: 'minor', prog: [0, 5, 2, 6] }, { scale: 'major', prog: [5, 3, 0, 4] }, { scale: 'minor', prog: [0, 3, 5, 4], bp: 'pumpRoot' }] },
     ['Piano house', 'Big syncopated piano chords and a vocal-style hook: hands-in-the-air house.', ['Anthem', 'The classic major loop.'], ['Minor', 'More emotional.'], ['Uplift', 'Starts away from home.'], ['Drive', 'Pumping root bass.']],
     ['Piano house', 'Büyük senkoplu piyano akorları ve vokal tadında hook: eller havaya house.', ['Marş', 'Klasik majör döngü.'], ['Minör', 'Daha duygusal.'], ['Yükseliş', 'Ana akorun dışından başlar.'], ['Sürüş', 'Pompalayan kök bas.']]);
   add('slaphouse', 'Slap House', 'house', '#b08cff', [120, 126, 124], 6, ['minor'], 0, {
     chord: { mode: 'sustain', pats: ['whole', 'long'] }, bass: { pats: ['bounce'], oct: 36 },
     drums: { kick: K4, clap: C24, chat: H8O, fill: 'snare' },
-    mel: { mode: 'hook', hr: ['h2', 'h3', 'h5'], dens: .35, oct: 72, rep: .5 }, sound: snd('warm-pad', 'pluck-bass', 'whistle-lead', 'club'),
+    mel: { mode: 'hook', hr: ['h2', 'h3', 'h5'], dens: .35, oct: 72, rep: .5 }, sound: snd('warm-pad', 'wf-bass-slap', 'wf-lead-whistle', 'club'),
     var: [{ prog: [0, 5, 2, 6] }, { prog: [5, 6, 0, 0] }, { prog: [0, 2, 6, 3] }, { prog: [0, 5, 3, 4], mm: 'chop' }] },
     ['Slap house', 'A plucky slap bass, dark minor chords and a simple radio hook.', ['Radio', 'Four familiar chords.'], ['Rise', 'Climbing to home.'], ['Dark', 'A moodier loop.'], ['Chops', 'Chopped melody.']],
     ['Slap house', 'Tok slap bas, karanlık minör akorlar ve sade bir radyo hook\'u.', ['Radyo', 'Dört tanıdık akor.'], ['Tırmanış', 'Ana akora çıkış.'], ['Karanlık', 'Daha kasvetli döngü.'], ['Chop', 'Kesilmiş melodi.']]);
   add('amapiano', 'Amapiano', 'afro', '#e0b24a', [110, 114, 112], 2, ['minor', 'dorian'], 12, { sev: true,
     chord: { mode: 'sustain', pats: ['long', 'whole'] }, bass: { pats: ['log'], oct: 36 },
     drums: { kick: 'x.....x...x.....', rim: '..x..x....x..x..', chat: H16, perc: '...x......x...x.', fill: 'perc' },
-    mel: { mode: 'motif', dens: .3, oct: 72 }, sound: snd('rhodes', 'wood-bass', 'kalimba', 'afro'),
+    mel: { mode: 'motif', dens: .3, oct: 72 }, sound: snd('rhodes', 'wf-bass-log', 'kalimba', 'afro'),
     var: [{ prog: [0, 3, 6, 2] }, { prog: [0, 5, 3, 4] }, { scale: 'dorian', prog: [0, 3, 0, 3] }, { prog: [5, 4, 0, 0], mm: 'chop', md: .8 }] },
     ['Amapiano', 'Log-drum bass, jazzy keys and shakers at a relaxed tempo.', ['Jazzy', 'A circling seventh loop.'], ['Soulful', 'Four emotional chords.'], ['Dorian', 'Two-chord groove.'], ['Chops', 'Chopped keys melody.']],
     ['Amapiano', 'Log drum bas, cazımsı tuşlular ve shaker\'lar; rahat tempoda.', ['Cazımsı', 'Dönen yedili döngü.'], ['Soul', 'Dört duygusal akor.'], ['Dorian', 'İki akorlu groove.'], ['Chop', 'Kesilmiş tuşlu melodi.']]);
@@ -3144,21 +3260,21 @@ Object.assign(HG.ST.hi, {
   add('uplifting', 'Uplifting Trance', 'trance', '#5cc8ff', [136, 140, 138], 9, ['minor'], 0, {
     chord: { mode: 'sustain', pats: ['whole', 'long'], arp: 'trance' }, bass: { pats: ['trance16'], oct: 36 },
     drums: { kick: K4, clap: C24, chat: H16, ohat: OFF, fill: 'snare' },
-    mel: { mode: 'hook', hr: ['h2', 'h1', 'h5'], dens: .4, oct: 72, rep: .5 }, sound: snd('super-pad', 'trance-bass', 'trance-lead', 'trance'),
+    mel: { mode: 'hook', hr: ['h2', 'h1', 'h5'], dens: .4, oct: 72, rep: .5 }, sound: snd('wf-pad-festival', 'trance-bass', 'wf-lead-anthem', 'trance'),
     var: [{ prog: [0, 5, 2, 6] }, { prog: [5, 6, 0, 0] }, { prog: [0, 5, 6, 4], cm: 'arp', mm: 'arp', arp: 'trance' }, { prog: [3, 5, 0, 6], bp: 'offbeat8' }] },
     ['Uplifting trance', 'Soaring supersaw melody, rolling bass and a long emotional breakdown.', ['Anthem', 'The classic trance loop.'], ['Rise', 'Climbing to home.'], ['Arps', 'Arpeggios everywhere.'], ['Offbeat', 'Classic offbeat bass.']],
     ['Uplifting trance', 'Süzülen supersaw melodi, akan bas ve uzun, duygusal breakdown.', ['Marş', 'Klasik trance döngüsü.'], ['Tırmanış', 'Ana akora çıkış.'], ['Arp', 'Her yerde arpej.'], ['Offbeat', 'Klasik offbeat bas.']]);
   add('hardstyle', 'Hardstyle', 'hard', '#ff3d6e', [148, 155, 150], 4, ['minor', 'harmonic'], 0, {
     chord: { mode: 'stab', pats: ['quarter'] }, bass: { pats: ['offbeat8'], oct: 36 },
     drums: { kick: K4, clap: SN, ohat: OFF, fill: 'snare' },
-    mel: { mode: 'hook', hr: ['h1', 'h3', 'h4'], dens: .45, oct: 72, rep: .5 }, sound: snd('super-stab', 'punch-bass', 'super-lead', 'hard'),
+    mel: { mode: 'hook', hr: ['h1', 'h3', 'h4'], dens: .45, oct: 72, rep: .5 }, sound: snd('super-stab', 'punch-bass', 'wf-lead-anthem', 'hard'),
     var: [{ prog: [0, 5, 2, 6] }, { scale: 'harmonic', prog: [0, 5, 3, 4] }, { prog: [5, 6, 0, 0] }, { prog: [0, 0, 5, 6], mm: 'riff', md: .7 }] },
     ['Hardstyle', 'A hard distorted kick, reverse bass and a euphoric anthem lead.', ['Euphoric', 'Big four-chord anthem.'], ['Harmonic', 'Dramatic raised seventh.'], ['Rise', 'Climbing to home.'], ['Raw', 'A rawer riff.']],
     ['Hardstyle', 'Sert distorsiyonlu kick, reverse bas ve coşkulu marş lead\'i.', ['Coşkulu', 'Büyük dört akorlu marş.'], ['Armonik', 'Dramatik yükseltilmiş yedili.'], ['Tırmanış', 'Ana akora çıkış.'], ['Raw', 'Daha ham bir riff.']]);
   add('hardcore', 'Hardcore', 'hard', '#ff2a2a', [165, 180, 170], 9, ['minor', 'phrygian'], 0, {
     chord: { mode: 'stab', pats: ['rave'] }, bass: { pats: ['pumpRoot'], oct: 36 },
     drums: { kick: K4, clap: C24, chat: H16, ohat: OFF, fill: 'snare' },
-    mel: { mode: 'riff', dens: .35, oct: 72 }, sound: snd('rave-stab', 'punch-bass', 'square-lead', 'hard'),
+    mel: { mode: 'riff', dens: .35, oct: 72 }, sound: snd('rave-stab', 'punch-bass', 'wf-lead-screech', 'hard'),
     var: [{ prog: [0, 0, 5, 6] }, { scale: 'phrygian', prog: [0, 1, 0, 1] }, { prog: [0, 5, 3, 4], mm: 'hook', hr: ['h4', 'h1'] }, { prog: [0, 6, 5, 6] }] },
     ['Hardcore', 'Very fast and relentless: pounding kick, rave stabs and a shouting riff.', ['Rave', 'Riff with a late lift.'], ['Phrygian', 'Half-step aggression.'], ['Melodic', 'A fast melodic hook.'], ['March', 'Stepping chords.']],
     ['Hardcore', 'Çok hızlı ve acımasız: döven kick, rave stab\'leri ve bağıran riff.', ['Rave', 'Geç yükselen riff.'], ['Frigyen', 'Yarım seslik saldırganlık.'], ['Melodik', 'Hızlı melodik hook.'], ['Marş', 'Adım adım akorlar.']]);
@@ -3174,28 +3290,28 @@ Object.assign(HG.ST.hi, {
   add('neuro', 'Neurofunk', 'bass', '#8cff3d', [172, 176, 174], 5, ['minor', 'phrygian'], 0, {
     chord: { mode: 'sustain', pats: ['whole'] }, bass: { pats: ['reese'], oct: 36 },
     drums: { kick: BRK, snare: SN, chat: H16, rim: GH, fill: 'snare' },
-    mel: { mode: 'riff', dens: .2, oct: 60 }, sound: snd('dark-drone', 'reese', 'fm-lead', 'dnb'),
+    mel: { mode: 'riff', dens: .2, oct: 60 }, sound: snd('dark-drone', 'wf-bass-reese', 'fm-lead', 'dnb'),
     var: [{ prog: [0, 0, 0, 0] }, { scale: 'phrygian', prog: [0, 0, 1, 0] }, { prog: [0, 0, 5, 6], dr: { kick: 'x......x..x.....' } }, { scale: 'phrygian', prog: [0, 6, 0, 1], md: 1.4 }] },
     ['Neurofunk', 'Dark, technical drum & bass: a snarling reese bass and a tight break.', ['Reese', 'One note, all bass.'], ['Phrygian', 'Half-step dread.'], ['Stepper', 'Extra kick, late lift.'], ['Tech', 'Denser riff, darker turn.']],
     ['Neurofunk', 'Karanlık, teknik drum & bass: hırlayan reese bas ve sıkı break.', ['Reese', 'Tek nota, tam bas.'], ['Frigyen', 'Yarım seslik tedirginlik.'], ['Stepper', 'Ek kick, geç yükseliş.'], ['Tech', 'Yoğun riff, karanlık dönüş.']]);
   add('dubstep', 'Dubstep', 'bass', '#b05cff', [138, 142, 140], 5, ['minor', 'phrygian'], 0, {
     chord: { mode: 'sustain', pats: ['whole'] }, bass: { pats: ['wobble'], oct: 36 },
     drums: { kick: 'x.....x.........', snare: HALF, chat: H8, ohat: '..............x.', fill: 'snare' },
-    mel: { mode: 'riff', dens: .15, oct: 60 }, sound: snd('dark-drone', 'neuro-lite', 'fm-lead', 'trap'),
+    mel: { mode: 'riff', dens: .15, oct: 60 }, sound: snd('dark-drone', 'wf-bass-wobble', 'fm-lead', 'trap'),
     var: [{ prog: [0, 0, 0, 0] }, { prog: [0, 0, 5, 6] }, { scale: 'phrygian', prog: [0, 1, 0, 1] }, { prog: [0, 5, 3, 4], mm: 'hook', hr: ['h2', 'h5'] }] },
     ['Dubstep', 'Half-time drums and a heavy, moving bass with lots of space.', ['Heavy', 'One note, big bass.'], ['Turn', 'A late two-chord lift.'], ['Phrygian', 'Half-step menace.'], ['Melodic', 'Chords and a slow hook.']],
     ['Dubstep', 'Yarı tempolu davul ve ağır, hareketli bas; bolca boşluk.', ['Ağır', 'Tek nota, büyük bas.'], ['Dönüş', 'Geç gelen iki akor.'], ['Frigyen', 'Yarım seslik tehdit.'], ['Melodik', 'Akorlar ve yavaş hook.']]);
   add('futurebass', 'Future Bass', 'bass', '#ff8ad6', [140, 160, 150], 3, ['major', 'minor'], 0, { sev: true,
     chord: { mode: 'stab', pats: ['push', 'quarter'] }, bass: { pats: ['longRoot'], oct: 36 },
     drums: { kick: 'x......x........', clap: HALF, chat: H8, fill: 'snare' },
-    mel: { mode: 'hook', hr: ['h1', 'h3', 'h6'], dens: .4, oct: 72, rep: .5 }, sound: snd('super-stab', 'sub-sine', 'vox-chop', 'trap'),
+    mel: { mode: 'hook', hr: ['h1', 'h3', 'h6'], dens: .4, oct: 72, rep: .5 }, sound: snd('wf-stab-future', 'sub-sine', 'wf-vox-chop', 'trap'),
     var: [{ scale: 'major', prog: [3, 4, 5, 0] }, { scale: 'major', prog: [0, 4, 5, 3] }, { scale: 'minor', prog: [5, 6, 0, 0] }, { scale: 'major', prog: [3, 0, 4, 5], mm: 'chop' }] },
     ['Future bass', 'Huge pumping seventh chords, half-time drums and a vocal-chop hook.', ['Bright', 'Rising major chords.'], ['Pop', 'The pop progression.'], ['Minor', 'Bittersweet lift.'], ['Chops', 'Chopped vocal melody.']],
     ['Future bass', 'Dev pompalayan yedili akorlar, yarı tempolu davul ve vokal chop hook\'u.', ['Parlak', 'Yükselen majör akorlar.'], ['Pop', 'Pop akor yürüyüşü.'], ['Minör', 'Buruk yükseliş.'], ['Chop', 'Kesilmiş vokal melodi.']]);
   add('ukg', 'UK Garage', 'bass', '#ffe45c', [128, 134, 132], 7, ['minor', 'dorian'], 18, { sev: true,
     chord: { mode: 'stab', pats: ['garage', 'house'] }, bass: { pats: ['ukg'], oct: 36 },
     drums: { kick: BRK, clap: SN, chat: H8, ohat: OFF, rim: '.......x.......x', fill: 'none' },
-    mel: { mode: 'chop', dens: .4, oct: 72 }, sound: snd('organ-stab', 'deep-bass', 'vox-chop', 'house'),
+    mel: { mode: 'chop', dens: .4, oct: 72 }, sound: snd('wf-keys-organ', 'deep-bass', 'wf-vox-chop', 'house'),
     var: [{ prog: [0, 3, 0, 3] }, { prog: [0, 5, 3, 4] }, { scale: 'dorian', prog: [0, 6, 5, 6] }, { prog: [3, 4, 0, 0], mm: 'motif' }] },
     ['UK garage', 'Shuffled 2-step drums, organ stabs, a skipping bass and vocal chops.', ['2-step', 'Two-chord skip.'], ['Soulful', 'Four emotional chords.'], ['Dorian', 'Lighter colour.'], ['Motif', 'A short repeating motif.']],
     ['UK garage', 'Shuffle\'lı 2-step davul, org stab\'leri, seken bas ve vokal chop\'ları.', ['2-step', 'İki akorlu sekme.'], ['Soul', 'Dört duygusal akor.'], ['Dorian', 'Daha hafif renk.'], ['Motif', 'Kısa, tekrar eden motif.']]);
@@ -3211,7 +3327,7 @@ Object.assign(HG.ST.hi, {
   add('lofi', 'Lo-fi Hip-Hop', 'chill', '#c9a27a', [70, 90, 80], 0, ['major', 'dorian', 'minor'], 22, { sev: true,
     chord: { mode: 'stab', pats: ['boom', 'neo'] }, bass: { pats: ['boom'], oct: 36 },
     drums: { kick: 'x......x..x.....', snare: SN, chat: H8, fill: 'none' },
-    mel: { mode: 'motif', dens: .25, oct: 72 }, sound: snd('lofi-keys', 'upright', 'harp', 'lofi'),
+    mel: { mode: 'motif', dens: .25, oct: 72 }, sound: snd('wf-keys-dusty', 'wf-bass-felt', 'harp', 'lofi'),
     var: [{ scale: 'major', prog: [1, 4, 0, 5] }, { scale: 'dorian', prog: [0, 3, 0, 3] }, { scale: 'minor', prog: [0, 5, 3, 4] }, { scale: 'major', prog: [3, 2, 1, 0], mm: 'chop', md: .6 }] },
     ['Lo-fi hip-hop', 'Dusty jazz chords, a lazy swung beat and a small, sleepy melody.', ['Jazz', 'The ii–V–I turnaround.'], ['Dorian', 'Two mellow chords.'], ['Rainy', 'A sadder minor loop.'], ['Stroll', 'Chords walking down.']],
     ['Lo-fi hip-hop', 'Tozlu caz akorları, tembel swing\'li ritim ve küçük, uykulu bir melodi.', ['Caz', 'ii–V–I dönüşü.'], ['Dorian', 'İki yumuşak akor.'], ['Yağmurlu', 'Daha hüzünlü minör döngü.'], ['Yürüyüş', 'Aşağı yürüyen akorlar.']]);
@@ -3241,35 +3357,35 @@ Object.assign(HG.ST.hi, {
   add('trap', 'Trap', 'urban', '#ff4d6a', [130, 150, 140], 1, ['minor', 'harmonic', 'phrygian'], 0, {
     chord: { mode: 'sustain', pats: ['whole', 'long'] }, bass: { pats: ['sub808'], oct: 36 },
     drums: { kick: 'x......x..x.....', clap: HALF, chat: H16, ohat: '......x.........', fill: 'snare' },
-    mel: { mode: 'motif', dens: .3, oct: 72 }, sound: snd('sad-pad', '808-long', 'bell-pluck', 'trap'),
+    mel: { mode: 'motif', dens: .3, oct: 72 }, sound: snd('sad-pad', 'wf-808-clean', 'wf-pluck-trapbell', 'trap'),
     var: [{ prog: [0, 5, 0, 5] }, { scale: 'harmonic', prog: [0, 0, 5, 4] }, { scale: 'phrygian', prog: [0, 1, 0, 1] }, { prog: [0, 5, 3, 4], mm: 'arp', arp: 'gate', md: .7 }] },
     ['Trap', 'Long 808 bass, half-time clap, fast hats and a dark bell motif.', ['Dark', 'Two minor chords.'], ['Harmonic', 'Dramatic raised seventh.'], ['Phrygian', 'Half-step menace.'], ['Arp', 'A gated arp melody.']],
     ['Trap', 'Uzun 808 bas, yarı tempolu clap, hızlı hat\'ler ve karanlık çan motifi.', ['Karanlık', 'İki minör akor.'], ['Armonik', 'Dramatik yükseltilmiş yedili.'], ['Frigyen', 'Yarım seslik tehdit.'], ['Arp', 'Kesik arp melodisi.']]);
   add('drill', 'Drill', 'urban', '#6a7bff', [138, 146, 142], 5, ['minor', 'harmonic'], 0, {
     chord: { mode: 'sustain', pats: ['whole'] }, bass: { pats: ['drill'], oct: 36 },
     drums: { kick: 'x......x..x..x..', clap: HALF, rim: '..............x.', chat: 'x..x..x.x..x..x.', fill: 'none' },
-    mel: { mode: 'motif', dens: .3, oct: 72 }, sound: snd('choir-pad', '808-long', 'pizz', 'trap'),
+    mel: { mode: 'motif', dens: .3, oct: 72 }, sound: snd('choir-pad', 'wf-808-slide', 'wf-pluck-pizz', 'trap'),
     var: [{ prog: [0, 5, 0, 5] }, { scale: 'harmonic', prog: [0, 5, 4, 4] }, { prog: [0, 2, 5, 4] }, { scale: 'harmonic', prog: [0, 0, 3, 4], mm: 'arp', arp: 'gate', md: .7 }] },
     ['Drill', 'Sliding 808 lines, 3-3-2 hats and cold minor strings.', ['Cold', 'Two minor chords.'], ['Harmonic', 'Tense raised seventh.'], ['Cinematic', 'Four dramatic chords.'], ['Arp', 'A gated arp melody.']],
     ['Drill', 'Kayan 808 hatları, 3-3-2 hat\'ler ve soğuk minör yaylılar.', ['Soğuk', 'İki minör akor.'], ['Armonik', 'Gergin yükseltilmiş yedili.'], ['Sinematik', 'Dört dramatik akor.'], ['Arp', 'Kesik arp melodisi.']]);
   add('rnb', 'R&B', 'urban', '#c78cff', [80, 100, 90], 3, ['major', 'dorian', 'minor'], 12, { sev: true,
     chord: { mode: 'stab', pats: ['neo', 'boom'] }, bass: { pats: ['rnb'], oct: 36 },
     drums: { kick: 'x.....x..x......', clap: SN, chat: H16, rim: '..........x.....', fill: 'none' },
-    mel: { mode: 'hook', hr: ['h2', 'h5', 'h6'], dens: .3, oct: 72, rep: .5 }, sound: snd('e-piano', 'deep-bass', 'sine-lead', 'trap'),
+    mel: { mode: 'hook', hr: ['h2', 'h5', 'h6'], dens: .3, oct: 72, rep: .5 }, sound: snd('wf-keys-tine', 'deep-bass', 'wf-lead-whistle', 'trap'),
     var: [{ scale: 'major', prog: [1, 4, 0, 5] }, { scale: 'dorian', prog: [0, 3, 0, 3] }, { scale: 'minor', prog: [5, 4, 0, 0] }, { scale: 'major', prog: [3, 2, 1, 0], cm: 'sustain', cp: 'long', mm: 'chop', md: .6 }] },
     ['R&B', 'Smooth seventh chords on electric piano, a laid-back beat and a singable hook.', ['Smooth', 'The ii–V–I turnaround.'], ['Neo soul', 'Two dorian chords.'], ['Late night', 'A moodier minor loop.'], ['Slow jam', 'Long chords walking down.']],
     ['R&B', 'Elektrikli piyanoda pürüzsüz yedili akorlar, rahat ritim ve söylenebilir hook.', ['Pürüzsüz', 'ii–V–I dönüşü.'], ['Neo soul', 'İki dorian akor.'], ['Gece yarısı', 'Daha kasvetli minör döngü.'], ['Slow jam', 'Aşağı yürüyen uzun akorlar.']]);
   add('trapsoul', 'Trap Soul', 'urban', '#8c6aff', [120, 140, 130], 8, ['minor', 'dorian'], 0, { sev: true,
     chord: { mode: 'sustain', pats: ['long', 'whole'] }, bass: { pats: ['sub808'], oct: 36 },
     drums: { kick: 'x.........x..x..', clap: HALF, chat: H16, fill: 'none' },
-    mel: { mode: 'hook', hr: ['h5', 'h2'], dens: .25, oct: 72, rep: .5 }, sound: snd('wurli', '808-long', 'vox-chop', 'trap'),
+    mel: { mode: 'hook', hr: ['h5', 'h2'], dens: .25, oct: 72, rep: .5 }, sound: snd('wf-pad-tape', 'wf-808-clean', 'wf-vox-chop', 'trap'),
     var: [{ prog: [0, 5, 3, 4] }, { prog: [5, 4, 0, 0] }, { scale: 'dorian', prog: [0, 3, 0, 3] }, { prog: [0, 2, 5, 6], mm: 'motif' }] },
     ['Trap soul', 'R&B chords over trap drums: 808 bass, soft keys and a slow vocal-style hook.', ['Moody', 'Four minor chords.'], ['Yearning', 'Starts away from home.'], ['Dorian', 'Two-chord vibe.'], ['Motif', 'A short repeating motif.']],
     ['Trap soul', 'Trap davulu üstünde R&B akorları: 808 bas, yumuşak tuşlular ve yavaş vokal tadında hook.', ['Kasvetli', 'Dört minör akor.'], ['Özlem', 'Ana akorun dışından başlar.'], ['Dorian', 'İki akorluk hava.'], ['Motif', 'Kısa, tekrar eden motif.']]);
   add('phonk', 'Phonk', 'urban', '#ff3db0', [120, 140, 130], 0, ['phrygian', 'minor'], 0, {
     chord: { mode: 'sustain', pats: ['whole'] }, bass: { pats: ['sub808'], oct: 36 },
     drums: { kick: 'x.....x.x.....x.', clap: C24, chat: H8, ohat: OFF, fill: 'snare' },
-    mel: { mode: 'riff', dens: .3, oct: 72 }, sound: snd('choir-pad', '808-long', 'wf-metal-pipe', 'trap'),
+    mel: { mode: 'riff', dens: .3, oct: 72 }, sound: snd('choir-pad', 'wf-808-dirt', 'wf-metal-cowbell', 'trap'),
     var: [{ prog: [0, 0, 0, 0] }, { scale: 'phrygian', prog: [0, 1, 0, 1] }, { scale: 'minor', prog: [0, 0, 5, 6] }, { scale: 'phrygian', prog: [0, 5, 0, 1], mm: 'motif' }] },
     ['Phonk', 'A metallic cowbell-style riff over distorted 808s and a driving beat.', ['Drift', 'One note, one riff.'], ['Phrygian', 'Half-step menace.'], ['Lift', 'A late two-chord lift.'], ['Motif', 'A short repeating motif.']],
     ['Phonk', 'Distorsiyonlu 808 ve sürükleyici ritim üstünde metalik, cowbell tadında riff.', ['Drift', 'Tek nota, tek riff.'], ['Frigyen', 'Yarım seslik tehdit.'], ['Yükseliş', 'Geç gelen iki akor.'], ['Motif', 'Kısa, tekrar eden motif.']]);
@@ -3278,6 +3394,7 @@ Object.assign(HG.ST.hi, {
 })();
 MB.TRIM = {"sub-sine":1,"deep-bass":1,"roll-bass":1,"808-long":1,"reese":1,"acid-303":1,"pluck-bass":1,"funk-bass":1,"neuro-lite":1,"wood-bass":1,"upright":1,"punch-bass":1,"trance-bass":1,"fm-bass":1,"warm-pad":0.999,"dub-pad":1,"glass-pad":1,"dark-drone":1,"string-machine":1,"choir-pad":1,"super-pad":1,"evolving-pad":1.001,"tape-pad":1,"sunrise-pad":1,"sad-pad":1,"hollow-pad":1,"organ-stab":1,"italo-stab":1,"rave-stab":1,"deep-stab":1,"super-stab":1,"vapor-stab":1,"brass-stab":1,"dub-chord":1,"classic-pluck":1,"pizz":1,"kalimba":1,"marimba":1,"muted-pluck":1,"harp":1,"bell-pluck":1,"glass-pluck":1,"techno-blip":1,"trance-pluck":1,"super-lead":1,"trance-lead":1,"square-lead":1,"sine-lead":1,"pulse-lead":1,"sync-lead":1,"whistle-lead":1,"mt-lead":1,"mono-lead":1,"fm-lead":1,"glass-lead":1,"afro-flute":1,"e-piano":1,"rhodes":0.999,"organ":0.999,"wurli":1,"clav":1,"lofi-keys":1,"aah-female":1,"ooh-choir":1,"eeh-vox":1,"vocoder":1,"breath-hum":1,"male-ooh":1,"vox-chop":1,"angel-aah":1,"wj-dark-pad":1,"wj-hypno-bass":1,"wj-glass-arp":1,"wj-sunrise-lead":1,"gt-piano-stab":1,"gt-pump-bass":1,"gt-anthem-lead":1,"ar-uplift-lead":1,"ar-rolling-bass":1,"dd-funk-stab":1,"dd-bounce-bass":1,"mp-hook-bass":1,"dv-screech-lead":1,"cw-acid-riff":1,"cc-909-stab":1,"mg-wide-chord":1,"mg-pluck-lead":1,"an-cine-pad":1,"an-pulse-bass":1,"an-crystal-arp":1,"al-slap-bass":1,"tt-brass-lead":1,"fa-felt-keys":1,"fi-rubber-bass":1,"ip-psy-bass":1,"ip-acid-lead":1,"sl-rumble-bass":1,"sl-hard-lead":1,"so-velvet-pad":1,"so-deep-bass":1,"so-emotive-lead":1,"mm-dream-pluck":1,"mm-prog-bass":1,"mm-silk-lead":1,"mo-sax-lead":1,"mo-ney-flute":1,"mo-warm-keys":1,"mo-deep-bass":1,"hu-latin-piano":1,"hu-latin-bass":1,"hu-brass":1,"bc-soul-keys":1,"bc-afro-sub":1,"bc-kalimba":1,"ws-sub-heavy":0.996,"ws-fat-roll":1.682,"ws-reese-wide":1.561,"ws-deep-warm-bass":1.275,"ws-super-chord":0.867,"ws-lush-pad":1.422,"ws-warm-stack":1,"ws-rave-organ":0.668,"ws-dark-wall":1.518,"ws-anthem-lead":1.203,"ws-silk-lead":1.707,"ws-wide-pluck":1.396,"ws-grand-warm":0.689,"ws-brass-hit":2.525};
 Object.assign(MB.TRIM, {"wf-sub-anchor":1.155,"wf-sub-felt":1.108,"wf-sub-pressure":2.155,"wf-sub-glide":1.17,"wf-sub-harmonic":1.242,"wf-roll-tunnel":1.801,"wf-roll-rubber":2.197,"wf-roll-fm":3.905,"wf-roll-hypno":1.714,"wf-roll-grit":3.765,"wf-roll-velvet":1.763,"wf-acid-line":0.527,"wf-acid-square":0.521,"wf-acid-sour":1.588,"wf-acid-rubber":0.784,"wf-acid-scream":0.295,"wf-lead-obsidian":1.657,"wf-lead-cathedral":1.649,"wf-lead-ghost":0.785,"wf-lead-razor":1.118,"wf-lead-shard":1.143,"wf-lead-mourning":1.863,"wf-lead-chant":0.444,"wf-pluck-analog":3.499,"wf-pluck-wood":9.033,"wf-pluck-crystal":2.476,"wf-pluck-dub":1.8,"wf-pluck-prog":3.852,"wf-pluck-mallet":1.707,"wf-stab-basement":2.333,"wf-stab-warehouse":2.493,"wf-stab-organ":1.995,"wf-stab-hammer":2.11,"wf-stab-brass":1.792,"wf-stab-chop":4.93,"wf-seq-pulse":3.914,"wf-seq-bounce":2.252,"wf-seq-hypno":1.755,"wf-seq-sparkle":2.359,"wf-seq-ring":2.725,"wf-seq-cine":2.69,"wf-pad-horizon":1.338,"wf-pad-nocturne":1.136,"wf-pad-glass":0.928,"wf-pad-warm":0.921,"wf-pad-choir":0.239,"wf-pad-strings":2.781,"wf-tex-air":1.247,"wf-tex-drone":0.552,"wf-tex-shimmer":0.712,"wf-tex-breath":0.773,"wf-tex-dust":0.622,"wf-metal-anvil":1.47,"wf-metal-clang":1.204,"wf-metal-grinder":2.04,"wf-metal-pipe":1.86,"wf-metal-rust":4.868,"wf-fx-riser":1.286,"wf-fx-impact":1.053,"wf-fx-down":2.897,"wf-fx-sweep":1.913,"wf-fx-zap":1.704});   // Wavejackers Factory 26: ön dinleme cümlesiyle ölçülen eşit ses yüksekliği (-18 LUFS, doku/FX -22)
+Object.assign(MB.TRIM, {"wf-808-clean":1.928,"wf-808-dirt":1.820,"wf-808-slide":1.207,"wf-bass-reese":1.758,"wf-bass-wobble":1.939,"wf-bass-log":1.993,"wf-bass-slap":2.392,"wf-bass-felt":2.746,"wf-keys-tine":0.903,"wf-keys-dusty":1.196,"wf-keys-house":1.250,"wf-keys-organ":1.012,"wf-pad-tape":0.840,"wf-pad-festival":0.923,"wf-stab-future":1.677,"wf-stab-tape":2.599,"wf-lead-whistle":0.940,"wf-lead-screech":1.425,"wf-lead-anthem":1.702,"wf-pluck-trapbell":0.854,"wf-pluck-pizz":4.402,"wf-pluck-future":3.237,"wf-metal-cowbell":1.883,"wf-vox-chop":0.774});   // 3.3: 24 yeni fabrika sesi
 // ---- Arayüz 1/3: durum, dil, vuruş sekmesi, çalma motoru
 const UI = {};
 (function () {

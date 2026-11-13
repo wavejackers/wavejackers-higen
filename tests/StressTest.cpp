@@ -1343,6 +1343,112 @@ static void testBankBehaviour (const FailFn& fail)
 
 
 // Ses sayfası görüntüleri ve arayüz davranışı: görünümler, tarayıcı sırası, kategori filtresi, önceki/sonraki
+// LoopForge: Öklid ritmi, gam kilidi, kırpma, dikişsiz (başa saran) işleme, yakalama, çalma, dışa aktarım, durum ve arayüz
+static void testLoopForge (const juce::File& outDir, const FailFn& fail, bool shots)
+{
+    const double sr = 48000;
+    {   // Öklid ve gam
+        const auto e = lf::euclid (16, 4, 0); for (int i = 0; i < 16; ++i) if (e[(size_t) i] != (i % 4 == 0)) { fail ("loop: euclid(16,4) should be four on the floor"); break; }
+        int c = 0; const auto r = lf::euclid (8, 3, 2); for (int i = 0; i < 8; ++i) c += r[(size_t) i] ? 1 : 0;
+        if (c != 3) fail ("loop: euclid(8,3) pulse count " + juce::String (c));
+        if (lf::degreeToSemis (0, 2) != 3 || lf::degreeToSemis (0, 7) != 12 || lf::degreeToSemis (0, -1) != -2 || lf::degreeToSemis (4, 2) != 4) fail ("loop: scale degrees wrong");
+    }
+    // tek vuruş: 0,1 sn sessizlik + 60 ms sönen 220 Hz + 0,2 sn sessizlik
+    juce::AudioBuffer<float> one (2, (int) (sr * .36)); one.clear();
+    const int b0 = (int) (sr * .1), bl = (int) (sr * .06);
+    for (int i = 0; i < bl; ++i) { const float v = (float) (std::sin (juce::MathConstants<double>::twoPi * 220.0 * i / sr) * std::exp (-i / (sr * .015)) * .8); one.setSample (0, b0 + i, v); one.setSample (1, b0 + i, v); }
+    {
+        float a = 0, z = 1; lf::autoTrim (one, a, z); const int N = one.getNumSamples();
+        if (std::abs (a * N - b0) > 200 || z * N > b0 + bl + 200 || z <= a) fail ("loop: auto trim " + juce::String (a * N) + " .. " + juce::String (z * N));
+        juce::AudioBuffer<float> big (2, (int) (sr * 8)); big.clear();
+        for (int c = 0; c < 2; ++c) big.copyFrom (c, (int) (sr * 5), one, c, b0, bl);
+        int f = 0, t = 0; lf::findHit (big, sr, 2.0, f, t);
+        if (std::abs (f - (int) (sr * 5)) > 600 || t <= f || t - f > (int) (sr * .5)) fail ("loop: findHit " + juce::String (f) + " .. " + juce::String (t));
+    }
+    lf::Settings s; s.bars = 1; s.start = (float) b0 / one.getNumSamples(); s.end = (float) (b0 + bl) / one.getNumSamples(); s.space = 0; s.drive = 0; s.motion = 0;
+    for (auto& st : s.step) st = lf::Step();
+    s.step[14].on = true; s.step[14].decay = .2f;
+    {
+        const auto dry = lf::render (s, one, sr, 120, sr); const int N = dry->buf.getNumSamples();
+        if (N != (int) (sr * 2)) fail ("loop: 1 bar at 120 BPM should be 2 s, got " + juce::String (N));
+        const int head = (int) (sr * .05);
+        if (dry->buf.getMagnitude (0, head) > 1e-4f) fail ("loop: dry loop start should be silent");
+        if (dry->buf.getMagnitude (0, N) < .05f) fail ("loop: dry loop is silent");
+        s.space = 1;
+        const auto wet = lf::render (s, one, sr, 120, sr);
+        if (wet->buf.getMagnitude (0, head) < 1e-3f) fail ("loop: effect tail does not wrap around to bar 1");
+        const float pk = wet->buf.getMagnitude (0, N);
+        if (pk > .9f) fail ("loop: peak above -1 dBFS " + juce::String (pk));
+        for (int c = 0; c < 2; ++c) if (std::abs (wet->buf.getSample (c, N - 1) - wet->buf.getSample (c, 0)) > .1f * pk) fail ("loop: click at the loop point");
+        s.step[14].pitch = 7; s.space = 0;   // bir oktav yukarı: ses yarı sürede biter
+        s.step[14].rev = true; s.step[14].ratchet = 3;
+        const auto var = lf::render (s, one, sr, 120, sr);
+        if (var->buf.getMagnitude (0, N) < .05f) fail ("loop: reverse / ratchet / pitch render is silent");
+    }
+    {   // durum gidiş-dönüş ve mutasyon
+        lf::Settings m = s; lf::mutate (m, lf::mArp, 77); m.swing = .3f; m.steps = 32; m.bars = 4;
+        lf::Settings q; q.fromTree (m.toTree());
+        bool same = q.steps == 32 && q.bars == 4 && std::abs (q.swing - .3f) < 1e-4f && q.pulses == m.pulses;
+        for (int i = 0; i < lf::kMaxSteps; ++i) same = same && q.step[(size_t) i].on == m.step[(size_t) i].on && q.step[(size_t) i].pitch == m.step[(size_t) i].pitch && q.step[(size_t) i].ratchet == m.step[(size_t) i].ratchet;
+        if (! same) fail ("loop: settings do not survive save / load");
+        int on = 0; for (int i = 0; i < 16; ++i) on += m.step[(size_t) i].on ? 1 : 0;
+        if (on != m.pulses || on < 2) fail ("loop: mutate pulses " + juce::String (on));
+    }
+    // motor: eklentinin kendi çıkışını yakala, çal, dışa aktar
+    HitGenProcessor p; p.setPlayConfigDetails (0, 2, sr, 256); p.prepareToPlay (sr, 256);
+    auto waitDone = [&] { for (int i = 0; i < 1000 && p.loop.busy(); ++i) juce::Thread::sleep (10); };
+    p.idle();   // tempo eklentiden döngü motoruna geçer
+    if (p.loop.captureNow()) fail ("loop: capture of silence should fail");
+    for (int pos = 0; pos < one.getNumSamples(); pos += 256)
+    {
+        juce::AudioBuffer<float> blk (2, 256); blk.clear();
+        const int n = juce::jmin (256, one.getNumSamples() - pos); for (int c = 0; c < 2; ++c) blk.copyFrom (c, 0, one, c, pos, n);
+        p.loop.capture (blk, 256);
+    }
+    if (! p.loop.captureNow() || ! p.loop.hasSample()) fail ("loop: capture failed");
+    p.idle(); waitDone();
+    p.loop.setPlaying (true);
+    juce::AudioBuffer<float> out (2, 256); float mx = 0;
+    for (int i = 0; i < 400; ++i) { out.clear(); p.loop.process (out, 256, false, 0, 120); mx = juce::jmax (mx, out.getMagnitude (0, 256)); }
+    if (mx < .01f) fail ("loop: playback is silent");
+    {   // ev sahibi konumuna kilit: aynı PPQ aynı örneği verir
+        juce::AudioBuffer<float> a (2, 64), b (2, 64); a.clear(); b.clear();
+        p.loop.process (a, 64, true, 1.0, 120); p.loop.process (b, 64, true, 1.0 + 8.0, 120);   // 2 ölçü = 8 vuruş sonra
+        if (std::abs (a.getSample (0, 10) - b.getSample (0, 10)) > 1e-6f) fail ("loop: not locked to host position");
+    }
+    const auto wav = p.loop.exportWav();
+    juce::AudioFormatManager fm; fm.registerBasicFormats();
+    if (std::unique_ptr<juce::AudioFormatReader> rd { fm.createReaderFor (wav) })
+    {
+        const auto cs = p.loop.get(); const double bpm = (double) p.apvts.getRawParameterValue ("bpm")->load();
+        if (rd->bitsPerSample != 24 || rd->numChannels != 2) fail ("loop: export should be 24-bit stereo");
+        if (std::abs ((double) rd->lengthInSamples - cs.bars * 4 * 60.0 / bpm * sr) > 2) fail ("loop: export length " + juce::String (rd->lengthInSamples));
+    }
+    else fail ("loop: export file missing");
+    {   // proje durumu: ayarlar ve ses dosyası geri gelir
+        auto cs = p.loop.get(); cs.bars = 4; cs.drive = .6f; p.loop.set (cs);
+        juce::MemoryBlock mb; p.getStateInformation (mb);
+        HitGenProcessor q; q.setPlayConfigDetails (0, 2, sr, 256); q.prepareToPlay (sr, 256); q.setStateInformation (mb.getData(), (int) mb.getSize());
+        if (q.loop.get().bars != 4 || std::abs (q.loop.get().drive - .6f) > 1e-4f || ! q.loop.hasSample() || ! q.loop.isPlaying()) fail ("loop: project state not restored");
+    }
+    // arayüz
+    std::unique_ptr<HitGenEditor> ed (dynamic_cast<HitGenEditor*> (p.createEditor()));
+    ed->setTab (6); auto& lp = ed->loops();
+    if (! lp.isVisible()) fail ("loop: page not visible on its tab");
+    lp.mutateNow (lf::mArp); lp.clickStep (1, 3, .1f); lp.clickStep (3, 3, 0); lp.clickStep (4, 3, 0);
+    const auto us = lp.settings();
+    if (! us.step[3].on || us.step[3].pitch < 5 || ! us.step[3].rev || us.step[3].ratchet != 2) fail ("loop: grid edits not applied");
+    if (p.loop.get().step[3].pitch != us.step[3].pitch) fail ("loop: page edits did not reach the engine");
+    waitDone(); lp.tick();
+    if (shots)
+    {
+        auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f);
+        auto f = outDir.getChildFile ("loop-page.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os);
+    }
+    p.loop.setPlaying (false);
+    std::cout << "loopforge: ok\n";
+}
+
 static void testSoundPageUi (const juce::File& outDir, const FailFn& fail, bool shots)
 {
     HitGenProcessor p; p.setPlayConfigDetails (0, 2, 48000, 256); p.prepareToPlay (48000, 256);
@@ -1731,7 +1837,7 @@ int main (int argc, char** argv)
     auto fail = [&] (const juce::String& m) { std::cout << "FAIL " << m << "\n"; ++failures; };
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_DEMO", {}).isNotEmpty()) { testLoudness (outDir, fail, false); return failures == 0 ? 0 : 1; }   // yalnızca dinleme demoları
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_CALIBRATE", {}).isNotEmpty()) { testFactoryBank (fail, true); return 0; }   // fabrika bankası seviye ayarı
-    if (juce::SystemStats::getEnvironmentVariable ("HITGEN_SHOT", {}).isNotEmpty()) { testSoundPageUi (outDir, fail, true); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
+    if (juce::SystemStats::getEnvironmentVariable ("HITGEN_SHOT", {}).isNotEmpty()) { testSoundPageUi (outDir, fail, true); testLoopForge (outDir, fail, true); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_BANK", {}).isNotEmpty()) { testHookRules (fail); testRiffChopRules (fail); testFactoryBank (fail, false); testBankBehaviour (fail); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
 
     // 1) stiller x kalite
@@ -1984,6 +2090,7 @@ int main (int argc, char** argv)
     testFactoryBank (fail, false);
     testBankBehaviour (fail);
     testSoundPageUi (outDir, fail, false);
+    testLoopForge (outDir, fail, false);
     testMultiOut (fail);
     testReference (outDir, fail); testSampler (fail); testLibrary (fail); testMidiLearn (outDir, fail);
     testLoudness (outDir, fail, quick); testDrumMachine (outDir, fail); testGuideAndAssistant (outDir, fail);

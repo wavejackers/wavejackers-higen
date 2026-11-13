@@ -284,3 +284,25 @@ Doğrulama: pembe gürültü RMS ±0.2 dB ve oktav başına eşit enerji ±1 dB,
 - Sınırlar: trap hat ruloları (1/32) ve 808 kaymaları yok; davul kalıbı her ölçüde aynıdır. Kulakla ve DAW'da doğrulanmadı.
 
 **English.** 30 new genre styles (57 total), three new groups (Bass, Rap & R&B, Chill). Riff melodies stay in key and repeat every bar; chop melodies keep one shape across chords. "New idea" generates eight candidates and keeps the best-scoring one (plugin only). Not yet verified by ear or in a DAW.
+
+## Loop sekmesi (LoopForge) ve 24 yeni fabrika sesi / Loop tab and 24 new factory sounds
+
+**Türkçe.**
+
+**Loop sekmesi:** Tek vuruşluk bir sesten tempoya kilitli, dikişsiz döngü üretir.
+- **Ses kaynağı:** WAV, AIFF ya da FLAC dosyasını sayfaya bırak ya da "Ses yükle"ye bas. "Yakala", HitGen'in son 30 saniyede çaldığı en güçlü vuruşu alır. Baş ve sondaki sessizlik otomatik kırpılır, sınırlar sıfır geçişine çekilir; dalga üstündeki tutamaklarla değiştirilebilir.
+- **Ritim:** 16 ya da 32 adım. Vuruş ve Döndürme düğmeleri Öklid ritmi kurar; Swing ve İnsan dokunuşu zamanlamayı kaydırır.
+- **Adım başına:** tetik, perde (seçili gamın içinde, ±1 oktav), ters çalma, ratchet (1-4), hız, filtre, pan, sönüm.
+- **Üret / değiştir:** Küçük değişiklik, Tam Öklid, Melodik arpej.
+- **Makrolar:** Alan (ping-pong delay ve reverb), Sürüş (doygunluk), Hareket (tempoya kilitli filtre ve genişlik).
+- **Dikişsiz kuyruk:** Döngü iki turda işlenir; reverb ve delay kuyruğu döngü sonundan başa sarar.
+- **Çalma ve dışa aktarım:** "Döngüyü çal" DAW konumuna kilitli çalar. "Döngüyü DAW'a sürükle" 24 bit WAV'ı (1, 2, 4 ya da 8 ölçü) doğrudan kanala bırakır. Duyulan döngü ile dosya aynı tampondur.
+- **Proje:** Ayarlar ve ses dosyasının yolu projeyle kaydedilir.
+
+Belgedeki tariften farklar: arayüz WebView yerine HitGen'in kendi arayüzüyle yazıldı (ayrı eklenti yerine sekme istendi). Yakalama DAW girişini değil HitGen'in kendi çıkışını kaydeder, çünkü eklentinin ses girişi yok. Adım başına ±50 ms kaydırma ve adım başına atak yok; İnsan dokunuşu ±20 ms rastgele kaydırır. Döngü ayarları DAW otomasyonuna açık değil. Döngü başa sardığı için 5 ms'lik fade uygulanmıyor.
+
+**Yeni sesler (Factory 26, toplam 86):** 808'ler (Clean, Dirt, Slide), baslar (Night Reese, Wobble, Log Drum, Slap Pluck, Felt Upright), tuşlular (Tine Keys, Dusty Keys, House Piano, Garage Organ), Tape Pad, Festival Saw, Future Chord, Tape Chord, lead'ler (Night Whistle, Hard Screech, Anthem Saw), Trap Bell, Cold Pizz, Future Pluck, Phonk Bell, Vocal Chop. Seviyeleri ölçülerek ayarlandı; yeni tür stillerinin varsayılan sesleri ve sürpriz paletleri bunları kullanıyor.
+
+Doğrulanmayan: kulakla dinleme, DAW'a sürükleme (FL Studio, Ableton), macOS ve Windows'ta elle deneme.
+
+**English.** New Loop tab: drop or capture a one-shot, build a Euclidean step pattern with per-step pitch (scale locked), reverse, ratchet, velocity, filter, pan and decay, shape it with Space / Drive / Motion, play it locked to the host and drag a seamless 24-bit WAV to the DAW (effect tails wrap around). Capture records HitGen's own output, not DAW input. 24 new factory sounds for rap, R&B, bass music, house and hard styles. Not verified by ear or in a DAW.

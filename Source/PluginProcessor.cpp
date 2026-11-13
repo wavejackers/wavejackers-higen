@@ -160,6 +160,7 @@ void HitGenProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     kbBuf.ensureSize (4096);
     for (auto& c : tableCache) c.reset();
     engine.prepare (sampleRate, juce::jmax (512, samplesPerBlock));
+    loop.prepare (sampleRate);
     for (int t = 0; t < 4; ++t) loadPatch (t);   // wavetable seviyeleri örnekleme hızına bağlı
     numOffs = 0; wasRunning = false;
 }
@@ -467,6 +468,7 @@ void HitGenProcessor::pushPattern (const hg::Result& r)
 
 void HitGenProcessor::timerCallback()
 {
+    { const double hb = hostBpm.load(); loop.setTempo (hb > 0 ? hb : (double) p ("bpm")->load()); loop.collect(); }
     // ses iş parçacığının bıraktığı eski desenleri ve yamaları sil
     int s1, n1, s2, n2; patTrash.prepareToRead (patTrash.getNumReady(), s1, n1, s2, n2);
     for (int i = 0; i < n1; ++i) delete patTrashSlots[(size_t) (s1 + i)];
@@ -661,6 +663,8 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         }
         else ++i;
     }
+    loop.capture (buffer, n);                                   // son 30 sn (döngünün kendisi hariç)
+    loop.process (buffer, n, hostPlay || preview, ppq, bpm);
     sampleClock += n; wasRunning = run;
 }
 
@@ -743,7 +747,7 @@ juce::ValueTree HitGenProcessor::stateTree()
 
 void HitGenProcessor::getStateInformation (juce::MemoryBlock& dest)
 {
-    auto state = stateTree(); state.appendChild (midiLearn.toTree(), nullptr);   // eşlemeler yalnızca proje durumunda
+    auto state = stateTree(); state.appendChild (midiLearn.toTree(), nullptr); state.appendChild (loop.toTree(), nullptr);   // eşlemeler yalnızca proje durumunda
     if (auto xml = state.createXml()) copyXmlToBinary (*xml, dest);
 }
 
@@ -753,7 +757,9 @@ void HitGenProcessor::setStateInformation (const void* d, int size)
     if (xml == nullptr || ! xml->hasTagName (apvts.state.getType())) return;
     auto tree = juce::ValueTree::fromXml (*xml);
     const auto mm = tree.getChildWithName ("midimap").createCopy(); tree.removeChild (tree.getChildWithName ("midimap"), nullptr);
+    const auto lt = tree.getChildWithName ("loopforge").createCopy(); tree.removeChild (tree.getChildWithName ("loopforge"), nullptr);
     restoreFromTree (tree, true);
+    if (lt.isValid()) loop.fromTree (lt);
     if (mm.isValid()) midiLearn.fromTree (mm);     // eski projelerde eşleme yok: mevcut (varsayılan) eşlemeler kalır
 }
 

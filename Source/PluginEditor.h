@@ -3,6 +3,7 @@
 #include "PluginProcessor.h"
 #include "Ui.h"
 #include "SoundPage.h"
+#include "LoopPage.h"
 #include "PresetPage.h"
 #include "IntroOverlay.h"
 #include "ProjectPage.h"
@@ -33,6 +34,7 @@ public:
     int currentWorkspace() const noexcept { return ws; }   // 0 üret, 1 ses tasarımı, 2 presetler, 3 referans
     int currentTab() const noexcept { return tab; }
     SoundPage& sounds() { return *soundPage; }
+    LoopPage& loops() { return *loopPage; }
     ReferencePage& reference() { return *refPage; }
     DrumPage& drums() { return *drumPage; }
     hgui::GuideOverlay& guideOverlay() { return guide; }
@@ -80,7 +82,7 @@ private:
     std::array<juce::TextButton, 4> altBtns;
     float phase = 0.0f, meter = 0.0f, meterHold = 0.0f; int frame = 0;
     static constexpr int kNumGroups = 11;   // tümü, 9 tür grubu, kendi presetlerim
-    std::array<juce::TextButton, kNumGroups> groupBtns; std::array<juce::TextButton, 9> tabBtns; int tab = 0; int ws = 0;   // tabBtns 0-3: çalışma alanları (Reference, Smart Detect, DNA Engine, Generate); 4-6: MIDI Studio, Sound Design, Presets; 7: Drum machine (tab 4); 8: Proje (tab 5)
+    std::array<juce::TextButton, kNumGroups> groupBtns; std::array<juce::TextButton, 10> tabBtns; int tab = 0; int ws = 0;   // tabBtns 0-3: çalışma alanları (Reference, Smart Detect, DNA Engine, Generate); 4-6: MIDI Studio, Sound Design, Presets; 7: Drum machine (tab 4); 8: Proje (tab 5)
     juce::TextButton presetBtn, saveBtn, settingsBtn, helpBtn; bool settingsOpen = false;
     struct Backdrop : public juce::Component { HitGenEditor* o = nullptr; void paint (juce::Graphics&) override; } settingsPanel;
     void toggleSettings (bool on); void showHelp(); void showSaveDialog(); void showPresetMenu();
@@ -108,6 +110,7 @@ private:
     std::array<hgui::Knob, 8> partKnobs;
     hgui::DragTile loopTile, fullTile;
 
+    std::unique_ptr<LoopPage> loopPage;
     std::unique_ptr<SoundPage> soundPage; std::unique_ptr<PresetPage> presetPage; std::unique_ptr<ProjectPage> projectPage; std::unique_ptr<ReferencePage> refPage; std::unique_ptr<DrumPage> drumPage;
     // kılavuz ve asistan (2.7)
     hgui::AssistantOrb orb { lnf }; hgui::AssistantBubble bubble { lnf }; hgui::GuideOverlay guide { lnf };

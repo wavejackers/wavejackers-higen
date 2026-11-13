@@ -8,6 +8,7 @@
 #include "Presets.h"
 #include "Import.h"
 #include "RefEngine.h"
+#include "LoopForge.h"
 #include "MidiLearn.h"
 #include "SampleLib.h"
 #include "CoProducer.h"
@@ -61,6 +62,7 @@ public:
     void surpriseSound (int track);
     void suggestAlternative (int track);   // yalnızca o izin MIDI'sini başka bir fikirle değiştir
     juce::String lang = "en";
+    lf::Engine loop;                       // LoopForge: tek vuruştan dikişsiz döngü (kendi çıkışını da yakalar)
     hg::RefEngine ref;                     // referans ses: yükleme, SMART DETECT, orijinali çalma
     hg::MidiLearn midiLearn;               // MIDI CC -> parametre (sağ tık > MIDI Learn)
     float uiScale = 1.0f; bool highContrast = false; bool animations = true;
