@@ -1392,7 +1392,7 @@ static void testRiffChopRules (const FailFn& fail)
             if (onsets (r, 0) != onsets (r, mode == "riff" ? 1 : 2)) fail ("melody rhythm does not repeat: " + tag);
             if (mode == "riff")
             {
-                bool in[12] = {}; if (auto* iv = D.root()["scales"][juce::Identifier (r.P.scale)].getArray()) for (auto& x : *iv) in[((int) x + P.key) % 12] = true;
+                bool in[12] = {}; if (auto* iv = D.scale (r.P.scale)["iv"].getArray()) for (auto& x : *iv) in[((int) x + P.key) % 12] = true;
                 for (auto& n : r.tracks[hg::kMelody]) if (! in[n.n % 12]) { fail ("riff note out of scale: " + tag); break; }
             }
         }
