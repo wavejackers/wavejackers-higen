@@ -299,10 +299,14 @@ Doğrulama: pembe gürültü RMS ±0.2 dB ve oktav başına eşit enerji ±1 dB,
 - **Çalma ve dışa aktarım:** "Döngüyü çal" DAW konumuna kilitli çalar. "Döngüyü DAW'a sürükle" 24 bit WAV'ı (1, 2, 4 ya da 8 ölçü) doğrudan kanala bırakır. Duyulan döngü ile dosya aynı tampondur.
 - **Proje:** Ayarlar ve ses dosyasının yolu projeyle kaydedilir.
 
-Belgedeki tariften farklar: arayüz WebView yerine HitGen'in kendi arayüzüyle yazıldı (ayrı eklenti yerine sekme istendi). Yakalama DAW girişini değil HitGen'in kendi çıkışını kaydeder, çünkü eklentinin ses girişi yok. Adım başına ±50 ms kaydırma ve adım başına atak yok; İnsan dokunuşu ±20 ms rastgele kaydırır. Döngü ayarları DAW otomasyonuna açık değil. Döngü başa sardığı için 5 ms'lik fade uygulanmıyor.
+- **Adım başına zaman kaydırma ve atak:** değer şeridinde "Zaman kaydırma" (±50 ms) ve "Atak" (2-80 ms) seçilebilir.
+- **DAW otomasyonu:** Döngüyü çal, Vuruş, Döndürme, Swing, İnsan dokunuşu, Alan, Sürüş ve Hareket birer eklenti parametresidir (Loop ...).
+- **DAW sesini yakalama:** Eklentide kapalı başlayan "Capture In" stereo girişi var. DAW'da bu girişe bir kanal yönlendirilirse Yakala o sesi kaydeder; bağlı değilse HitGen'in kendi çıkışını kaydeder. Girişin nasıl bağlanacağı DAW'a göre değişir (FL Studio'da mikser yönlendirmesi, Ableton'da sidechain).
+
+Belgedeki tariften kalan farklar: arayüz WebView yerine HitGen'in kendi arayüzüyle yazıldı (ayrı eklenti yerine sekme istendi). Döngü başa sardığı için 5 ms'lik fade uygulanmıyor (fade döngü noktasında boşluk bırakırdı).
 
 **Yeni sesler (Factory 26, toplam 86):** 808'ler (Clean, Dirt, Slide), baslar (Night Reese, Wobble, Log Drum, Slap Pluck, Felt Upright), tuşlular (Tine Keys, Dusty Keys, House Piano, Garage Organ), Tape Pad, Festival Saw, Future Chord, Tape Chord, lead'ler (Night Whistle, Hard Screech, Anthem Saw), Trap Bell, Cold Pizz, Future Pluck, Phonk Bell, Vocal Chop. Seviyeleri ölçülerek ayarlandı; yeni tür stillerinin varsayılan sesleri ve sürpriz paletleri bunları kullanıyor.
 
 Doğrulanmayan: kulakla dinleme, DAW'a sürükleme (FL Studio, Ableton), macOS ve Windows'ta elle deneme.
 
-**English.** New Loop tab: drop or capture a one-shot, build a Euclidean step pattern with per-step pitch (scale locked), reverse, ratchet, velocity, filter, pan and decay, shape it with Space / Drive / Motion, play it locked to the host and drag a seamless 24-bit WAV to the DAW (effect tails wrap around). Capture records HitGen's own output, not DAW input. 24 new factory sounds for rap, R&B, bass music, house and hard styles. Not verified by ear or in a DAW.
+**English.** New Loop tab: drop or capture a one-shot, build a Euclidean step pattern with per-step pitch (scale locked), reverse, ratchet, velocity, filter, pan and decay, shape it with Space / Drive / Motion, play it locked to the host and drag a seamless 24-bit WAV to the DAW (effect tails wrap around). Per-step timing shift (±50 ms) and attack; Loop macros and Euclid settings are automatable; an optional "Capture In" input (off by default) lets Capture record DAW audio. 24 new factory sounds for rap, R&B, bass music, house and hard styles. Not verified by ear or in a DAW.

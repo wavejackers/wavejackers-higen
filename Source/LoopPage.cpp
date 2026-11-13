@@ -24,25 +24,20 @@ LoopPage::LoopPage (HitGenProcessor& p, hgui::LookAndFeel& l) : proc (p), lnf (l
     };
     captureBtn.onClick = [this]
     {
-        const bool ok = proc.loop.captureNow();
+        const bool ok = proc.loop.captureNow(), in = proc.captureFromInput.load();
         if (ok) { cur = proc.loop.get(); syncControls(); }
-        status.setText (T (ok ? "lfCaptured" : "lfCaptureFail"), dontSendNotification);
+        status.setText (T (ok ? (in ? "lfCapturedIn" : "lfCaptured") : "lfCaptureFail"), dontSendNotification);
     };
     playBtn.setClickingTogglesState (true);
-    playBtn.onClick = [this] { proc.loop.setPlaying (playBtn.getToggleState()); };
+    playAtt = std::make_unique<AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, "lf_play", playBtn);
     mutateBtn.onClick = [this] { mutateNow ((lf::MutateMode) jmax (0, modeBox.getSelectedId() - 1)); };
-    static const double lim[7][3] = { { 0, 32, 1 }, { 0, 31, 1 }, { 0, 100, 1 }, { 0, 100, 1 }, { 0, 100, 1 }, { 0, 100, 1 }, { 0, 100, 1 } };
+    // düğmeler parametrelere bağlı: değişiklik (ya da DAW otomasyonu) işlemcinin zamanlayıcısında döngüye geçer
+    static const char* ids[7] = { "lf_pulses", "lf_rot", "lf_swing", "lf_human", "lf_space", "lf_drive", "lf_motion" };
     for (int i = 0; i < 7; ++i)
     {
-        auto& k = knobs[(size_t) i]; addAndMakeVisible (k); k.slider.setRange (lim[i][0], lim[i][1], lim[i][2]);
-        k.slider.onValueChange = [this, i]
-        {
-            const float v = (float) knobs[(size_t) i].slider.getValue();
-            if (i == 0) { cur.pulses = (int) v; applyEuclid(); return; }
-            if (i == 1) { cur.rotation = (int) v; applyEuclid(); return; }
-            (i == 2 ? cur.swing : i == 3 ? cur.human : i == 4 ? cur.space : i == 5 ? cur.drive : cur.motion) = v / 100.0f;
-            commit();
-        };
+        auto& k = knobs[(size_t) i]; addAndMakeVisible (k);
+        sa.push_back (std::make_unique<AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, ids[i], k.slider));
+        hgui::tagParam (k.slider, ids[i]);
     }
     syncControls(); setLanguage ("en", false);
 }
@@ -55,7 +50,7 @@ void LoopPage::setLanguage (const String& l, bool)
     static const char* kn[7] = { "lfPulses", "lfRot", "lfSwing", "lfHuman", "lfSpace", "lfDrive", "lfMotion" };
     for (int i = 0; i < 7; ++i) knobs[(size_t) i].setText (T (kn[i]), {});
     const int ln = laneBox.getSelectedId(), md = modeBox.getSelectedId();
-    laneBox.clear (dontSendNotification); int id = 1; for (auto* k : { "lfVel", "lfCut", "lfPan", "lfDecay" }) laneBox.addItem (T (k), id++);
+    laneBox.clear (dontSendNotification); int id = 1; for (auto* k : { "lfVel", "lfCut", "lfPan", "lfDecay", "lfShift", "lfAttack" }) laneBox.addItem (T (k), id++);
     modeBox.clear (dontSendNotification); id = 1; for (auto* k : { "lfSubtle", "lfEuclid", "lfArp" }) modeBox.addItem (T (k), id++);
     laneBox.setSelectedId (jmax (1, ln), dontSendNotification); modeBox.setSelectedId (md > 0 ? md : 2, dontSendNotification);
     barsBox.setTooltip (T ("lfBars")); stepsBox.setTooltip (T ("lfSteps"));
@@ -67,10 +62,6 @@ void LoopPage::syncControls()
 {
     barsBox.setSelectedId (cur.bars, dontSendNotification); stepsBox.setSelectedId (cur.steps, dontSendNotification);
     rootBox.setSelectedId (cur.root + 1, dontSendNotification); scaleBox.setSelectedId (cur.scale + 1, dontSendNotification);
-    knobs[0].slider.setRange (0, cur.steps, 1); knobs[1].slider.setRange (0, cur.steps - 1, 1);
-    const float v[7] = { (float) cur.pulses, (float) cur.rotation, cur.swing * 100, cur.human * 100, cur.space * 100, cur.drive * 100, cur.motion * 100 };
-    for (int i = 0; i < 7; ++i) knobs[(size_t) i].slider.setValue (v[i], dontSendNotification);
-    playBtn.setToggleState (proc.loop.isPlaying(), dontSendNotification);
     grid.repaint(); wave.repaint();
 }
 
@@ -79,13 +70,19 @@ void LoopPage::applyEuclid()   // yalnızca tetikleri değiştirir; perde ve di�
     cur.pulses = jlimit (0, cur.steps, cur.pulses); cur.rotation = jlimit (0, cur.steps - 1, cur.rotation);
     const auto e = lf::euclid (cur.steps, cur.pulses, cur.rotation);
     for (int i = 0; i < cur.steps; ++i) cur.step[(size_t) i].on = e[(size_t) i];
-    commit();
+    commit(); setParam ("lf_pulses", (float) cur.pulses); setParam ("lf_rot", (float) cur.rotation);
 }
 
 void LoopPage::mutateNow (lf::MutateMode m)
 {
     lf::mutate (cur, m, (uint32_t) Random::getSystemRandom().nextInt (0x7fffffff));
     commit(); syncControls();
+    setParam ("lf_pulses", (float) cur.pulses); setParam ("lf_rot", (float) cur.rotation);   // yoksa zamanlayıcı tetikleri eski Öklid ayarına döndürür
+}
+
+void LoopPage::setParam (const char* id, float plain)
+{
+    if (auto* pr = proc.apvts.getParameter (id)) pr->setValueNotifyingHost (pr->convertTo0to1 (plain));
 }
 
 bool LoopPage::openFile (const File& f)
@@ -98,6 +95,10 @@ bool LoopPage::openFile (const File& f)
 
 void LoopPage::tick()
 {
+    // motor otomasyonla değişmiş olabilir: sayfa kopyasını tazele (tüm sayfa düzenlemeleri anında motora yazılır)
+    const auto e = proc.loop.get();
+    const bool combos = e.bars != cur.bars || e.steps != cur.steps || e.root != cur.root || e.scale != cur.scale;
+    cur = e; if (combos) syncControls();
     const int v = proc.loop.version();
     if (v != shownVersion) { shownVersion = v; proc.loop.peaks (wave.pk, jmax (64, wave.getWidth())); wave.repaint(); }
     if (proc.loop.isPlaying()) grid.repaint();
@@ -177,7 +178,7 @@ void LoopPage::Grid::paint (Graphics& g)
         if (s.on)
         {
             const float val = o.value (const_cast<lf::Step&> (s)); g.setColour (P.accent2.withAlpha (.85f));
-            if (o.valueLane == 2) g.fillRect (Rectangle<float> (x + 1, val > 0 ? v.getCentreY() - val * v.getHeight() * .5f : v.getCentreY(), w - 2, jmax (1.0f, std::abs (val) * v.getHeight() * .5f)));
+            if (o.bipolar()) g.fillRect (Rectangle<float> (x + 1, val > 0 ? v.getCentreY() - val * v.getHeight() * .5f : v.getCentreY(), w - 2, jmax (1.0f, std::abs (val) * v.getHeight() * .5f)));
             else g.fillRect (Rectangle<float> (x + 1, v.getBottom() - val * v.getHeight(), w - 2, val * v.getHeight()));
         }
         auto rv = cell (3); g.setColour (s.on && s.rev ? P.warning : base); g.fillRoundedRectangle (rv, 3.0f);
@@ -204,7 +205,7 @@ void LoopPage::clickStep (int ln, int i, float y01)
     auto& s = cur.step[(size_t) jlimit (0, lf::kMaxSteps - 1, i)]; y01 = jlimit (0.0f, 1.0f, y01);
     if (ln == 0) s.on = ! s.on;
     else if (ln == 1) { s.pitch = jlimit (-7, 7, roundToInt ((.5f - y01) * 15.0f)); s.on = true; }
-    else if (ln == 2) value (s) = valueLane == 2 ? jlimit (-1.0f, 1.0f, (.5f - y01) * 2.0f) : 1.0f - y01;
+    else if (ln == 2) value (s) = bipolar() ? jlimit (-1.0f, 1.0f, (.5f - y01) * 2.0f) : 1.0f - y01;
     else if (ln == 3) s.rev = ! s.rev;
     else s.ratchet = s.ratchet % 4 + 1;
     commit();

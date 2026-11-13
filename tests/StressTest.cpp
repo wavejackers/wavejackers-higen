@@ -1385,10 +1385,22 @@ static void testLoopForge (const juce::File& outDir, const FailFn& fail, bool sh
         const auto var = lf::render (s, one, sr, 120, sr);
         if (var->buf.getMagnitude (0, N) < .05f) fail ("loop: reverse / ratchet / pitch render is silent");
     }
+    {   // adım başına zaman kaydırma (±50 ms) ve atak
+        lf::Settings t = s; for (auto& st : t.step) st = lf::Step();
+        t.step[4].on = true; t.space = 0; t.drive = 0; t.motion = 0;
+        auto onset = [&] (const lf::Settings& x) { const auto L = lf::render (x, one, sr, 120, sr); const auto* d = L->buf.getReadPointer (0); for (int i = 0; i < L->buf.getNumSamples(); ++i) if (std::abs (d[i]) > .01f) return i; return -1; };
+        const int o0 = onset (t); t.step[4].shift = 1; const int o1 = onset (t); t.step[4].shift = -1; const int o2 = onset (t);
+        if (std::abs ((o1 - o0) - (int) (sr * .05)) > 300 || std::abs ((o0 - o2) - (int) (sr * .05)) > 300) fail ("loop: step shift should move the hit by 50 ms (" + juce::String (o1 - o0) + ", " + juce::String (o0 - o2) + ")");
+        t.step[4].shift = 0; t.step[4].attack = 1;
+        const auto soft = lf::render (t, one, sr, 120, sr), hard = lf::render ([&] { auto u = t; u.step[4].attack = 0; return u; }(), one, sr, 120, sr);
+        const int at = (int) (4 * 60.0 / 120 / 4 * sr), w = (int) (sr * .01);
+        if (soft->buf.getMagnitude (0, at, w) >= hard->buf.getMagnitude (0, at, w) * .7f) fail ("loop: step attack should soften the first 10 ms");
+    }
     {   // durum gidiş-dönüş ve mutasyon
-        lf::Settings m = s; lf::mutate (m, lf::mArp, 77); m.swing = .3f; m.steps = 32; m.bars = 4;
+        lf::Settings m = s; lf::mutate (m, lf::mArp, 77); m.swing = .3f; m.steps = 32; m.bars = 4; m.step[5].shift = -.4f; m.step[5].attack = .7f;
         lf::Settings q; q.fromTree (m.toTree());
         bool same = q.steps == 32 && q.bars == 4 && std::abs (q.swing - .3f) < 1e-4f && q.pulses == m.pulses;
+        same = same && std::abs (q.step[5].shift + .4f) < 1e-4f && std::abs (q.step[5].attack - .7f) < 1e-4f;
         for (int i = 0; i < lf::kMaxSteps; ++i) same = same && q.step[(size_t) i].on == m.step[(size_t) i].on && q.step[(size_t) i].pitch == m.step[(size_t) i].pitch && q.step[(size_t) i].ratchet == m.step[(size_t) i].ratchet;
         if (! same) fail ("loop: settings do not survive save / load");
         int on = 0; for (int i = 0; i < 16; ++i) on += m.step[(size_t) i].on ? 1 : 0;
@@ -1430,6 +1442,34 @@ static void testLoopForge (const juce::File& outDir, const FailFn& fail, bool sh
         juce::MemoryBlock mb; p.getStateInformation (mb);
         HitGenProcessor q; q.setPlayConfigDetails (0, 2, sr, 256); q.prepareToPlay (sr, 256); q.setStateInformation (mb.getData(), (int) mb.getSize());
         if (q.loop.get().bars != 4 || std::abs (q.loop.get().drive - .6f) > 1e-4f || ! q.loop.hasSample() || ! q.loop.isPlaying()) fail ("loop: project state not restored");
+    }
+    {   // DAW otomasyonu: parametreler döngüye geçer; Öklid ayarı tetikleri yeniden dağıtır; eski (3.3 öncesi) ızgara kaydı okunur
+        auto setP = [&] (const char* id, float v) { auto* pr = p.apvts.getParameter (id); pr->setValueNotifyingHost (pr->convertTo0to1 (v)); };
+        auto cs = p.loop.get(); cs.steps = 16; p.loop.set (cs);
+        setP ("lf_space", 70); setP ("lf_pulses", 3); setP ("lf_rot", 0); setP ("lf_play", 1); p.idle();
+        const auto a2 = p.loop.get(); int on = 0; for (int i = 0; i < 16; ++i) on += a2.step[(size_t) i].on ? 1 : 0;
+        if (std::abs (a2.space - .7f) > 1e-3f || on != 3 || ! p.loop.isPlaying()) fail ("loop: automation not applied (space " + juce::String (a2.space) + ", pulses " + juce::String (on) + ")");
+        setP ("lf_play", 0); p.idle();
+        if (p.loop.isPlaying()) fail ("loop: play parameter off should stop the loop");
+        juce::ValueTree old ("loopforge"); old.setProperty ("steps", 16, nullptr); old.setProperty ("grid", "1 0 3 1 0.9 1 0 0.5;0 0 0 1 0.85 1 0 0.5;", nullptr);
+        lf::Settings o; o.fromTree (old);
+        if (! o.step[0].on || o.step[0].pitch != 3 || o.step[0].shift != 0 || o.step[0].attack != 0) fail ("loop: old grid format not read");
+    }
+    {   // yakalama girişi: DAW'da bağlıysa halka girişi kaydeder (HitGen çıkışını değil)
+        HitGenProcessor q; auto lay = q.getBusesLayout(); lay.inputBuses.getReference (0) = juce::AudioChannelSet::stereo();
+        if (! q.setBusesLayout (lay)) fail ("loop: capture input layout rejected");
+        q.prepareToPlay (sr, 256);
+        juce::MidiBuffer mid;
+        for (int pos = 0; pos < one.getNumSamples(); pos += 256)
+        {
+            juce::AudioBuffer<float> blk (juce::jmax (q.getTotalNumInputChannels(), q.getTotalNumOutputChannels()), 256); blk.clear();
+            const int n = juce::jmin (256, one.getNumSamples() - pos); for (int c = 0; c < 2; ++c) blk.copyFrom (c, 0, one, c, pos, n);
+            q.processBlock (blk, mid);
+        }
+        if (! q.captureFromInput.load()) fail ("loop: input bus not detected");
+        if (! q.loop.captureNow()) fail ("loop: capture from DAW input failed");
+        auto mono = q.getBusesLayout(); mono.inputBuses.getReference (0) = juce::AudioChannelSet::create5point1();
+        if (q.checkBusesLayoutSupported (mono)) fail ("loop: 5.1 capture input should be rejected");
     }
     // arayüz
     std::unique_ptr<HitGenEditor> ed (dynamic_cast<HitGenEditor*> (p.createEditor()));

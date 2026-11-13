@@ -62,7 +62,8 @@ public:
     void surpriseSound (int track);
     void suggestAlternative (int track);   // yalnızca o izin MIDI'sini başka bir fikirle değiştir
     juce::String lang = "en";
-    lf::Engine loop;                       // LoopForge: tek vuruştan dikişsiz döngü (kendi çıkışını da yakalar)
+    lf::Engine loop;
+    std::atomic<bool> captureFromInput { false };   // yakalama girişi DAW'da bağlı mı (Loop sayfası gösterir)                       // LoopForge: tek vuruştan dikişsiz döngü (kendi çıkışını da yakalar)
     hg::RefEngine ref;                     // referans ses: yükleme, SMART DETECT, orijinali çalma
     hg::MidiLearn midiLearn;               // MIDI CC -> parametre (sağ tık > MIDI Learn)
     float uiScale = 1.0f; bool highContrast = false; bool animations = true;
@@ -170,6 +171,9 @@ private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout (const hg::Data& d);
     void parameterChanged (const juce::String& id, float) override;
     void timerCallback() override;
+    void syncLoopParams();             // lf_* parametreleri -> döngü motoru (otomasyon)
+    void pushLoopParams();             // döngü motoru -> lf_* parametreleri (proje yükleme)
+    juce::AudioBuffer<float> capIn;    // yakalama girişinin kopyası (prepareToPlay'de ayrılır)
     void loadPatch (int track, bool live = false);
     void applySoundToParams (int part);
     void readSd (int part, float* out) const;

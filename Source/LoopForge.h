@@ -18,6 +18,7 @@ struct Step
     int pitch = 0;        // gam derecesi (-14..14): seçili gamın dışına çıkmaz
     int ratchet = 1;      // 1-4 alt tetik
     float vel = .85f, cut = 1.0f, pan = 0.0f, decay = .5f;   // cut 1 = filtre açık; pan -1..1
+    float shift = 0.0f, attack = 0.0f;                         // shift -1..1 = ±50 ms; attack 0..1 = 2..80 ms
 };
 
 struct Settings

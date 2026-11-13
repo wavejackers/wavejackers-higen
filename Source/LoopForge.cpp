@@ -101,7 +101,7 @@ juce::ValueTree Settings::toTree() const
     t.setProperty ("start", start, nullptr); t.setProperty ("end", end, nullptr); t.setProperty ("space", space, nullptr); t.setProperty ("drive", drive, nullptr);
     t.setProperty ("motion", motion, nullptr); t.setProperty ("seed", seed, nullptr);
     juce::String g;   // adım başına: açık, ters, perde, ratchet, hız, kesim, pan, sönüm
-    for (int i = 0; i < kMaxSteps; ++i) { const auto& x = step[(size_t) i]; g << (x.on ? 1 : 0) << ' ' << (x.rev ? 1 : 0) << ' ' << x.pitch << ' ' << x.ratchet << ' ' << x.vel << ' ' << x.cut << ' ' << x.pan << ' ' << x.decay << ';'; }
+    for (int i = 0; i < kMaxSteps; ++i) { const auto& x = step[(size_t) i]; g << (x.on ? 1 : 0) << ' ' << (x.rev ? 1 : 0) << ' ' << x.pitch << ' ' << x.ratchet << ' ' << x.vel << ' ' << x.cut << ' ' << x.pan << ' ' << x.decay << ' ' << x.shift << ' ' << x.attack << ';'; }
     t.setProperty ("grid", g, nullptr);
     return t;
 }
@@ -124,6 +124,7 @@ void Settings::fromTree (const juce::ValueTree& t)
         x.on = v[0].getIntValue() != 0; x.rev = v[1].getIntValue() != 0; x.pitch = juce::jlimit (-14, 14, v[2].getIntValue()); x.ratchet = juce::jlimit (1, 4, v[3].getIntValue());
         x.vel = juce::jlimit (0.0f, 1.0f, v[4].getFloatValue()); x.cut = juce::jlimit (0.0f, 1.0f, v[5].getFloatValue());
         x.pan = juce::jlimit (-1.0f, 1.0f, v[6].getFloatValue()); x.decay = juce::jlimit (0.0f, 1.0f, v[7].getFloatValue());
+        if (v.size() >= 10) { x.shift = juce::jlimit (-1.0f, 1.0f, v[8].getFloatValue()); x.attack = juce::jlimit (0.0f, 1.0f, v[9].getFloatValue()); }   // 3.3 öncesi kayıtlarda yok
     }
 }
 
@@ -165,8 +166,8 @@ std::unique_ptr<Loop> render (const Settings& s, const juce::AudioBuffer<float>&
         const float pl = std::cos ((st.pan + 1) * juce::MathConstants<float>::pi * .25f) * 1.4142f, pr = std::sin ((st.pan + 1) * juce::MathConstants<float>::pi * .25f) * 1.4142f;
         for (int q = 0; q < rat; ++q)
         {
-            const double t0 = k * stepDur + (k % 2 == 1 ? s.swing * stepDur / 3 : 0.0) + jitter + q * sub;
-            const int len = juce::jmax (8, (int) (rat > 1 ? juce::jmin (maxLen, sub) : maxLen)), fade = juce::jmin (len / 2, juce::jmax (8, (int) (sr * .008))), atk = juce::jmin (len / 4, (int) (sr * .002) + 1);
+            const double t0 = k * stepDur + (k % 2 == 1 ? s.swing * stepDur / 3 : 0.0) + jitter + st.shift * .05 * sr + q * sub;
+            const int len = juce::jmax (8, (int) (rat > 1 ? juce::jmin (maxLen, sub) : maxLen)), fade = juce::jmin (len / 2, juce::jmax (8, (int) (sr * .008))), atk = juce::jmax (1, juce::jmin (len / 2, (int) (sr * (.002 + .078 * st.attack * st.attack)) + 1));
             const float vel = st.vel * (q == 0 ? 1.0f : .8f);
             Svf fl, fr;
             for (int i = 0; i < len; ++i)

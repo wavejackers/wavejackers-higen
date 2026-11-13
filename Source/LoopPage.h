@@ -52,11 +52,15 @@ private:
     std::array<hgui::Knob, 7> knobs;   // pulses, rotation, swing, humanize, space, drive, motion
     juce::Label status; Wave wave { *this }; Grid grid { *this };
     std::unique_ptr<juce::FileChooser> chooser;
+    std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>> sa;   // makrolar ve Öklid: DAW otomasyonu
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> playAtt;
 
     juce::String T (const juce::String& k) const { return data.tr (lang, k); }
     void commit() { proc.loop.set (cur); grid.repaint(); wave.repaint(); }
     void syncControls();
     void applyEuclid();
-    float& value (lf::Step& s) const { return valueLane == 0 ? s.vel : valueLane == 1 ? s.cut : valueLane == 2 ? s.pan : s.decay; }
+    float& value (lf::Step& s) const { return valueLane == 0 ? s.vel : valueLane == 1 ? s.cut : valueLane == 2 ? s.pan : valueLane == 3 ? s.decay : valueLane == 4 ? s.shift : s.attack; }
+    bool bipolar() const noexcept { return valueLane == 2 || valueLane == 4; }   // pan ve zaman kaydırma: ortada sıfır
+    void setParam (const char* id, float plain);
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LoopPage)
 };
