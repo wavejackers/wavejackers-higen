@@ -88,6 +88,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout HitGenProcessor::createLayou
         for (auto& [id, def] : fl)
             L.add (std::make_unique<AudioParameterFloat> (ParameterID { "lf_" + String (id), 4 }, "Loop " + String (id), NormalisableRange<float> (0, 100, 1), def, pct));
     }
+    // Koro: çalma ve makrolar (DAW otomasyonu için)
+    L.add (std::make_unique<AudioParameterBool> (ParameterID { "ch_play", 5 }, "Choir play", false));
+    {
+        const std::pair<const char*, float> fl[] = { { "level", 70 }, { "space", 60 }, { "detune", 35 }, { "air", 40 }, { "vibrato", 30 }, { "attack", 40 } };
+        for (auto& [id, def] : fl)
+            L.add (std::make_unique<AudioParameterFloat> (ParameterID { "ch_" + String (id), 5 }, "Choir " + String (id), NormalisableRange<float> (0, 100, 1), def, pct));
+        L.add (std::make_unique<AudioParameterFloat> (ParameterID { "ch_char", 5 }, "Choir character", NormalisableRange<float> (-100, 100, 1), 0.0f, pct));
+    }
     return L;
 }
 
@@ -173,7 +181,7 @@ void HitGenProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     kbBuf.ensureSize (4096);
     for (auto& c : tableCache) c.reset();
     engine.prepare (sampleRate, juce::jmax (512, samplesPerBlock));
-    loop.prepare (sampleRate);
+    loop.prepare (sampleRate); choir.prepare (sampleRate);
     capIn.setSize (2, juce::jmax (4096, samplesPerBlock));
     for (int t = 0; t < 4; ++t) loadPatch (t);   // wavetable seviyeleri örnekleme hızına bağlı
     numOffs = 0; wasRunning = false;
@@ -468,6 +476,10 @@ void HitGenProcessor::suggestAlternative (int track)
 
 void HitGenProcessor::pushPattern (const hg::Result& r)
 {
+    {   // koro aynı akorları izler (ölçü başına bir akor)
+        std::vector<ch::Bar> cb; for (int b = 0; b < r.bars && b < (int) r.chords.size(); ++b) cb.push_back ({ r.chords[(size_t) b].pc, r.chords[(size_t) b].third, r.chords[(size_t) b].fifth });
+        if (! cb.empty()) choir.setChords (cb);
+    }
     auto* pat = new Pattern();
     pat->lenPpq = r.bars * 4.0;
     for (int t = 0; t < hg::kNumTracks; ++t)
@@ -496,6 +508,23 @@ void HitGenProcessor::syncLoopParams()
     loop.setPlaying (p ("lf_play")->load() > .5f);
 }
 
+void HitGenProcessor::syncChoirParams()
+{
+    auto cs = choir.get(); bool ch = false;
+    auto f = [&] (const char* id, float& dst) { const float v = p (id)->load() / 100.0f; if (std::abs (v - dst) > 1e-4f) { dst = v; ch = true; } };
+    f ("ch_level", cs.level); f ("ch_space", cs.space); f ("ch_detune", cs.detune); f ("ch_air", cs.air); f ("ch_vibrato", cs.vibrato); f ("ch_attack", cs.attack); f ("ch_char", cs.character);
+    if (ch) choir.set (cs);
+    choir.setPlaying (p ("ch_play")->load() > .5f);
+}
+
+void HitGenProcessor::pushChoirParams()
+{
+    const auto cs = choir.get();
+    auto setP = [this] (const char* id, float plain) { if (auto* pr = apvts.getParameter (id)) pr->setValueNotifyingHost (pr->convertTo0to1 (plain)); };
+    setP ("ch_level", cs.level * 100); setP ("ch_space", cs.space * 100); setP ("ch_detune", cs.detune * 100); setP ("ch_air", cs.air * 100);
+    setP ("ch_vibrato", cs.vibrato * 100); setP ("ch_attack", cs.attack * 100); setP ("ch_char", cs.character * 100);
+}
+
 void HitGenProcessor::pushLoopParams()
 {
     const auto cs = loop.get();
@@ -507,7 +536,7 @@ void HitGenProcessor::pushLoopParams()
 
 void HitGenProcessor::timerCallback()
 {
-    { const double hb = hostBpm.load(); loop.setTempo (hb > 0 ? hb : (double) p ("bpm")->load()); syncLoopParams(); loop.collect(); }
+    { const double hb = hostBpm.load(); loop.setTempo (hb > 0 ? hb : (double) p ("bpm")->load()); syncLoopParams(); loop.collect(); choir.setTempo (hb > 0 ? hb : (double) p ("bpm")->load()); syncChoirParams(); choir.collect(); }
     // ses iş parçacığının bıraktığı eski desenleri ve yamaları sil
     int s1, n1, s2, n2; patTrash.prepareToRead (patTrash.getNumReady(), s1, n1, s2, n2);
     for (int i = 0; i < n1; ++i) delete patTrashSlots[(size_t) (s1 + i)];
@@ -541,6 +570,7 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         fromIn = true;
     }
     captureFromInput.store (fromIn);
+    if (fromIn) choir.feed (capIn.getReadPointer (0), capIn.getReadPointer (1), n, getSampleRate());   // koro kaydı: DAW girişi bağlıysa oradan
     buffer.clear();
     {   // çok çıkış: etkin ek bus'lara ilgili izi yönlendir (iz kimliği: 0 akor, 1 bas, 2 davul, 3 melodi)
         static const int busTrack[5] = { -1, hg::kChords, hg::kBass, hg::kDrums, hg::kMelody };
@@ -716,6 +746,7 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     }
     loop.capture (fromIn ? capIn : buffer, n);                  // son 30 sn: DAW girişi ya da HitGen çıkışı (döngünün kendisi hariç)
     loop.process (buffer, n, hostPlay || preview, ppq, bpm);
+    choir.process (buffer, n, hostPlay || preview, ppq, bpm);
     sampleClock += n; wasRunning = run;
 }
 
@@ -798,7 +829,7 @@ juce::ValueTree HitGenProcessor::stateTree()
 
 void HitGenProcessor::getStateInformation (juce::MemoryBlock& dest)
 {
-    auto state = stateTree(); state.appendChild (midiLearn.toTree(), nullptr); state.appendChild (loop.toTree(), nullptr);   // eşlemeler yalnızca proje durumunda
+    auto state = stateTree(); state.appendChild (midiLearn.toTree(), nullptr); state.appendChild (loop.toTree(), nullptr); state.appendChild (choir.toTree(), nullptr);   // eşlemeler yalnızca proje durumunda
     if (auto xml = state.createXml()) copyXmlToBinary (*xml, dest);
 }
 
@@ -809,7 +840,9 @@ void HitGenProcessor::setStateInformation (const void* d, int size)
     auto tree = juce::ValueTree::fromXml (*xml);
     const auto mm = tree.getChildWithName ("midimap").createCopy(); tree.removeChild (tree.getChildWithName ("midimap"), nullptr);
     const auto lt = tree.getChildWithName ("loopforge").createCopy(); tree.removeChild (tree.getChildWithName ("loopforge"), nullptr);
+    const auto ct = tree.getChildWithName ("choir").createCopy(); tree.removeChild (tree.getChildWithName ("choir"), nullptr);
     restoreFromTree (tree, true);
+    if (ct.isValid()) { choir.fromTree (ct); pushChoirParams(); if (auto* pr = apvts.getParameter ("ch_play")) pr->setValueNotifyingHost (choir.isPlaying() ? 1.0f : 0.0f); }
     if (lt.isValid()) { loop.fromTree (lt); pushLoopParams(); }   // döngünün kendi kaydı esas: eski projelerde parametreler buradan gelir
     if (mm.isValid()) midiLearn.fromTree (mm);     // eski projelerde eşleme yok: mevcut (varsayılan) eşlemeler kalır
 }

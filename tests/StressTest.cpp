@@ -1489,6 +1489,187 @@ static void testLoopForge (const juce::File& outDir, const FailFn& fail, bool sh
     std::cout << "loopforge: ok\n";
 }
 
+// Koro: ses yürüyüşü, perde tespiti, formant korumalı perde düzeltme, motor, kayıt, durum, sahne ve arayüz
+static void testChoir (const juce::File& outDir, const FailFn& fail, bool shots)
+{
+    const double sr = 48000;
+    auto hz = [] (int midi) { return 440.0 * std::pow (2.0, (midi - 69) / 12.0); };
+    const std::vector<ch::Bar> prog { { 9, 3, 7 }, { 5, 4, 7 }, { 0, 4, 7 }, { 7, 4, 7 } };   // Am F C G
+    {   // ses yürüyüşü: bas kökte, üst üç ses akoru tamamlar, ses aralıkları içinde ve küçük adımlarla
+        static const int lo[4] = { 40, 48, 55, 60 }, hi[4] = { 52, 60, 67, 76 };
+        const auto v = ch::voicing (prog);
+        if (v.size() != prog.size()) fail ("choir: voicing size");
+        for (size_t b = 0; b < v.size(); ++b)
+        {
+            std::set<int> pcs;
+            for (int k = 0; k < 4; ++k)
+            {
+                const int n = v[b][(size_t) k], rel = ((n - prog[b].pc) % 12 + 12) % 12;
+                if (n < lo[k] || n > hi[k]) fail ("choir: part " + juce::String (k) + " out of range (" + juce::String (n) + ")");
+                if (rel != 0 && rel != prog[b].third && rel != prog[b].fifth) fail ("choir: non-chord tone in bar " + juce::String ((int) b));
+                if (k > 0) pcs.insert (rel);
+                if (b > 0 && k > 0 && std::abs (n - v[b - 1][(size_t) k]) > 7) fail ("choir: voice leap larger than a fifth");
+            }
+            if (((v[b][0] - prog[b].pc) % 12 + 12) % 12 != 0) fail ("choir: bass is not the root");
+            if (pcs.size() != 3) fail ("choir: upper voices do not complete the chord");
+        }
+    }
+    // sınama sesi: 147 Hz, 1 kHz çevresinde formantı olan ünlü benzeri ses (baş ve sonda sessizlik)
+    auto makeVoice = [&] (double f0, double rate, double secs)
+    {
+        const int pad = (int) (rate * .1), n = (int) (rate * secs); juce::AudioBuffer<float> b (1, n + pad * 2); b.clear(); auto* d = b.getWritePointer (0);
+        for (int i = 0; i < n; ++i)
+        {
+            double x = 0; for (int h = 1; h * f0 < 5000; ++h) { const double f = h * f0, g = 1.0 / h + 2.5 * std::exp (-std::pow ((f - 1000) / 180.0, 2)); x += g * std::sin (2 * juce::MathConstants<double>::pi * f * i / rate + h * .7); }
+            d[pad + i] = (float) (x * .12 * juce::jmin (1.0, i / (rate * .03)) * juce::jmin (1.0, (n - i) / (rate * .05)));
+        }
+        return b;
+    };
+    const auto raw = makeVoice (147, 44100, 1.6);
+    {   // perde tespiti
+        std::vector<float> sine (2048); for (int i = 0; i < 2048; ++i) sine[(size_t) i] = (float) std::sin (2 * juce::MathConstants<double>::pi * 220 * i / 12000.0);
+        const double f = ch::detectPitch (sine.data(), 540, 12000);
+        if (std::abs (f - 220) > 2.5) fail ("choir: pitch of a 220 Hz sine detected as " + juce::String (f));
+        juce::Random r (5); std::vector<float> noise (2048); for (auto& x : noise) x = r.nextFloat() * 2 - 1;
+        if (ch::detectPitch (noise.data(), 540, 12000) != 0) fail ("choir: noise should have no pitch");
+    }
+    const auto voice = ch::analyse (raw, 44100);
+    {
+        if (std::abs (voice.f0 - 147) > 3) fail ("choir: voice pitch " + juce::String (voice.f0) + " (expected 147)");
+        if (voice.voiced < .6f || voice.mark.size() < 100) fail ("choir: voice not recognised as pitched");
+        double sum = 0; int cnt = 0; for (int i = voice.loopA; i < voice.loopB; ++i) { sum += voice.mark[(size_t) i + 1] - voice.mark[(size_t) i]; ++cnt; }
+        if (cnt < 20 || std::abs (sum / cnt - 44100.0 / 147) > 3) fail ("choir: pitch marks are not one period apart (" + juce::String (cnt > 0 ? sum / cnt : 0.0) + ")");
+        juce::AudioBuffer<float> quiet (1, 4000); quiet.clear();
+        if (ch::analyse (quiet, 44100).mark.size() != 0) fail ("choir: silence should give no voice");
+    }
+    auto band = [&] (const juce::AudioBuffer<float>& b, int at, double f0, double f1)   // bant enerjisi (8192 noktalı FFT)
+    {
+        juce::dsp::FFT fft (13); std::vector<float> x (16384, 0.0f);
+        for (int i = 0; i < 8192; ++i) x[(size_t) i] = b.getSample (0, at + i) * (.5f - .5f * (float) std::cos (2 * juce::MathConstants<double>::pi * i / 8192));
+        fft.performFrequencyOnlyForwardTransform (x.data());
+        double e = 0; for (int k = (int) (f0 * 8192 / sr); k <= (int) (f1 * 8192 / sr); ++k) e += x[(size_t) k] * x[(size_t) k];
+        return e;
+    };
+    auto pitchAt = [&] (const juce::AudioBuffer<float>& b, int at)
+    {
+        std::vector<float> d (700); for (int i = 0; i < 700; ++i) { float s = 0; for (int k = 0; k < 4; ++k) s += b.getSample (0, at + i * 4 + k) + b.getSample (1, at + i * 4 + k); d[(size_t) i] = s / 8; }
+        return ch::detectPitch (d.data(), 700, sr / 4);
+    };
+    ch::Settings dry; dry.size = 1; dry.detune = 0; dry.vibrato = 0; dry.space = 0; dry.air = 0; dry.attack = 0; dry.source = ch::sOwnHold;
+    const auto notes = ch::voicing ({ prog[0] });
+    for (int part : { 0, 3 })
+    {   // kendi sesin: her parti hedef notayı söyler (bas 147 Hz'in altında, soprano iki oktava yakın üstünde) ve formant yerinde kalır
+        auto s = dry; s.part = { { part == 0, false, false, part == 3 } };
+        const auto L = ch::render (s, { prog[0] }, voice, 120, sr);
+        const int N = L->buf.getNumSamples(); const double want = hz (notes[0][(size_t) part]), got = pitchAt (L->buf, N / 2);
+        if (N != (int) std::llround (4 * 60.0 / 120 * sr)) fail ("choir: loop length " + juce::String (N));
+        if (std::abs (got / want - 1) > .02) fail ("choir: part " + juce::String (part) + " sings " + juce::String (got) + " Hz, expected " + juce::String (want));
+        const double e1 = band (L->buf, N / 2, 800, 1250), e2 = band (L->buf, N / 2, 1700, 2600);
+        if (e1 < e2 * 2) fail ("choir: formant moved with the pitch in part " + juce::String (part) + " (1 kHz band " + juce::String (e1) + ", 2 kHz band " + juce::String (e2) + ")");
+        if (L->buf.getMagnitude (0, N) < .05f) fail ("choir: own-voice render is silent");
+    }
+    for (int src = 0; src < ch::kNumSources; ++src)
+        for (int rh = 0; rh < ch::kNumRhythms; ++rh)
+        {   // her kaynak ve ritim: ses var, tavan aşılmaz, sayı geçerli, döngü dikişsiz
+            ch::Settings s; s.source = src; s.rhythm = rh; s.size = 2;
+            const auto L = ch::render (s, prog, voice, 126, sr); const int N = L->buf.getNumSamples();
+            const float pk = L->buf.getMagnitude (0, N);
+            if (! std::isfinite (pk) || pk < .05f || pk > .6f * s.level + 1e-3f) fail ("choir: source " + juce::String (src) + " rhythm " + juce::String (rh) + " peak " + juce::String (pk));
+            float seam = 0, step = 0; for (int c = 0; c < 2; ++c) { const auto* d = L->buf.getReadPointer (c); seam = juce::jmax (seam, std::abs (d[0] - d[N - 1])); for (int i = 1; i < N; ++i) step = juce::jmax (step, std::abs (d[i] - d[i - 1])); }
+            if (seam > step * 1.05f + 1e-4f) fail ("choir: loop seam clicks (source " + juce::String (src) + ", rhythm " + juce::String (rh) + ")");
+            bool any = false; for (auto& a : L->act) for (auto v : a) any = any || v > .5f;
+            if (! any) fail ("choir: part activity is empty");
+        }
+    {   // dahili koro: bas kök notayı söyler; kapalı partiler susar
+        auto s = dry; s.source = ch::sAah; s.part = { { true, false, false, false } };
+        const auto L = ch::render (s, { prog[0] }, {}, 120, sr); const double got = pitchAt (L->buf, L->buf.getNumSamples() / 2), want = hz (notes[0][0]);
+        if (std::abs (got / want - 1) > .02) fail ("choir: built-in bass sings " + juce::String (got) + " Hz, expected " + juce::String (want));
+        s.part = { { false, false, false, false } };
+        if (ch::render (s, prog, {}, 120, sr)->buf.getMagnitude (0, 1000) > 1e-6f) fail ("choir: all parts off should be silent");
+    }
+    // ---- motor ve eklenti
+    HitGenProcessor p; p.setPlayConfigDetails (0, 2, sr, 256); p.prepareToPlay (sr, 256);
+    auto waitDone = [&] (ch::Engine& e) { for (int i = 0; i < 3000 && e.busy(); ++i) juce::Thread::sleep (10); if (e.busy()) fail ("choir: render did not finish"); };
+    auto setP = [&] (const char* id, float v) { auto* pr = p.apvts.getParameter (id); pr->setValueNotifyingHost (pr->convertTo0to1 (v)); };
+    p.idle(); waitDone (p.choir);
+    {   // koro eklentinin akorlarını izler: fikir değişince yeniden işlenir
+        const int v0 = p.choir.version(); setP ("key", 2); p.idle();
+        for (int i = 0; i < 4000 && p.choir.version() == v0; ++i) juce::Thread::sleep (10);
+        if (p.choir.version() == v0) fail ("choir: a new idea did not re-render the choir");
+        waitDone (p.choir);
+    }
+    {   // çalma: ch_play ile koro çıkışa eklenir, parti seviyeleri sahneye ulaşır
+        juce::MidiBuffer mid; juce::AudioBuffer<float> blk (2, 256); float off = 0, on = 0, actMax = 0;
+        for (int i = 0; i < 40; ++i) { blk.clear(); p.processBlock (blk, mid); off = juce::jmax (off, blk.getMagnitude (0, 256)); }
+        setP ("ch_play", 1); setP ("ch_space", 80); p.idle(); waitDone (p.choir);
+        for (int i = 0; i < 400; ++i) { blk.clear(); mid.clear(); p.processBlock (blk, mid); on = juce::jmax (on, blk.getMagnitude (0, 256)); for (int k = 0; k < 4; ++k) actMax = juce::jmax (actMax, p.choir.activity (k)); }
+        if (! p.choir.isPlaying() || on < off + .02f) fail ("choir: play parameter gave no sound (" + juce::String (off) + " -> " + juce::String (on) + ")");
+        if (std::abs (p.choir.get().space - .8f) > 1e-3f) fail ("choir: automation did not reach the engine");
+        if (actMax < .5f) fail ("choir: part activity not reported while playing");
+    }
+    {   // kayıt: 44,1 kHz'lik giriş bloklarla beslenir; ses yüklenir, kaynak "kendi sesim" olur; sessiz kayıt reddedilir
+        p.choir.recordStart();
+        for (int pos = 0; pos < raw.getNumSamples(); pos += 441) p.choir.feed (raw.getReadPointer (0) + pos, nullptr, juce::jmin (441, raw.getNumSamples() - pos), 44100);
+        if (std::abs (p.choir.recSeconds() - raw.getNumSamples() / 44100.0) > .02 || p.choir.recLevel() < .05f) fail ("choir: recording meter wrong");
+        if (! p.choir.recordStop() || ! p.choir.hasVoice()) fail ("choir: recording was not loaded as the voice");
+        if (std::abs (p.choir.voicePitch() - 147) > 3 || p.choir.get().source != ch::sOwnHold) fail ("choir: recorded voice pitch / source wrong");
+        waitDone (p.choir);
+        std::vector<float> zero (4410, 0.0f); p.choir.recordStart(); for (int i = 0; i < 10; ++i) p.choir.feed (zero.data(), zero.data(), 4410, 44100);
+        if (p.choir.recordStop()) fail ("choir: a silent recording should be rejected");
+        if (! p.choir.hasVoice()) fail ("choir: a failed recording should keep the previous voice");
+    }
+    {   // dışa aktarım ve proje durumu
+        const auto f = p.choir.exportWav(); juce::AudioFormatManager fm; fm.registerBasicFormats();
+        std::unique_ptr<juce::AudioFormatReader> rd (fm.createReaderFor (f));
+        if (rd == nullptr || rd->bitsPerSample != 24 || rd->numChannels != 2) fail ("choir: export should be a 24-bit stereo WAV");
+        auto cs = p.choir.get(); cs.rhythm = ch::rStab; cs.size = 4; cs.part = { { true, false, true, true } }; cs.character = -.5f; p.choir.set (cs);
+        juce::MemoryBlock mb; p.getStateInformation (mb);
+        HitGenProcessor q; q.setPlayConfigDetails (0, 2, sr, 256); q.prepareToPlay (sr, 256); q.setStateInformation (mb.getData(), (int) mb.getSize());
+        const auto r = q.choir.get();
+        if (r.rhythm != ch::rStab || r.size != 4 || r.part[1] || ! r.part[2] || std::abs (r.character + .5f) > 1e-4f || r.source != ch::sOwnHold || ! q.choir.hasVoice() || ! q.choir.isPlaying()) fail ("choir: project state not restored");
+        if (std::abs (q.apvts.getRawParameterValue ("ch_char")->load() + 50) > .5f) fail ("choir: restored settings not pushed to parameters");
+        waitDone (q.choir);
+    }
+    {   // 3B sahne: figürler çizilir, hareket kareyi değiştirir, melek tıklaması doğru partiyi bulur
+        s3d::Stage st; juce::Image a (juce::Image::ARGB, 566, 165, true), b (juce::Image::ARGB, 566, 165, true);
+        s3d::Pose q0; st.render (a, q0, 2);
+        if (st.triangles() < 2000) fail ("stage: too few triangles (" + juce::String (st.triangles()) + ")");
+        auto opaque = [] (const juce::Image& im) { int n = 0; for (int y = 0; y < im.getHeight(); y += 2) for (int x = 0; x < im.getWidth(); x += 2) n += im.getPixelAt (x, y).getAlpha() > 128 ? 1 : 0; return n; };
+        if (opaque (a) < 2500) fail ("stage: figures not drawn");
+        for (int i = 0; i < 5; ++i) { const auto r = st.bounds (i); if (r.isEmpty() || r.getX() < 0 || r.getRight() > 1 || r.getY() < 0 || r.getBottom() > 1) fail ("stage: figure " + juce::String (i) + " is outside the stage"); }
+        for (int i = 0; i < 4; ++i) { const auto c = st.bounds (i).getCentre(); if (st.hit (c.x, c.y) != i) fail ("stage: angel " + juce::String (i) + " not hit at its centre"); }
+        if (st.hit (.5f, .5f) != -1) fail ("stage: the elder should not toggle a part");
+        s3d::Pose q1; q1.t = 1.3f; q1.beat = .25f; q1.level = .9f; q1.voice = { { 1, 1, 1, 1 } }; st.render (b, q1, 2);
+        int diff = 0; for (int y = 0; y < 165; y += 2) for (int x = 0; x < 566; x += 2) diff += a.getPixelAt (x, y) != b.getPixelAt (x, y) ? 1 : 0;
+        if (diff < 400) fail ("stage: figures do not move with the music");
+        if (st.glows().size() != 6) fail ("stage: glow count " + juce::String ((int) st.glows().size()));
+        const auto t0 = juce::Time::getMillisecondCounterHiRes(); juce::Image big (juce::Image::ARGB, 1132, 330, true);
+        for (int i = 0; i < 5; ++i) { q1.t += .033f; st.render (big, q1, 2); }
+        std::cout << "stage: " << st.triangles() << " triangles, " << juce::String ((juce::Time::getMillisecondCounterHiRes() - t0) / 5, 1) << " ms per frame (this build)\n";
+    }
+    // arayüz
+    std::unique_ptr<HitGenEditor> ed (dynamic_cast<HitGenEditor*> (p.createEditor()));
+    ed->setTab (7); auto& cp = ed->choirs();
+    if (! cp.isVisible()) fail ("choir: page not visible on its tab");
+    cp.applyPreset (1);
+    if (p.choir.get().part[2] || p.choir.get().part[3] || ! p.choir.get().part[0]) fail ("choir: Gregorian preset should keep only the low voices");
+    if (std::abs (p.apvts.getRawParameterValue ("ch_vibrato")->load() - 10) > .5f) fail ("choir: preset not pushed to parameters");
+    cp.togglePart (3); if (! p.choir.get().part[3]) fail ("choir: part toggle did not reach the engine");
+    cp.applyPreset (0);
+   #if JUCE_LINUX
+    if (cp.toggleRecord() || p.choir.recording() || cp.statusText().isEmpty()) fail ("choir: without a microphone the record button should explain and stay idle");
+   #endif
+    waitDone (p.choir); for (int i = 0; i < 12; ++i) cp.tick (.7f);
+    if (shots)
+    {
+        auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f);
+        auto f = outDir.getChildFile ("choir-page.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os);
+    }
+    setP ("ch_play", 0); p.idle();
+    for (auto& f : juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("Wavejackers HitGen").getChildFile ("Choir").findChildFiles (juce::File::findFiles, false, "Voice *.wav")) f.deleteFile();
+    std::cout << "choir: ok\n";
+}
+
 static void testSoundPageUi (const juce::File& outDir, const FailFn& fail, bool shots)
 {
     HitGenProcessor p; p.setPlayConfigDetails (0, 2, 48000, 256); p.prepareToPlay (48000, 256);
@@ -1877,7 +2058,8 @@ int main (int argc, char** argv)
     auto fail = [&] (const juce::String& m) { std::cout << "FAIL " << m << "\n"; ++failures; };
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_DEMO", {}).isNotEmpty()) { testLoudness (outDir, fail, false); return failures == 0 ? 0 : 1; }   // yalnızca dinleme demoları
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_CALIBRATE", {}).isNotEmpty()) { testFactoryBank (fail, true); return 0; }   // fabrika bankası seviye ayarı
-    if (juce::SystemStats::getEnvironmentVariable ("HITGEN_SHOT", {}).isNotEmpty()) { testSoundPageUi (outDir, fail, true); testLoopForge (outDir, fail, true); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
+    if (juce::SystemStats::getEnvironmentVariable ("HITGEN_CHOIR", {}).isNotEmpty()) { testChoir (outDir, fail, true); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
+    if (juce::SystemStats::getEnvironmentVariable ("HITGEN_SHOT", {}).isNotEmpty()) { testSoundPageUi (outDir, fail, true); testLoopForge (outDir, fail, true); testChoir (outDir, fail, true); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_BANK", {}).isNotEmpty()) { testHookRules (fail); testRiffChopRules (fail); testFactoryBank (fail, false); testBankBehaviour (fail); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
 
     // 1) stiller x kalite
@@ -2131,6 +2313,7 @@ int main (int argc, char** argv)
     testBankBehaviour (fail);
     testSoundPageUi (outDir, fail, false);
     testLoopForge (outDir, fail, false);
+    testChoir (outDir, fail, false);
     testMultiOut (fail);
     testReference (outDir, fail); testSampler (fail); testLibrary (fail); testMidiLearn (outDir, fail);
     testLoudness (outDir, fail, quick); testDrumMachine (outDir, fail); testGuideAndAssistant (outDir, fail);
