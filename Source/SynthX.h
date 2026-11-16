@@ -97,7 +97,10 @@ struct Program
     float vol = .7f, glide = 0, bend = 2, keyPan = 0;
     FxChain fx {};
     struct Arp { bool on = false; int mode = 0, div = 2, oct = 1; float gate = .8f; } arp;   // mode: 0 yukarı 1 aşağı 2 yukarı-aşağı 3 rastgele 4 çalındığı sıra; div: 0 1/4, 1 1/8, 2 1/16, 3 1/8T, 4 1/16T, 5 1/32
-    struct Chord { int mode = 0; float strum = 0; } chord;   // mode: 0 kapalı 1 üçlü 2 yedili 3 power 4 oktav 5 sus2 6 sus4; strum: 0..1 = 0..120 ms
+    struct Chord { int mode = 0; float strum = 0; bool scaleLock = false; int split = 60, side = 0; } chord;   // side: 0 tüm klavye, 1 split altı, 2 split üstü (akor/arpej/sekans yalnız orada)
+    int glideMode = 0, glideSync = 0;   // glideMode: 0 her nota, 1 yalnızca legato (otomatik); glideSync: 0 kapalı, 1-6 = 1/4..1/32
+    struct SeqNote { float beat = 0, len = .25f; int rel = 0, vel = 100; };
+    std::vector<SeqNote> seq; float seqBeats = 4; juce::String seqName;   // MIDI dosyasından sekans: tutulan tuşa göre aktarılır   // mode: 0 kapalı 1 üçlü 2 yedili 3 power 4 oktav 5 sus2 6 sus4; strum: 0..1 = 0..120 ms
     std::shared_ptr<const SoundFont> sf; juce::String sfPath; const Table* sine = nullptr;
     double sr = 48000;
 

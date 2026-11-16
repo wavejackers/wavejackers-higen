@@ -59,6 +59,14 @@ SynthXPanel::SynthXPanel (HitGenProcessor& p, hgui::LookAndFeel& l) : proc (p), 
     addChildComponent (steps); addChildComponent (scope);
     convertBtn.onClick = [this] { proc.setXsProgram (part, var()); refresh(); };   // seçili sesten yeniden kur
     xgenBtn.onClick = [this] { xgen ((uint32_t) Random::getSystemRandom().nextInt()); };
+    addChildComponent (seqBtn); addChildComponent (seqClear); seqClear.setButtonText ("x");
+    seqBtn.setTooltip (T ("sxSeqTip", "A MIDI file plays as a pattern: hold a key to play it transposed (C4 = original)"));
+    seqBtn.onClick = [this]
+    {
+        chooser = std::make_unique<FileChooser> (T ("sxSeqLoad", "Load MIDI sequence"), File(), "*.mid;*.midi");
+        chooser->launchAsync (FileBrowserComponent::openMode | FileBrowserComponent::canSelectFiles, [this] (const FileChooser& fc) { if (fc.getResult().existsAsFile()) loadSequence (fc.getResult()); });
+    };
+    seqClear.onClick = [this] { if (active() && prog.getDynamicObject() != nullptr) { prog.getDynamicObject()->removeProperty ("seq"); commit(); rebuild(); } };
     initBtn.onClick = [this] { applyTemplate (0); };
     templBox.onChange = [this] { const int i = templBox.getSelectedId() - 1; templBox.setSelectedId (0, dontSendNotification); if (i >= 0) applyTemplate (i); };
     sfBtn.onClick = [this]
@@ -168,6 +176,29 @@ SynthXPanel::Ctl& SynthXPanel::choice (const String& path, const String& label, 
     ctls.push_back (std::move (c)); return *ctls.back();
 }
 
+bool SynthXPanel::loadSequence (const File& f)
+{
+    FileInputStream in (f); MidiFile mf; if (! in.openedOk() || ! mf.readFrom (in)) return false;
+    const int tpq = mf.getTimeFormat(); if (tpq <= 0) return false;
+    Array<var> ns; double end = 0;
+    for (int t = 0; t < mf.getNumTracks() && ns.isEmpty(); ++t)
+    {
+        MidiMessageSequence seq (*mf.getTrack (t)); seq.updateMatchedPairs();
+        for (int i = 0; i < seq.getNumEvents() && ns.size() < 256; ++i)
+        {
+            auto* ev = seq.getEventPointer (i); if (! ev->message.isNoteOn()) continue;
+            const double b = ev->message.getTimeStamp() / tpq; if (b >= 64) break;
+            const double off = ev->noteOffObject != nullptr ? ev->noteOffObject->message.getTimeStamp() / tpq : b + .25;
+            ns.add (Array<var> { b, jmax (.02, off - b), ev->message.getNoteNumber() - 60, (int) ev->message.getVelocity() }); end = jmax (end, off);
+        }
+    }
+    if (ns.isEmpty()) return false;
+    if (! active()) prog = proc.xsFromClassic (part);
+    auto* q = new DynamicObject(); q->setProperty ("n", ns); q->setProperty ("b", jmax (1.0, std::ceil (end / 4) * 4)); q->setProperty ("nm", f.getFileNameWithoutExtension());
+    prog.getDynamicObject()->setProperty ("seq", var (q)); if (auto* a = resolve (prog, "arp.on")) *a = 0;
+    commit(); rebuild(); return true;
+}
+
 void SynthXPanel::paramKnob (const char* id, const String& label, Rectangle<int> r)
 {
     auto c = std::make_unique<Ctl>(); c->path = {}; c->kind = 4; c->r = r;
@@ -231,7 +262,7 @@ void SynthXPanel::rebuild()
 {
     const ScopedValueSetter<bool> b (building, true);
     for (auto& c : ctls) { for (Component* x : std::initializer_list<Component*> { c->knob.get(), c->combo.get(), c->toggle.get(), c->amount.get(), c->cap.get() }) if (x != nullptr) removeChildComponent (x); }
-    atts.clear(); ctls.clear(); steps.setVisible (false); scope.setVisible (false);
+    atts.clear(); ctls.clear(); seqBtn.setVisible (false); seqClear.setVisible (false); steps.setVisible (false); scope.setVisible (false);
     const int Y = 76, KW = 82, KH = 92;
     auto grid = [&] (int col, int row) { return Rectangle<int> (372 + col * KW, Y + row * KH, KW - 4, KH - 4); };
     auto pct = [] (double v) { return String (roundToInt (v * 100)) + "%"; };
@@ -356,6 +387,14 @@ void SynthXPanel::rebuild()
         knob ("arp.gt", T ("sxGate", "Gate"), .05, 1, { 456, Y + 160, 82, 92 });
         knob ("kp", T ("sxKeyPan", "Key panning"), -1, 1, { 16, Y + 250, 82, 92 }, 0, false, [] (double v) { const int x = roundToInt (v * 100); return (x > 0 ? "+" : "") + String (x) + "%"; });
         paramKnob ("xs_alpha", T ("sxAlpha", "Alpha knob"), { 640, Y + 10, 82, 92 });
+        toggle ("chd.sl", T ("sxScaleLock", "Scale lock (remap to key)"), { 16, Y + 76, 280, 26 });
+        choice ("chd.sd", T ("sxSplitSide", "Helpers play on"), [this] { return StringArray { T ("sxWhole", "Whole keyboard"), T ("sxBelow", "Below split"), T ("sxAbove", "Above split") }; }, { 640, Y + 150, 200, 26 });
+        knob ("chd.sp", T ("sxSplit", "Split key"), 24, 96, { 850, Y + 124, 82, 92 }, 0, true, [this] (double v) { const int n = roundToInt (v); return data.noteNames[n % 12] + String (n / 12 - 1); });
+        choice ("glm", T ("sxGlideMode", "Glide"), [this] { return StringArray { T ("sxGlideAll", "Every note"), T ("sxGlideLeg", "Auto (legato only)") }; }, { 640, Y + 250, 200, 26 });
+        choice ("glq", T ("sxGlideQ", "Glide time"), [this] { return StringArray { T ("sxGlideFree", "Free (Matrix tab)"), "1/4", "1/8", "1/16", "1/8 T", "1/16 T", "1/32" }; }, { 850, Y + 250, 170, 26 });
+        seqBtn.setVisible (true); seqClear.setVisible (true);
+        const auto nm = active() ? prog["seq"]["nm"].toString() : String();
+        seqBtn.setButtonText (nm.isNotEmpty() ? T ("sxSeqOn", "Sequence") + ": " + nm : T ("sxSeqLoad", "Load MIDI sequence")); seqClear.setEnabled (nm.isNotEmpty());
     }
     else
     {
@@ -415,6 +454,7 @@ void SynthXPanel::resized()
     put (convertBtn, 120); put (initBtn, 70); put (templBox, 180); put (xgenBtn, 80); put (sfBtn, 140); sfLbl.setBounds (x, 8, getWidth() - x - 16 - 190, 28);
     for (int i = 0; i < 10; ++i) tabs[(size_t) i].setBounds (16 + i * 100, 42, 96, 26);
     steps.setBounds (16, 92, getWidth() - 32, 170);
+    seqBtn.setBounds (310, 76 + 250 + 26, 260, 28); seqClear.setBounds (576, 76 + 250 + 26, 28, 28);
     scope.setBounds (getWidth() - 16 - 180, 8, 180, 28);
 }
 

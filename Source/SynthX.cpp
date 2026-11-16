@@ -379,7 +379,14 @@ std::shared_ptr<const Program> Program::fromVar (const juce::var& v, double samp
     for (int m = 0; m < kMtx; ++m) { const auto o = at (v["mtx"], m); if (o.isObject()) { P->mtx[(size_t) m].src = I (o, "s", 0, 0, kNumSources - 1); P->mtx[(size_t) m].to = routesOf (o["d"]); } }
     P->fx = fxFromVar (v["fx"]); P->keyPan = F (v, "kp", 0, -1, 1);
     if (const auto a = v["arp"]; a.isObject()) { P->arp.on = num (a, "on", 0) > 0; P->arp.mode = I (a, "md", 0, 0, 4); P->arp.div = I (a, "dv", 2, 0, 5); P->arp.oct = I (a, "oc", 1, 1, 3); P->arp.gate = F (a, "gt", .8, .05, 1); }
-    if (const auto c = v["chd"]; c.isObject()) { P->chord.mode = I (c, "m", 0, 0, 6); P->chord.strum = F (c, "st", 0, 0, 1); }
+    if (const auto c = v["chd"]; c.isObject()) { P->chord.mode = I (c, "m", 0, 0, 6); P->chord.strum = F (c, "st", 0, 0, 1); P->chord.scaleLock = num (c, "sl", 0) > 0; P->chord.split = I (c, "sp", 60, 0, 127); P->chord.side = I (c, "sd", 0, 0, 2); }
+    P->glideMode = I (v, "glm", 0, 0, 1); P->glideSync = I (v, "glq", 0, 0, 6);
+    if (const auto q = v["seq"]; q.isObject())
+    {
+        P->seqBeats = F (q, "b", 4, .25, 64); P->seqName = q["nm"].toString();
+        if (auto* a = q["n"].getArray()) for (auto& x : *a) if (auto* y = x.getArray(); y != nullptr && y->size() >= 4 && P->seq.size() < 256)
+            P->seq.push_back ({ (float) (double) (*y)[0], (float) (double) (*y)[1], juce::jlimit (-48, 48, (int) (*y)[2]), juce::jlimit (1, 127, (int) (*y)[3]) });
+    }
     P->sine = &basicTable (3, sampleRate);   // FM taşıyıcısı (ses iş parçacığı kilitsiz okur)
     P->vol = F (v, "vol", .7, 0, 1); P->glide = F (v, "gl", 0, 0, 2); P->bend = F (v, "bd", 2, 0, 24);
     return P;
@@ -430,7 +437,9 @@ juce::var Program::toVar (const juce::var& v)
     o->setProperty ("mtx", mx); o->setProperty ("vol", P->vol); o->setProperty ("gl", P->glide); o->setProperty ("bd", P->bend);
     o->setProperty ("fx", fxToVar (P->fx)); o->setProperty ("kp", P->keyPan);
     { auto* a = new juce::DynamicObject(); a->setProperty ("on", P->arp.on ? 1 : 0); a->setProperty ("md", P->arp.mode); a->setProperty ("dv", P->arp.div); a->setProperty ("oc", P->arp.oct); a->setProperty ("gt", P->arp.gate); o->setProperty ("arp", juce::var (a)); }
-    { auto* c = new juce::DynamicObject(); c->setProperty ("m", P->chord.mode); c->setProperty ("st", P->chord.strum); o->setProperty ("chd", juce::var (c)); }
+    { auto* c = new juce::DynamicObject(); c->setProperty ("m", P->chord.mode); c->setProperty ("st", P->chord.strum); c->setProperty ("sl", P->chord.scaleLock ? 1 : 0); c->setProperty ("sp", P->chord.split); c->setProperty ("sd", P->chord.side); o->setProperty ("chd", juce::var (c)); }
+    o->setProperty ("glm", P->glideMode); o->setProperty ("glq", P->glideSync);
+    if (! P->seq.empty()) { auto* q = new juce::DynamicObject(); juce::Array<juce::var> ns; for (auto& n : P->seq) ns.add (juce::Array<juce::var> { n.beat, n.len, n.rel, n.vel }); q->setProperty ("n", ns); q->setProperty ("b", P->seqBeats); q->setProperty ("nm", P->seqName); o->setProperty ("seq", juce::var (q)); }
     if (P->sfPath.isNotEmpty()) o->setProperty ("sf", P->sfPath);
     return juce::var (o);
 }
@@ -632,7 +641,13 @@ void render (Voice& v, const Program& P, const Ctx& c, float* L, float* R, int n
     const bool layerOn = Y.on && v.note >= Y.keyLo && v.note <= Y.keyHi && (int) (v.vel * 127) >= Y.velLo && (int) (v.vel * 127) <= Y.velHi;
     for (int i = 0; i < n; ++i)
     {
-        if (v.ctl <= 0) { control (v, P, c, CR); v.ctl = CR; if (P.glide > 0 && v.glideFrom != 1) v.glideFrom = 1 + (v.glideFrom - 1) * std::exp (-(double) CR / (P.glide * c.sr / 4)); }
+        if (v.ctl <= 0)
+        {
+            control (v, P, c, CR); v.ctl = CR;
+            static const double kGq[6] = { 1, .5, .25, 1.0 / 3, 1.0 / 6, .125 };
+            const double gs = P.glideSync > 0 ? 60.0 / c.bpm * kGq[P.glideSync - 1] : (double) P.glide;   // portamento kuantize: süre tempoya kilitli
+            if (gs > 0 && v.glideFrom != 1) v.glideFrom = 1 + (v.glideFrom - 1) * std::exp (-(double) CR / (gs * c.sr / 4));
+        }
         --v.ctl;
         advanceEnv (P.env[0], v.ev[0], v.stage[0], v.released, dt, c.sr, c.atkMul, c.relMul);
         const float amp = envOut (P.env[0], v.ev[0]);

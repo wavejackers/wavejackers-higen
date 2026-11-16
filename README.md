@@ -364,7 +364,11 @@ Doğrulanmayan: kulakla dinleme, DAW'a sürükleme (FL Studio, Ableton), macOS v
 - **Alpha düğmesi:** DAW'da otomasyonlanabilen tek düğme; matriste kaynak olarak seçilip istediğin kadar hedefe bağlanır (tek düğmeyle çok düğme, Morph).
 - **Dynamic Link:** Capture In girişine gelen sesin zarfı matriste "Audio input" kaynağıdır (sesle modülasyon).
 - **X-Gen:** partiye uygun (bas, akor, melodi) rastgele program üretir.
+- **MIDI sekansı (EMA):** bir MIDI dosyası kalıp olarak yüklenir; basılı tuş kalıbı aktararak tempoya kilitli çalar (C4 = orijinal).
+- **Split modu:** akor modu, arpej ve sekans yalnızca split tuşunun altında ya da üstünde çalışır; diğer taraf normal çalar.
+- **Gam kilidi (nota yeniden eşleme):** gam dışı notalar tonalitedeki en yakın notaya çekilir.
+- **Otomatik glide** (yalnızca bağlı notalarda) ve **portamento kuantize** (glide süresi tempoya kilitli: 1/4-1/32).
 
-**Yapılmayanlar:** MIDI dosyasını sekans olarak yükleme, split modu, çok katmanlı/split enstrüman modu, ayrı preset tarayıcısı ve hızlı tarayıcı (mevcut ses tarayıcısı kullanılıyor), portamento kuantize, nota yeniden eşleme, otomatik glide, harmonizer, kısayol tuşları, görünüm özelleştirme, kullanım analizi, akademi modu. Synth X'in kendi ayarları (Alpha ve master dışında) DAW otomasyonuna açık değil. Sesler kulakla dinlenmedi.
+**Yapılmayanlar:** çok katmanlı/split enstrüman modu (partiler zaten ayrı), ayrı preset tarayıcısı ve hızlı tarayıcı (mevcut ses tarayıcısı kullanılıyor), harmonizer, kısayol tuşları, görünüm özelleştirme, kullanım analizi, akademi modu. Synth X'in kendi ayarları (Alpha ve master dışında) DAW otomasyonuna açık değil. Sesler kulakla dinlenmedi.
 
 **EN.** The classic engine is no longer used: every sound is converted to Synth X when selected. Added: a 5-slot FX rack per part with 14 effects, a master section (low/high cut, width, colour, output), chord mode with strum, an arpeggiator locked to the DAW, key panning, an automatable Alpha knob and an audio-input modulation source, and X-Gen random sounds. Not done: MIDI-file sequencing, split/multi mode, a separate preset browser, portamento quantize, note remapping, harmonizer, hotkeys, skins, analytics, academy.

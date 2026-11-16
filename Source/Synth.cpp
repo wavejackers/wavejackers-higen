@@ -289,7 +289,9 @@ void Engine::startVoice (Voice& v, const Patch& p, int track, int note, int vel,
     if (p.xs != nullptr)
     {
         const size_t idx = (size_t) (&v - voices.data());
-        double gf = 1; if (p.xs->glide > 0 && v.glideFrom != 1) gf = v.glideFrom; else if (p.xs->glide > 0 && lastGlide[ti] > 0) gf = juce::jlimit (.125, 8.0, lastGlide[ti] / v.f0);
+        bool legato = false; for (auto& o : voices) if (&o != &v && o.active && o.track == track && o.gate && ! o.released) legato = true;
+        const bool glideOn = (p.xs->glide > 0 || p.xs->glideSync > 0) && (p.xs->glideMode == 0 || legato);   // otomatik glide: yalnızca bağlı notalarda
+        double gf = 1; if (glideOn && lastGlide[ti] > 0) gf = juce::jlimit (.125, 8.0, lastGlide[ti] / v.f0);
         lastGlide[ti] = v.f0;
         xs::start ((*xv)[idx], *p.xs, note, vel, gf, v.rng, ctxFor (m));
         v.xsOn = true; v.endT = 1e18;

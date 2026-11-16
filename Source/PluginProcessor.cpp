@@ -212,7 +212,12 @@ void HitGenProcessor::loadPatch (int track, bool live)
     if (np->xs != nullptr)
     {
         auto& pf = perf[(size_t) part]; const auto& X = *np->xs;
-        pf.chord.store (X.chord.mode); pf.strum.store (X.chord.strum); pf.arpOn.store (X.arp.on ? 1 : 0); pf.arpMode.store (X.arp.mode); pf.arpDiv.store (X.arp.div); pf.arpOct.store (X.arp.oct); pf.gate.store (X.arp.gate);
+        pf.chord.store (X.chord.mode); pf.strum.store (X.chord.strum); pf.scaleLock.store (X.chord.scaleLock ? 1 : 0); pf.split.store (X.chord.split); pf.side.store (X.chord.side);
+        {   // sekans: boştaki tampona yaz, sonra etkin tamponu çevir
+            const int nx = 1 - pf.seqIdx.load(); auto& B = pf.seq[(size_t) nx]; B.count = 0; B.beats = X.seqBeats;
+            for (auto& q : X.seq) if (B.count < (int) B.n.size()) B.n[(size_t) B.count++] = { q.beat, q.len, (float) q.rel, (float) q.vel };
+            pf.seqIdx.store (nx);
+        } pf.arpOn.store (X.arp.on ? 1 : 0); pf.arpMode.store (X.arp.mode); pf.arpDiv.store (X.arp.div); pf.arpOct.store (X.arp.oct); pf.gate.store (X.arp.gate);
     }
     if (np->usesTable()) tableCache[(size_t) part] = std::make_unique<hg::Patch> (*np);
     // eski yamaları hemen sil: zamanlayıcı işlemeden peş peşe çok yama gelirse (ör. mesaj döngüsü olmayan test ya da sunucu)
@@ -1658,6 +1663,21 @@ void HitGenProcessor::perform (int n, double bpm, bool hostPlay, double ppq)
         auto& e = blockEv[(size_t) i];
         if ((e.kind != 1 && e.kind != 2) || e.track == hg::kDrums) continue;
         const int part = partOfTrack (e.track); auto& pf = perf[(size_t) part];
+        if (pf.scaleLock.load (std::memory_order_relaxed) != 0)
+        {   // gam kilidi (nota yeniden eşleme): gam dışı nota en yakın gam notasına (eşitlikte aşağı) çekilir
+            const int mask = scaleMask.load (std::memory_order_relaxed), key = scaleKey.load (std::memory_order_relaxed);
+            auto in = [&] (int x) { return (mask >> (((x - key) % 12 + 12) % 12) & 1) != 0; };
+            if (! in (e.note)) e.note = in (e.note - 1) ? e.note - 1 : e.note + 1;
+        }
+        const int sd = pf.side.load (std::memory_order_relaxed), sp = pf.split.load (std::memory_order_relaxed);
+        if ((sd == 1 && e.note >= sp) || (sd == 2 && e.note < sp)) continue;   // split: bu taraf yardımcılar olmadan normal çalar
+        const auto& SQ = pf.seq[(size_t) pf.seqIdx.load (std::memory_order_acquire)];
+        if (SQ.count > 0 && pf.arpOn.load (std::memory_order_relaxed) == 0)
+        {   // MIDI dosyası sekansı: en son basılan tuş sekansı aktarır; bırakınca durur
+            if (e.kind == 1) { seqRoot[(size_t) part] = e.note; seqPos[(size_t) part] = 0; arpVel[(size_t) part] = e.vel; }
+            else if (e.note == seqRoot[(size_t) part]) seqRoot[(size_t) part] = -1;
+            e.kind = -1; continue;
+        }
         int cn[4]; const int nc = chordNotes (part, e.note, cn);
         if (pf.arpOn.load (std::memory_order_relaxed) != 0)
         {   // arpej: tuşlar yalnızca tutulan nota listesini değiştirir
@@ -1693,6 +1713,21 @@ void HitGenProcessor::perform (int n, double bpm, bool hostPlay, double ppq)
     }
     static const double kDiv[6] = { 1, .5, .25, 1.0 / 3, 1.0 / 6, .125 };
     const double bps = bpm / 60.0 / sr;
+    for (int part = 0; part < 3; ++part)
+    {
+        const int root = seqRoot[(size_t) part]; if (root < 0) continue;
+        const auto& SQ = perf[(size_t) part].seq[(size_t) perf[(size_t) part].seqIdx.load (std::memory_order_acquire)]; if (SQ.count == 0) { seqRoot[(size_t) part] = -1; continue; }
+        const double L = juce::jmax (.25, (double) SQ.beats), b0 = seqPos[(size_t) part], b1 = b0 + n * bps; seqPos[(size_t) part] = b1;
+        for (int k = 0; k < SQ.count; ++k)
+        {
+            const auto& q = SQ.n[(size_t) k];
+            for (double cyc = std::floor (b0 / L) * L; cyc < b1; cyc += L)
+            {
+                const double at = cyc + q[0]; if (at < b0 || at >= b1) continue;
+                push ({ juce::jlimit (0, n - 1, (int) ((at - b0) / bps)), 3, trackOfPart (part), juce::jlimit (0, 127, root + (int) q[2]), juce::jlimit (1, 127, (int) (q[3] * arpVel[(size_t) part] / 100.0f)), juce::jmax (.02, q[1] * 60.0 / bpm) });
+            }
+        }
+    }
     for (int part = 0; part < 3; ++part)
     {
         auto& pf = perf[(size_t) part]; const int nh = numHeld[(size_t) part];

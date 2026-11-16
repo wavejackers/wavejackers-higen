@@ -1878,6 +1878,15 @@ static void testSynthX (const FailFn& fail)
         if (a.arpIdx[2] < 6 || pk < .01f) fail ("arp: produced " + juce::String (a.arpIdx[2]) + " steps, peak " + juce::String (pk));
         mid.addEvent (juce::MidiMessage::noteOff (1, 60), 0); mid.addEvent (juce::MidiMessage::noteOff (1, 67), 0); blk.clear(); a.processBlock (blk, mid);
         if (a.numHeld[2] != 0) fail ("arp: notes not released");
+        // MIDI sekansı: basılı tuş kalıbı aktarır; gam kilidi gam dışı notayı çeker
+        prg.getDynamicObject()->setProperty ("arp", juce::JSON::parse ("{\"on\":0}"));
+        prg.getDynamicObject()->setProperty ("seq", juce::JSON::parse ("{\"n\":[[0,0.5,0,100],[1,0.5,4,100],[2,0.5,7,100]],\"b\":4,\"nm\":\"t\"}"));
+        prg.getDynamicObject()->setProperty ("chd", juce::JSON::parse ("{\"m\":0,\"sl\":1}")); a.setXsProgram (2, prg); a.idle();
+        mid.addEvent (juce::MidiMessage::noteOn (1, 62, (juce::uint8) 100), 0); float spk = 0;
+        for (int i = 0; i < 120; ++i) { blk.clear(); a.processBlock (blk, mid); mid.clear(); spk = juce::jmax (spk, blk.getMagnitude (0, 512)); }
+        if (a.seqRoot[2] < 60 || spk < .01f) fail ("sequence: root " + juce::String (a.seqRoot[2]) + ", peak " + juce::String (spk));
+        mid.addEvent (juce::MidiMessage::noteOff (1, 62), 0); mid.addEvent (juce::MidiMessage::noteOff (1, a.seqRoot[2]), 0); blk.clear(); a.processBlock (blk, mid);
+        if (a.seqRoot[2] != -1) fail ("sequence: did not stop on key release");
     }
     {   // X-Gen: her tohum çalan bir ses üretir
         std::unique_ptr<HitGenEditor> ed (dynamic_cast<HitGenEditor*> (p.createEditor()));
@@ -1888,6 +1897,13 @@ static void testSynthX (const FailFn& fail)
             auto Vp = std::make_unique<xs::Voice>(); xs::Ctx c; c.sr = sr; xs::start (*Vp, *P, 52, 100, 1, 3, c);
             juce::AudioBuffer<float> b (2, 48000); b.clear(); for (int k = 0; k < 48000; k += 256) xs::render (*Vp, *P, c, b.getWritePointer (0, k), b.getWritePointer (1, k), juce::jmin (256, 48000 - k));
             const float pk = b.getMagnitude (0, 48000); if (! std::isfinite (pk) || pk < .005f || pk > 2.5f) fail ("x-gen: seed " + juce::String ((int) sd) + " peak " + juce::String (pk));
+        }
+        {   // MIDI dosyasından sekans
+            juce::MidiMessageSequence sq; for (int k = 0; k < 3; ++k) { sq.addEvent (juce::MidiMessage::noteOn (1, 60 + k * 4, (juce::uint8) 90), k * 480.0); sq.addEvent (juce::MidiMessage::noteOff (1, 60 + k * 4), k * 480.0 + 240); }
+            juce::MidiFile mf; mf.setTicksPerQuarterNote (480); mf.addTrack (sq); auto mfile = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("hg-seq.mid");
+            { mfile.deleteFile(); juce::FileOutputStream o (mfile); mf.writeTo (o); }
+            if (! X.loadSequence (mfile) || p.xsProgram (sp.currentPart())["seq"]["n"].size() != 3) fail ("sequence: MIDI file not loaded");
+            mfile.deleteFile();
         }
         X.showTab (8); X.setValue ("fx.0.0", 12); X.setValue ("fx.1.0", 1); X.showTab (8);
         auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f);

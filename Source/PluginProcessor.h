@@ -214,10 +214,16 @@ private:
     std::array<BlockEv, 1024> blockEv {}; int numBlockEv = 0;
 public:   // testler okur
     // Synth X çalım yardımcıları (klavye ve MIDI girişi): akıllı akor, strum, arpej. Ayarlar mesaj iş parçacığında atomiklere yazılır.
-    struct Perf { std::atomic<int> chord { 0 }, arpOn { 0 }, arpMode { 0 }, arpDiv { 2 }, arpOct { 1 }; std::atomic<float> strum { 0 }, gate { .8f }; };
+    struct Perf
+    {
+        std::atomic<int> chord { 0 }, arpOn { 0 }, arpMode { 0 }, arpDiv { 2 }, arpOct { 1 }, scaleLock { 0 }, split { 60 }, side { 0 }; std::atomic<float> strum { 0 }, gate { .8f };
+        struct SeqBuf { std::array<std::array<float, 4>, 256> n {}; int count = 0; float beats = 4; };
+        std::array<SeqBuf, 2> seq; std::atomic<int> seqIdx { 0 };   // çift tampon: mesaj iş parçacığı boştakine yazar, sonra çevirir
+    };
     std::array<Perf, 3> perf; std::atomic<int> scaleMask { 0xAD5 }, scaleKey { 9 };
     struct Pend { long long at = 0; int track = 0, note = 0, vel = 0, root = 0; };
     std::array<Pend, 128> pend {}; int numPend = 0;
+    std::array<double, 3> seqPos {}; std::array<int, 3> seqRoot { { -1, -1, -1 } };
     std::array<std::array<int, 48>, 3> held {}; std::array<int, 3> numHeld {}, arpIdx {}, arpVel { { 100, 100, 100 } }; std::array<double, 3> arpBeat {}; uint32_t arpRng = 1;
     void perform (int n, double bpm, bool hostPlay, double ppq);
     int chordNotes (int part, int note, int* out) const noexcept;

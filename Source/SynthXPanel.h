@@ -19,7 +19,8 @@ public:
     void showTab (int t);
     int tab() const noexcept { return section; }
     void applyTemplate (int i);
-    void xgen (uint32_t seed);                        // X-Gen: partiye uygun rastgele program
+    void xgen (uint32_t seed);
+    bool loadSequence (const juce::File&);            // MIDI dosyasını sekans olarak yükle (tutulan tuşa göre aktarılır)                        // X-Gen: partiye uygun rastgele program
     static int numTemplates();
     void setValue (const juce::String& path, const juce::var& v);   // yol: "o.0.f.c", "env.1.2", "lfo.0.d.3.1"
     juce::var value (const juce::String& path) const;
@@ -45,7 +46,7 @@ private:
 
     HitGenProcessor& proc; hgui::LookAndFeel& lnf; const hg::Data& data;
     juce::String lang = "en"; int part = 0, section = 0, shownVer = -1; juce::var prog; bool building = false;
-    juce::TextButton convertBtn, initBtn, sfBtn, xgenBtn; juce::ComboBox templBox; juce::Label sfLbl;
+    juce::TextButton convertBtn, initBtn, sfBtn, xgenBtn, seqBtn, seqClear; juce::ComboBox templBox; juce::Label sfLbl;
     std::array<juce::TextButton, 10> tabs;
     std::vector<std::unique_ptr<Ctl>> ctls; Steps steps { *this }; Scope scope { *this };
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>> atts;   // düğmelerden sonra yok edilir (önce bağlantılar)
