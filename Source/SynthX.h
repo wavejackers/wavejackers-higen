@@ -48,7 +48,7 @@ enum Dest
     kNumDests
 };
 juce::String destName (int d);
-enum Source { sOff, sVel, sKey, sWheel, sAfter, sRand, sEnv1, sEnv2, sEnv3, sEnv4, sLfo1, sLfo2, sStep, kNumSources };
+enum Source { sOff, sVel, sKey, sWheel, sAfter, sRand, sEnv1, sEnv2, sEnv3, sEnv4, sLfo1, sLfo2, sStep, sAudio, sAlpha, kNumSources };
 juce::String sourceName (int s);
 juce::String lfoShapeName (int s);
 juce::String filterName (int t);
@@ -56,6 +56,14 @@ juce::String satName (int s);
 
 struct Route { int dest = -1; float amt = 0; };
 using Routes = std::array<Route, kSlots>;
+
+constexpr int kFxSlots = 5, kFxTypes = 15;   // 0 boş
+juce::String fxName (int t);
+juce::String fxParamName (int t, int p);    // p 0-3
+struct FxSlot { int type = 0; std::array<float, 4> p { { .5f, .5f, .5f, .5f } }; float mix = .5f; };
+using FxChain = std::array<FxSlot, kFxSlots>;
+FxChain fxFromVar (const juce::var&);
+juce::var fxToVar (const FxChain&);
 
 struct Program
 {
@@ -86,7 +94,10 @@ struct Program
     std::array<Osc, kOsc> osc {};
     Layer layer; std::array<Env, kEnvs> env {}; std::array<Routes, kEnvs> envTo {};   // envTo[0] kullanılmaz (1. zarf ses düzeyi)
     std::array<Lfo, kLfos> lfo {}; Step step; std::array<Mtx, kMtx> mtx {};
-    float vol = .7f, glide = 0, bend = 2;
+    float vol = .7f, glide = 0, bend = 2, keyPan = 0;
+    FxChain fx {};
+    struct Arp { bool on = false; int mode = 0, div = 2, oct = 1; float gate = .8f; } arp;   // mode: 0 yukarı 1 aşağı 2 yukarı-aşağı 3 rastgele 4 çalındığı sıra; div: 0 1/4, 1 1/8, 2 1/16, 3 1/8T, 4 1/16T, 5 1/32
+    struct Chord { int mode = 0; float strum = 0; } chord;   // mode: 0 kapalı 1 üçlü 2 yedili 3 power 4 oktav 5 sus2 6 sus4; strum: 0..1 = 0..120 ms
     std::shared_ptr<const SoundFont> sf; juce::String sfPath; const Table* sine = nullptr;
     double sr = 48000;
 
@@ -121,10 +132,42 @@ struct Voice
     int ctl = 0;
 };
 
-struct Ctx { double sr = 48000, bpm = 120; float cutMul = 1, resAdd = 0, atkMul = 1, relMul = 1, drive = 0, lfoMul = 1, wheel = 0, after = 0; int maxPh = 32, controlRate = 16; };
+struct Ctx { double sr = 48000, bpm = 120; float cutMul = 1, resAdd = 0, atkMul = 1, relMul = 1, drive = 0, lfoMul = 1, wheel = 0, after = 0, audioIn = 0, alpha = 0; int maxPh = 32, controlRate = 16; };
 void start (Voice&, const Program&, int note, int vel, double glideFrom, uint32_t seed, const Ctx&);
 void migrate (Voice&, const Program&, const Ctx&);   // canlı düzenleme: sesler yeni programla sürer
 void release (Voice&) noexcept;
 // L/R'ye ekler; ses bittiğinde v.done olur
 void render (Voice&, const Program&, const Ctx&, float* L, float* R, int n) noexcept;
+}
+
+// ---- 2. aşama: parti başına efekt rafı (5 yuva) ve master bölümü
+namespace xs
+{
+
+class FxRack
+{
+public:
+    void prepare (double sampleRate);
+    void reset();
+    void process (const FxChain&, float* L, float* R, int n, double bpm) noexcept;
+private:
+    struct S
+    {
+        std::vector<float> buf[2]; int w = 0; double ph = 0, ph2 = 0; float z[2][8] {}, lp[2] {}, hold[2] {}; int cnt = 0;
+        float ap[2][8] {}; float fb[2] {}; float svf[2][3][2] {}; float eq[2][3][2] {};
+        juce::Reverb rev; int type = -1;
+    };
+    std::array<S, kFxSlots> s; double sr = 48000; int maxD = 0;
+};
+
+struct Master { float hp = 0, lp = 1, width = .5f, color = .5f, ceiling = 1, keyPan = 0; };
+class MasterFx
+{
+public:
+    void prepare (double sampleRate) { sr = sampleRate; reset(); }
+    void reset() { for (auto& x : st) x = 0; }
+    void process (const Master&, float* L, float* R, int n) noexcept;
+private:
+    double sr = 48000; float st[8] {};
+};
 }

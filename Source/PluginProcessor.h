@@ -81,7 +81,7 @@ public:
     juce::var xsFromClassic (int part) const;              // seçili klasik sesi Synth X programına çevirir (yaklaşık)
     void randomizeSound (int part);            // role uygun rastgele ses
     juce::var currentSoundVar (int part) const;   // parametrelerden kurulan güncel ses (Synth X programı dahil)
-    std::array<juce::var, 3> xsEdit; int xsVersion = 0;   // Synth X programı değişince artar (düzenleyici yeniler)
+    std::array<juce::var, 3> xsEdit; std::array<bool, 3> xsAuto { { true, true, true } }; int xsVersion = 0;   // Synth X programı değişince artar (düzenleyici yeniler)
     void applySoundParams (int part, const float* vals);     // Benzerini üret / geçmiş: değerleri yaz ve yamayı hemen kur
     void readSoundParams (int part, float* vals) const;
     void applyRefToProject (const hg::RefAnalysis& a);       // tespit edilen tempo, ton ve makamı üretici ayarlarına uygula
@@ -212,6 +212,17 @@ private:
     bool wasRunning = false; double previewPos = 0, lastPpqEnd = -1;
     struct BlockEv { int off; int kind; int track, note, vel; double len; };   // kind 0 nota, 1 tuş açık, 2 tuş kapalı
     std::array<BlockEv, 1024> blockEv {}; int numBlockEv = 0;
+public:   // testler okur
+    // Synth X çalım yardımcıları (klavye ve MIDI girişi): akıllı akor, strum, arpej. Ayarlar mesaj iş parçacığında atomiklere yazılır.
+    struct Perf { std::atomic<int> chord { 0 }, arpOn { 0 }, arpMode { 0 }, arpDiv { 2 }, arpOct { 1 }; std::atomic<float> strum { 0 }, gate { .8f }; };
+    std::array<Perf, 3> perf; std::atomic<int> scaleMask { 0xAD5 }, scaleKey { 9 };
+    struct Pend { long long at = 0; int track = 0, note = 0, vel = 0, root = 0; };
+    std::array<Pend, 128> pend {}; int numPend = 0;
+    std::array<std::array<int, 48>, 3> held {}; std::array<int, 3> numHeld {}, arpIdx {}, arpVel { { 100, 100, 100 } }; std::array<double, 3> arpBeat {}; uint32_t arpRng = 1;
+    void perform (int n, double bpm, bool hostPlay, double ppq);
+    int chordNotes (int part, int note, int* out) const noexcept;
+    float audioEnv = 0;
+private:
     struct PendingOff { long long at; int ch, note; };
     std::array<PendingOff, 512> offs {}; int numOffs = 0; long long sampleClock = 0;
     hg::DemoTable demoTab; std::atomic<int> demoReq { -1 }; std::atomic<bool> demoOn { false };

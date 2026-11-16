@@ -209,7 +209,7 @@ juce::String destName (int d)
     if (d < 48) return "Osc " + juce::String (d / 16 + 1) + " " + o[d % 16];
     return d - 48 < 13 ? g[d - 48] : "Noise";
 }
-juce::String sourceName (int s) { static const char* n[kNumSources] = { "Off", "Velocity", "Key", "Mod wheel", "Aftertouch", "Random", "Env 1", "Env 2", "Env 3", "Env 4", "LFO 1", "LFO 2", "Step" }; return n[juce::jlimit (0, kNumSources - 1, s)]; }
+juce::String sourceName (int s) { static const char* n[kNumSources] = { "Off", "Velocity", "Key", "Mod wheel", "Aftertouch", "Random", "Env 1", "Env 2", "Env 3", "Env 4", "LFO 1", "LFO 2", "Step", "Audio input", "Alpha knob" }; return n[juce::jlimit (0, kNumSources - 1, s)]; }
 juce::String lfoShapeName (int s)
 {
     static const char* n[kLfoShapes] = { "Sine", "Triangle", "Saw up", "Saw down", "Square", "Pulse 25", "Pulse 12", "Sample & hold", "Smooth random", "Exp rise", "Exp fall", "Bounce sine",
@@ -377,6 +377,9 @@ std::shared_ptr<const Program> Program::fromVar (const juce::var& v, double samp
         for (int i = 0; i < kSteps; ++i) P->step.v[(size_t) i] = at (s["v"], i).isVoid() ? 0.0f : juce::jlimit (-1.0f, 1.0f, (float) (double) at (s["v"], i));
     }
     for (int m = 0; m < kMtx; ++m) { const auto o = at (v["mtx"], m); if (o.isObject()) { P->mtx[(size_t) m].src = I (o, "s", 0, 0, kNumSources - 1); P->mtx[(size_t) m].to = routesOf (o["d"]); } }
+    P->fx = fxFromVar (v["fx"]); P->keyPan = F (v, "kp", 0, -1, 1);
+    if (const auto a = v["arp"]; a.isObject()) { P->arp.on = num (a, "on", 0) > 0; P->arp.mode = I (a, "md", 0, 0, 4); P->arp.div = I (a, "dv", 2, 0, 5); P->arp.oct = I (a, "oc", 1, 1, 3); P->arp.gate = F (a, "gt", .8, .05, 1); }
+    if (const auto c = v["chd"]; c.isObject()) { P->chord.mode = I (c, "m", 0, 0, 6); P->chord.strum = F (c, "st", 0, 0, 1); }
     P->sine = &basicTable (3, sampleRate);   // FM taşıyıcısı (ses iş parçacığı kilitsiz okur)
     P->vol = F (v, "vol", .7, 0, 1); P->glide = F (v, "gl", 0, 0, 2); P->bend = F (v, "bd", 2, 0, 24);
     return P;
@@ -425,6 +428,9 @@ juce::var Program::toVar (const juce::var& v)
     { auto* s = new juce::DynamicObject(); juce::Array<juce::var> sv; for (auto x : P->step.v) sv.add (x); s->setProperty ("n", P->step.n); s->setProperty ("r", P->step.div); s->setProperty ("gl", P->step.glide); s->setProperty ("v", sv); s->setProperty ("d", routesVar (P->step.to)); o->setProperty ("stp", juce::var (s)); }
     juce::Array<juce::var> mx; for (const auto& M : P->mtx) { auto* m = new juce::DynamicObject(); m->setProperty ("s", M.src); m->setProperty ("d", routesVar (M.to)); mx.add (juce::var (m)); }
     o->setProperty ("mtx", mx); o->setProperty ("vol", P->vol); o->setProperty ("gl", P->glide); o->setProperty ("bd", P->bend);
+    o->setProperty ("fx", fxToVar (P->fx)); o->setProperty ("kp", P->keyPan);
+    { auto* a = new juce::DynamicObject(); a->setProperty ("on", P->arp.on ? 1 : 0); a->setProperty ("md", P->arp.mode); a->setProperty ("dv", P->arp.div); a->setProperty ("oc", P->arp.oct); a->setProperty ("gt", P->arp.gate); o->setProperty ("arp", juce::var (a)); }
+    { auto* c = new juce::DynamicObject(); c->setProperty ("m", P->chord.mode); c->setProperty ("st", P->chord.strum); o->setProperty ("chd", juce::var (c)); }
     if (P->sfPath.isNotEmpty()) o->setProperty ("sf", P->sfPath);
     return juce::var (o);
 }
@@ -517,7 +523,7 @@ void control (Voice& v, const Program& P, const Ctx& c, int n)
         {
             case sVel: s = v.vel; break; case sKey: s = v.key; break; case sWheel: s = c.wheel; break; case sAfter: s = c.after; break; case sRand: s = v.rnd; break;
             case sEnv1: case sEnv2: case sEnv3: case sEnv4: s = envOut (P.env[(size_t) (M.src - sEnv1)], v.ev[(size_t) (M.src - sEnv1)]); break;
-            case sLfo1: s = v.lOut[0]; break; case sLfo2: s = v.lOut[1]; break; case sStep: s = v.sOut; break; default: continue;
+            case sLfo1: s = v.lOut[0]; break; case sLfo2: s = v.lOut[1]; break; case sStep: s = v.sOut; break; case sAudio: s = c.audioIn; break; case sAlpha: s = c.alpha; break; default: continue;
         }
         add (M.to, s, 1);
     }
@@ -701,10 +707,235 @@ void render (Voice& v, const Program& P, const Ctx& c, float* L, float* R, int n
             outL += y * lv; outR += y * lv;
         }
         const float vol = P.vol * (.4f + .6f * v.vel) * juce::jmax (0.0f, 1 + v.mod[dAmp]) * amp * .3f;
-        const float pan = juce::jlimit (-1.0f, 1.0f, v.mod[dPan]), pl = pan > 0 ? 1 - pan : 1.0f, pr = pan < 0 ? 1 + pan : 1.0f;
+        const float pan = juce::jlimit (-1.0f, 1.0f, v.mod[dPan] + P.keyPan * v.key), pl = pan > 0 ? 1 - pan : 1.0f, pr = pan < 0 ? 1 + pan : 1.0f;
         L[i] += outL * vol * pl; R[i] += outR * vol * pr;
         v.t += dt;
         if (v.released && v.stage[0] == 3 && v.ev[0] < 1e-5f) { v.done = true; break; }
+    }
+}
+}
+
+// ================================================================ 2. aşama: efektler
+namespace xs
+{
+namespace
+{
+const char* const kFxNames[kFxTypes] = { "Empty", "Distortion", "Amp sim", "Bit reducer", "Crusher", "Phaser", "Flanger", "Ensemble", "Vibrato", "Vowel filter", "Equalizer", "Delay", "Hyperspace reverb", "Sidechainer", "Hyper filter" };
+const char* const kFxP[kFxTypes][4] = {
+    { "-", "-", "-", "-" }, { "Drive", "Mode", "Tone", "Output" }, { "Gain", "Bass", "Treble", "Cabinet" }, { "Bits", "Dither", "-", "Output" }, { "Rate", "Smooth", "-", "Output" },
+    { "Rate", "Depth", "Feedback", "Center" }, { "Rate", "Depth", "Feedback", "Delay" }, { "Rate", "Depth", "Width", "Tone" }, { "Rate", "Depth", "-", "-" },
+    { "Vowel", "Resonance", "Rate", "Depth" }, { "Low", "Mid", "Mid freq", "High" }, { "Time", "Feedback", "Ping-pong", "Damping" }, { "Size", "Damping", "Width", "Pre-delay" },
+    { "Depth", "Rate", "Release", "Offset" }, { "Cutoff", "Resonance", "Rate", "Depth" } };
+const double kFxDiv[8] = { 4, 2, 1.5, 1, .75, .5, .25, .125 };   // delay / sidechain / filtre LFO: vuruş
+inline float dist (float x, int mode, float d) noexcept
+{
+    const float g = 1 + d * 30; x *= g;
+    switch (mode)
+    {
+        case 0: return std::tanh (x);
+        case 1: return juce::jlimit (-1.0f, 1.0f, x);
+        case 2: return x >= 0 ? std::tanh (x) : std::tanh (x * .5f) * 1.4f;
+        case 3: return std::sin (x * .7f);
+        case 4: return juce::jmax (0.0f, std::tanh (x)) * 2 - .5f;
+        case 5: return std::abs (std::tanh (x)) * 2 - 1;
+        case 6: return std::round (std::tanh (x) * 6) / 6;
+        case 7: return std::sin (std::tanh (x) * 1.5707963f);
+        case 8: return std::tanh (x + .3f) - std::tanh (.3f);
+        case 9: { const float y = juce::jlimit (-1.5f, 1.5f, x); return y - y * y * y / 6.75f; }
+        case 10: return x > 0 ? 1 - std::exp (-x) : -(1 - std::exp (x)) * .7f;
+        default: return std::atan (x) * .6366f;
+    }
+}
+inline float onePole (float x, float& z, float a) noexcept { z += (x - z) * a; return z; }
+}
+
+juce::String fxName (int t) { return kFxNames[juce::jlimit (0, kFxTypes - 1, t)]; }
+juce::String fxParamName (int t, int p) { return kFxP[juce::jlimit (0, kFxTypes - 1, t)][juce::jlimit (0, 3, p)]; }
+
+FxChain fxFromVar (const juce::var& v)
+{
+    FxChain c {};
+    if (auto* a = v.getArray())
+        for (int i = 0; i < kFxSlots && i < a->size(); ++i)
+            if (auto* x = (*a)[i].getArray(); x != nullptr && x->size() >= 6)
+            {
+                auto& s = c[(size_t) i]; s.type = juce::jlimit (0, kFxTypes - 1, (int) (*x)[0]);
+                for (int k = 0; k < 4; ++k) s.p[(size_t) k] = juce::jlimit (0.0f, 1.0f, (float) (double) (*x)[k + 1]);
+                s.mix = juce::jlimit (0.0f, 1.0f, (float) (double) (*x)[5]);
+            }
+    return c;
+}
+juce::var fxToVar (const FxChain& c)
+{
+    juce::Array<juce::var> a;
+    for (auto& s : c) { juce::Array<juce::var> x; x.add (s.type); for (auto p : s.p) x.add (p); x.add (s.mix); a.add (x); }
+    return a;
+}
+
+void FxRack::prepare (double rate)
+{
+    sr = rate; maxD = (int) (sr * 2.1) + 8;
+    for (auto& x : s) { for (auto& b : x.buf) b.assign ((size_t) maxD, 0.0f); x.rev.setSampleRate (sr); }
+    reset();
+}
+void FxRack::reset()
+{
+    for (auto& x : s)
+    {
+        for (auto& b : x.buf) std::fill (b.begin(), b.end(), 0.0f);
+        x.w = 0; x.ph = x.ph2 = 0; x.cnt = 0; x.type = -1; x.rev.reset();
+        std::memset (x.z, 0, sizeof (x.z)); std::memset (x.ap, 0, sizeof (x.ap)); std::memset (x.svf, 0, sizeof (x.svf)); std::memset (x.eq, 0, sizeof (x.eq));
+        x.lp[0] = x.lp[1] = x.hold[0] = x.hold[1] = x.fb[0] = x.fb[1] = 0;
+    }
+}
+
+void FxRack::process (const FxChain& chain, float* L, float* R, int n, double bpm) noexcept
+{
+    const float kPiF = (float) kPi;
+    for (int si = 0; si < kFxSlots; ++si)
+    {
+        const auto& F = chain[(size_t) si]; auto& S = s[(size_t) si];
+        if (F.type != S.type) { if (S.type >= 0) { for (auto& b : S.buf) std::fill (b.begin(), b.end(), 0.0f); S.rev.reset(); std::memset (S.svf, 0, sizeof (S.svf)); std::memset (S.ap, 0, sizeof (S.ap)); } S.type = F.type; }
+        if (F.type == 0 || F.mix <= 0) continue;
+        const float a = F.p[0], b = F.p[1], c = F.p[2], d = F.p[3], wet = F.mix, dry = 1 - (F.type == 13 || F.type == 10 ? 0.0f : wet);
+        auto delayRead = [&] (int ch, double dl) { const int D = maxD; double rp = S.w - dl; while (rp < 0) rp += D; const int i0 = (int) rp % D, i1 = (i0 + 1) % D; const float f = (float) (rp - std::floor (rp)); return S.buf[ch][(size_t) i0] + (S.buf[ch][(size_t) i1] - S.buf[ch][(size_t) i0]) * f; };
+        if (F.type == 12)
+        {
+            juce::Reverb::Parameters rp; rp.roomSize = .5f + .5f * a; rp.damping = b; rp.width = c; rp.wetLevel = 1; rp.dryLevel = 0; rp.freezeMode = 0; S.rev.setParameters (rp);
+            const int pd = (int) (d * .25 * sr) + 1;
+            for (int i = 0; i < n; ++i)
+            {
+                S.buf[0][(size_t) S.w] = L[i]; S.buf[1][(size_t) S.w] = R[i];
+                float l = delayRead (0, pd), r = delayRead (1, pd); S.rev.processStereo (&l, &r, 1);
+                L[i] = L[i] * dry + l * wet * 1.2f; R[i] = R[i] * dry + r * wet * 1.2f; S.w = (S.w + 1) % maxD;
+            }
+            continue;
+        }
+        for (int i = 0; i < n; ++i)
+        {
+            float x[2] = { L[i], R[i] }, y[2] = { x[0], x[1] };
+            switch (F.type)
+            {
+                case 1: { const int mode = juce::jlimit (0, 11, (int) (b * 11.99f)); const float tone = .02f + c * c * .9f, out = .2f + d * 1.3f;
+                          for (int ch = 0; ch < 2; ++ch) y[ch] = onePole (dist (x[ch], mode, a), S.lp[ch], tone) * out; break; }
+                case 2: { for (int ch = 0; ch < 2; ++ch)
+                          {
+                              float v = x[ch]; const float low = onePole (v, S.z[ch][0], .02f); v += low * (b * 2 - 1) * 1.5f;
+                              const float hi = v - onePole (v, S.z[ch][1], .25f); v += hi * (c * 2 - 1) * 1.5f;
+                              v = std::tanh (v * (1 + a * 20)) * .7f;
+                              v = onePole (v, S.z[ch][2], .15f + (1 - d) * .5f); v -= onePole (v, S.z[ch][3], .01f);   // kabin: alçak ve yüksek kesim
+                              y[ch] = v;
+                          } break; }
+                case 3: { const float steps = std::pow (2.0f, 2 + (1 - a) * 14); for (int ch = 0; ch < 2; ++ch) y[ch] = std::round (x[ch] * steps + (b > 0 ? b * .5f * ((float) (S.cnt * 2654435761u >> 8 & 255) / 255.0f - .5f) : 0)) / steps * (.3f + d * 1.2f); ++S.cnt; break; }
+                case 4: { const int hold = 1 + (int) (a * a * 49); if (S.cnt++ % hold == 0) { S.hold[0] = x[0]; S.hold[1] = x[1]; }
+                          for (int ch = 0; ch < 2; ++ch) y[ch] = onePole (S.hold[ch], S.lp[ch], .05f + (1 - b) * .95f) * (.3f + d * 1.2f); break; }
+                case 5: { S.ph += (.05 + a * a * 6) / sr; if (S.ph >= 1) S.ph -= 1;
+                          for (int ch = 0; ch < 2; ++ch)
+                          {
+                              const float m = .5f + .5f * std::sin (2 * kPiF * (float) S.ph + ch * 1.5f), fc = 200.0f * std::pow (2.0f, (c * 4 + m * b * 4)), t = std::tan (kPiF * juce::jmin (fc, (float) sr * .45f) / (float) sr), co = (t - 1) / (t + 1);
+                              float v = x[ch] + S.fb[ch] * .85f * c;
+                              for (int k = 0; k < 8; ++k) { const float o = co * v + S.ap[ch][k]; S.ap[ch][k] = v - co * o; v = o; }
+                              S.fb[ch] = v; y[ch] = v;
+                          } break; }
+                case 6: case 7: case 8:
+                {
+                    const double rate = F.type == 7 ? .2 + a * 2 : F.type == 6 ? .05 + a * a * 4 : 1 + a * 9;
+                    S.ph += rate / sr; if (S.ph >= 1) S.ph -= 1;
+                    for (int ch = 0; ch < 2; ++ch) S.buf[ch][(size_t) S.w] = x[ch] + (F.type == 6 ? S.fb[ch] * (c * 1.8f - .9f) : 0.0f);
+                    for (int ch = 0; ch < 2; ++ch)
+                    {
+                        float v = 0;
+                        if (F.type == 6) { const double dl = (.0005 + d * .006 + b * .004 * (.5 + .5 * std::sin (2 * kPi * S.ph + ch * .5))) * sr; v = delayRead (ch, dl); S.fb[ch] = v; }
+                        else if (F.type == 7) { for (int k = 0; k < 3; ++k) { const double dl = (.008 + b * .012 * (.5 + .5 * std::sin (2 * kPi * (S.ph + k / 3.0) + ch * kPi * c))) * sr; v += delayRead (ch, dl) / 3; } v = onePole (v, S.lp[ch], .2f + d * .8f); }
+                        else { const double dl = (.002 + b * .006 * (.5 + .5 * std::sin (2 * kPi * S.ph))) * sr; v = delayRead (ch, dl); }
+                        y[ch] = v;
+                    }
+                    if (F.type == 8) { L[i] = y[0] * wet + x[0] * (1 - wet); R[i] = y[1] * wet + x[1] * (1 - wet); S.w = (S.w + 1) % maxD; continue; }
+                    S.w = (S.w + 1) % maxD; break;
+                }
+                case 9:
+                {
+                    S.ph += (.05 + c * 4) / sr; if (S.ph >= 1) S.ph -= 1;
+                    static const float FV[5][3] = { { 730, 1090, 2440 }, { 530, 1840, 2480 }, { 270, 2290, 3010 }, { 570, 840, 2410 }, { 300, 870, 2240 } };
+                    const float pos = juce::jlimit (0.0f, 3.999f, (a + d * .5f * std::sin (2 * kPiF * (float) S.ph)) * 4), fr = pos - std::floor (pos); const int vi = (int) pos;
+                    const float k = 2 - 2 * (.6f + b * .38f);
+                    for (int ch = 0; ch < 2; ++ch)
+                    {
+                        float acc = 0;
+                        for (int f = 0; f < 3; ++f)
+                        {
+                            const float hz = FV[vi][f] + (FV[vi + 1][f] - FV[vi][f]) * fr, g = std::tan (kPiF * hz / (float) sr);
+                            float* st = S.svf[ch][f]; const float a1 = 1 / (1 + g * (g + k)), a2 = g * a1, a3 = g * a2, v3 = x[ch] - st[1], v1 = a1 * st[0] + a2 * v3, v2 = st[1] + a2 * st[0] + a3 * v3;
+                            st[0] = 2 * v1 - st[0]; st[1] = 2 * v2 - st[1]; acc += v1 * k * (f == 0 ? 1.0f : .7f);
+                        }
+                        y[ch] = acc * 1.6f;
+                    }
+                    break;
+                }
+                case 10:
+                {
+                    const float gl = std::pow (10.0f, (a * 24 - 12) / 20), gm = std::pow (10.0f, (b * 24 - 12) / 20), gh = std::pow (10.0f, (d * 24 - 12) / 20);
+                    const float fm = 200 * std::pow (2.0f, c * 5), cm = std::tan (kPiF * fm / (float) sr), km = 1.4f;
+                    for (int ch = 0; ch < 2; ++ch)
+                    {
+                        const float lo = onePole (x[ch], S.eq[ch][0][0], (float) (1 - std::exp (-2 * kPi * 200 / sr))), hiBase = onePole (x[ch], S.eq[ch][1][0], (float) (1 - std::exp (-2 * kPi * 5000 / sr))), hi = x[ch] - hiBase;
+                        float* st = S.eq[ch][2]; const float a1 = 1 / (1 + cm * (cm + km)), a2 = cm * a1, a3 = cm * a2, v3 = x[ch] - st[1], v1 = a1 * st[0] + a2 * v3, v2 = st[1] + a2 * st[0] + a3 * v3; st[0] = 2 * v1 - st[0]; st[1] = 2 * v2 - st[1];
+                        const float band = v1 * km;
+                        y[ch] = x[ch] + lo * (gl - 1) + band * (gm - 1) + hi * (gh - 1);
+                    }
+                    break;
+                }
+                case 11:
+                {
+                    const double dl = juce::jmin ((double) maxD - 4, 60.0 / bpm * kFxDiv[juce::jlimit (0, 7, (int) (a * 7.99f))] * sr);
+                    const float l = delayRead (0, dl), r = delayRead (1, dl), damp = .05f + (1 - d) * .9f;
+                    const float fl = onePole (l, S.lp[0], damp), fr2 = onePole (r, S.lp[1], damp), fbk = b * .92f;
+                    S.buf[0][(size_t) S.w] = x[0] + (fl * (1 - c) + fr2 * c) * fbk; S.buf[1][(size_t) S.w] = x[1] + (fr2 * (1 - c) + fl * c) * fbk;
+                    if (c > 0) S.buf[1][(size_t) S.w] = x[1] * (1 - c) + fl * fbk * c + fr2 * fbk * (1 - c);
+                    y[0] = l; y[1] = r; S.w = (S.w + 1) % maxD; break;
+                }
+                case 13:
+                {
+                    const double beats = kFxDiv[juce::jlimit (0, 7, 3 + (int) ((1 - b) * 4.99f) - 2)];
+                    S.ph += bpm / 60.0 / beats / sr; if (S.ph >= 1) S.ph -= 1;
+                    const float p = (float) std::fmod (S.ph + d, 1.0), env = 1 - a * std::pow (juce::jmax (0.0f, 1 - p / (.1f + c * .85f)), 1.5f);
+                    y[0] = x[0] * env; y[1] = x[1] * env; L[i] = x[0] * (1 - wet) + y[0] * wet; R[i] = x[1] * (1 - wet) + y[1] * wet; continue;
+                }
+                case 14:
+                {
+                    const double beats = kFxDiv[juce::jlimit (0, 7, (int) (c * 7.99f))]; S.ph += bpm / 60.0 / beats / sr; if (S.ph >= 1) S.ph -= 1;
+                    const float m = std::sin (2 * kPiF * (float) S.ph), fc = juce::jlimit (30.0f, (float) sr * .45f, 60.0f * std::pow (2.0f, a * 9 + m * d * 3)), g = std::tan (kPiF * fc / (float) sr), k = 2 - 2 * b * .97f;
+                    for (int ch = 0; ch < 2; ++ch)
+                    {
+                        float* st = S.svf[ch][0]; const float in = std::tanh (x[ch] * 1.3f), a1 = 1 / (1 + g * (g + k)), a2 = g * a1, a3 = g * a2, v3 = in - st[1], v1 = a1 * st[0] + a2 * v3, v2 = st[1] + a2 * st[0] + a3 * v3;
+                        st[0] = 2 * v1 - st[0]; st[1] = 2 * v2 - st[1]; y[ch] = v2;
+                    }
+                    break;
+                }
+                default: break;
+            }
+            if (F.type == 10) { L[i] = x[0] + (y[0] - x[0]) * wet; R[i] = x[1] + (y[1] - x[1]) * wet; }
+            else { L[i] = x[0] * dry + y[0] * wet; R[i] = x[1] * dry + y[1] * wet; }
+        }
+    }
+}
+
+void MasterFx::process (const Master& m, float* L, float* R, int n) noexcept
+{
+    const float hpA = (float) (1 - std::exp (-2 * kPi * (20 * std::pow (20.0, (double) m.hp)) / sr)), lpA = (float) (1 - std::exp (-2 * kPi * juce::jmin (sr * .45, 400 * std::pow (50.0, (double) m.lp)) / sr));
+    const float w = m.width * 2, tilt = (m.color - .5f) * 2, ceil = juce::jlimit (.1f, 1.0f, m.ceiling);
+    for (int i = 0; i < n; ++i)
+    {
+        float l = L[i], r = R[i];
+        if (m.hp > 0) { st[0] += (l - st[0]) * hpA; st[1] += (r - st[1]) * hpA; l -= st[0]; r -= st[1]; }
+        if (m.lp < 1) { st[2] += (l - st[2]) * lpA; st[3] += (r - st[3]) * lpA; l = st[2]; r = st[3]; }
+        if (tilt != 0)
+        {   // çıkış rengi: 800 Hz çevresinde eğim (koyu <-> parlak)
+            const float a = (float) (1 - std::exp (-2 * kPi * 800 / sr)); st[4] += (l - st[4]) * a; st[5] += (r - st[5]) * a;
+            l += (l - st[4]) * tilt * .6f - st[4] * tilt * .3f; r += (r - st[5]) * tilt * .6f - st[5] * tilt * .3f;
+        }
+        const float M = (l + r) * .5f, S = (l - r) * .5f * w; l = M + S; r = M - S;
+        L[i] = l * ceil; R[i] = r * ceil;
     }
 }
 }

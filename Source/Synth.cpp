@@ -153,6 +153,7 @@ void Engine::prepare (double sampleRate, int maxBlock)
     juce::dsp::ProcessSpec spec { sr, (juce::uint32) maxBlockSize, 2 };
     comp.prepare (spec); comp.setThreshold (-16); comp.setRatio (6); comp.setAttack (3); comp.setRelease (160);
     drumMachine.prepare (sr); loudness.prepare (sr, maxBlockSize);
+    for (auto& r : racks) r.prepare (sr); masterFx.prepare (sr);
     for (auto& s : inst) s.prepare (sr);
     reset();
 }
@@ -298,7 +299,7 @@ void Engine::startVoice (Voice& v, const Patch& p, int track, int note, int vel,
 xs::Ctx Engine::ctxFor (const Macros& m) const noexcept
 {
     xs::Ctx c; c.sr = sr; c.bpm = bpm; c.cutMul = std::pow (2.0f, m.cutoff * 3); c.resAdd = m.reso * .5f; c.atkMul = std::pow (2.0f, m.attack * 3); c.relMul = std::pow (2.0f, m.release * 3);
-    c.drive = juce::jmax (0.0f, m.drive * .6f); c.lfoMul = juce::jmax (0.0f, 1 + juce::jlimit (-1.0f, 1.0f, m.movement)); c.wheel = wheel.load (std::memory_order_relaxed); c.after = after.load (std::memory_order_relaxed);
+    c.drive = juce::jmax (0.0f, m.drive * .6f); c.lfoMul = juce::jmax (0.0f, 1 + juce::jlimit (-1.0f, 1.0f, m.movement)); c.wheel = wheel.load (std::memory_order_relaxed); c.after = after.load (std::memory_order_relaxed); c.audioIn = audioIn.load (std::memory_order_relaxed); c.alpha = alpha.load (std::memory_order_relaxed);
     c.maxPh = quality.maxUnison <= 2 ? 8 : quality.maxUnison <= 4 ? 16 : 32; c.controlRate = quality.controlRate;
     return c;
 }
@@ -553,6 +554,7 @@ void Engine::render (juce::AudioBuffer<float>& out, int start, int num)
             const float inG = (t == 0 && p->chordsHalf) ? .6f : 1.0f;
             if (inG != 1.0f) { juce::FloatVectorOperations::multiply (L, inG, n); juce::FloatVectorOperations::multiply (R, inG, n); }
             const bool own = inst[t].active();   // kendi sesi: sentezleyicinin koro/sürüşü uygulanmaz
+            if (! own && p->xs != nullptr) racks[(size_t) t].process (p->xs->fx, L, R, n, bpm);   // Synth X efekt rafı
             if (! own && p->ch > 0 && quality.chorus) applyChorus (t, p->ch, L, R, n);
             if (! own && p->dr > 0) for (int i = 0; i < n; ++i) { L[i] = sat (L[i], p->dr); R[i] = sat (R[i], p->dr); }
             {   // DC engelleyici (5 Hz) ve mono bas: yan kanalın alçak frekansları atılır (ortadaki bas tek kanal kalır)
@@ -621,6 +623,7 @@ void Engine::render (juce::AudioBuffer<float>& out, int start, int num)
         }
         reverb.processStereo (rvL, rvR, n);
         for (int i = 0; i < n; ++i) { oL[i] += rvL[i] * .55f; if (oR) oR[i] += rvR[i] * .55f; }
+        if (oR) masterFx.process (masterSet, oL, oR, n);   // Synth X master: filtreler, renk, stereo genişlik, çıkış
         // master: kazanç, kompresör, yumuşak limiter, güvenlik sınırı
         juce::FloatVectorOperations::multiply (oL, .42f, n); if (oR) juce::FloatVectorOperations::multiply (oR, .42f, n);
         {

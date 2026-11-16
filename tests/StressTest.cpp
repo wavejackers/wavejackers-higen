@@ -1805,7 +1805,7 @@ static void testSynthX (const FailFn& fail)
     // eklenti: akor partisine Synth X programı; klasik sesten çevirme; proje kaydı; çalma
     HitGenProcessor p; p.setPlayConfigDetails (0, 2, sr, 512); p.prepareToPlay (sr, 512); p.idle();
     { juce::MidiBuffer mid; juce::AudioBuffer<float> blk (2, 512); for (int i = 0; i < 300; ++i) { blk.clear(); p.processBlock (blk, mid); } }   // ses yüksekliği ölçeri ve açılış sesi yerleşsin
-    if (p.xsProgram (0).isObject()) fail ("synthx: classic factory sound should not carry a Synth X program");
+    if (! p.xsProgram (0).isObject()) fail ("synthx: every part should play with Synth X (sound converted automatically)");
     auto conv = p.xsFromClassic (0);
     if (! conv.isObject() || (int) conv["o"][0]["t"] != 1) fail ("synthx: classic conversion produced no oscillator");
     p.setXsProgram (0, conv);
@@ -1827,10 +1827,10 @@ static void testSynthX (const FailFn& fail)
         ed->setTab (1); auto& sp = ed->sounds(); sp.setPart (1); sp.setView (SoundPage::vSynth);
         auto& X = sp.synthX();
         if (! X.isVisible()) fail ("synthx: editor not visible");
-        if (p.xsProgram (1).isObject()) fail ("synthx: bass part should start on the classic engine");
+        if (! p.xsProgram (1).isObject()) fail ("synthx: bass part should be converted to Synth X");
         X.applyTemplate (4);   // PD bas
         if (! p.xsProgram (1).isObject() || (int) p.xsProgram (1)["o"][0]["sm"] != 2) fail ("synthx: template did not reach the part");
-        for (int t = 0; t < 8; ++t) { X.showTab (t); if (X.numControls() < (t == 6 ? 8 : 10)) fail ("synthx: tab " + juce::String (t) + " has only " + juce::String (X.numControls()) + " controls"); }
+        for (int t = 0; t < 10; ++t) { X.showTab (t); if (X.numControls() < (t == 6 ? 8 : t == 9 ? 9 : 10)) fail ("synthx: tab " + juce::String (t) + " has only " + juce::String (X.numControls()) + " controls"); }
         X.setValue ("o.0.f.c", 333.0);
         if (std::abs ((double) p.xsProgram (1)["o"][0]["f"]["c"] - 333.0) > .01) fail ("synthx: control edit did not reach the program");
         for (int i = 0; i < SynthXPanel::numTemplates(); ++i)
@@ -1845,6 +1845,55 @@ static void testSynthX (const FailFn& fail)
         auto f = juce::File ("/tmp/b-asan/synthx-page.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os);
         X.showTab (4); auto img2 = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f);
         auto f2 = juce::File ("/tmp/b-asan/synthx-env.png"); f2.deleteFile(); juce::FileOutputStream os2 (f2); png.writeImageToStream (img2, os2);
+    }
+    {   // 2. aşama: 14 efektin her biri sonlu, sesi değiştirir; boş yuva dokunmaz; master genişlik 0 = mono
+        xs::FxRack rack; rack.prepare (sr); juce::AudioBuffer<float> src (2, 24000); juce::Random rn (3);
+        for (int i = 0; i < 24000; ++i) { const float x = (float) std::sin (2 * juce::MathConstants<double>::pi * 220 * i / sr) * .4f + (rn.nextFloat() - .5f) * .05f; src.setSample (0, i, x); src.setSample (1, i, x * .8f); }
+        for (int t = 0; t < xs::kFxTypes; ++t)
+        {
+            xs::FxChain ch {}; ch[0].type = t; ch[0].mix = .7f; ch[0].p = { { .6f, .5f, .4f, .5f } };
+            auto b = src; rack.reset(); for (int i = 0; i < 24000; i += 512) rack.process (ch, b.getWritePointer (0, i), b.getWritePointer (1, i), juce::jmin (512, 24000 - i), 120);
+            const float pk = b.getMagnitude (0, 24000); float diff = 0; for (int i = 0; i < 24000; ++i) diff = juce::jmax (diff, std::abs (b.getSample (0, i) - src.getSample (0, i)));
+            if (! std::isfinite (pk) || pk > 4) fail ("fx: " + xs::fxName (t) + " peak " + juce::String (pk));
+            if ((t == 0) != (diff < 1e-6f)) fail ("fx: " + xs::fxName (t) + (t == 0 ? " should not touch the signal" : " had no effect"));
+        }
+        xs::MasterFx mf; mf.prepare (sr); auto b = src; xs::Master m; m.width = 0; mf.process (m, b.getWritePointer (0), b.getWritePointer (1), 24000);
+        float side = 0; for (int i = 0; i < 24000; ++i) side = juce::jmax (side, std::abs (b.getSample (0, i) - b.getSample (1, i)));
+        if (side > 1e-5f) fail ("master: width 0 should be mono");
+        if (xs::fxName (12) != "Hyperspace reverb" || xs::kFxTypes != 15) fail ("fx: list");
+    }
+    {   // 3. aşama: akor modu (gamda üçlü), arpej (tutulan notalar tempoyla sırayla), strum
+        HitGenProcessor a; a.setPlayConfigDetails (0, 2, sr, 512); a.prepareToPlay (sr, 512); a.idle();
+        auto prg = a.xsProgram (2); prg.getDynamicObject()->setProperty ("chd", juce::JSON::parse ("{\"m\":1,\"st\":0}")); a.setXsProgram (2, prg); a.idle();
+        int cn[4]; const int nc = a.chordNotes (2, 60, cn);
+        if (nc != 3 || cn[1] - 60 < 3 || cn[1] - 60 > 4 || cn[2] - 60 < 6 || cn[2] - 60 > 8) fail ("chord mode: triad on C4 is " + juce::String (cn[1] - 60) + "," + juce::String (cn[2] - 60));
+        prg.getDynamicObject()->setProperty ("chd", juce::JSON::parse ("{\"m\":0,\"st\":0}"));
+        prg.getDynamicObject()->setProperty ("arp", juce::JSON::parse ("{\"on\":1,\"md\":0,\"dv\":2,\"oc\":1,\"gt\":0.5}")); a.setXsProgram (2, prg); a.idle();
+        if (auto* kt = a.apvts.getParameter ("keysTo")) kt->setValueNotifyingHost (1.0f);
+        juce::MidiBuffer mid; juce::AudioBuffer<float> blk (2, 512);
+        mid.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0); mid.addEvent (juce::MidiMessage::noteOn (1, 67, (juce::uint8) 100), 0);
+        int voicesSeen = 0; float pk = 0;
+        for (int i = 0; i < 200; ++i) { blk.clear(); a.processBlock (blk, mid); mid.clear(); pk = juce::jmax (pk, blk.getMagnitude (0, 512)); voicesSeen = juce::jmax (voicesSeen, a.engine.activeVoices()); }
+        if (a.numHeld[2] != 2) fail ("arp: held notes " + juce::String (a.numHeld[2]));
+        if (a.arpIdx[2] < 6 || pk < .01f) fail ("arp: produced " + juce::String (a.arpIdx[2]) + " steps, peak " + juce::String (pk));
+        mid.addEvent (juce::MidiMessage::noteOff (1, 60), 0); mid.addEvent (juce::MidiMessage::noteOff (1, 67), 0); blk.clear(); a.processBlock (blk, mid);
+        if (a.numHeld[2] != 0) fail ("arp: notes not released");
+    }
+    {   // X-Gen: her tohum çalan bir ses üretir
+        std::unique_ptr<HitGenEditor> ed (dynamic_cast<HitGenEditor*> (p.createEditor()));
+        ed->setTab (1); auto& sp = ed->sounds(); sp.setView (SoundPage::vSynth); auto& X = sp.synthX();
+        for (uint32_t sd = 1; sd <= 12; ++sd)
+        {
+            sp.setPart ((int) sd % 3); X.xgen (sd * 7919u); auto P = xs::Program::fromVar (p.xsProgram ((int) sd % 3), sr);
+            auto Vp = std::make_unique<xs::Voice>(); xs::Ctx c; c.sr = sr; xs::start (*Vp, *P, 52, 100, 1, 3, c);
+            juce::AudioBuffer<float> b (2, 48000); b.clear(); for (int k = 0; k < 48000; k += 256) xs::render (*Vp, *P, c, b.getWritePointer (0, k), b.getWritePointer (1, k), juce::jmin (256, 48000 - k));
+            const float pk = b.getMagnitude (0, 48000); if (! std::isfinite (pk) || pk < .005f || pk > 2.5f) fail ("x-gen: seed " + juce::String ((int) sd) + " peak " + juce::String (pk));
+        }
+        X.showTab (8); X.setValue ("fx.0.0", 12); X.setValue ("fx.1.0", 1); X.showTab (8);
+        auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f);
+        auto f = juce::File ("/tmp/b-asan/synthx-fx.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os);
+        X.showTab (9); auto img2 = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f);
+        auto f2 = juce::File ("/tmp/b-asan/synthx-play.png"); f2.deleteFile(); juce::FileOutputStream os2 (f2); png.writeImageToStream (img2, os2);
     }
     std::cout << "synthx: ok\n";
 }

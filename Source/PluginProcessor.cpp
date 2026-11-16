@@ -88,6 +88,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout HitGenProcessor::createLayou
         for (auto& [id, def] : fl)
             L.add (std::make_unique<AudioParameterFloat> (ParameterID { "lf_" + String (id), 4 }, "Loop " + String (id), NormalisableRange<float> (0, 100, 1), def, pct));
     }
+    // Synth X master bölümü ve Alpha düğmesi (matris kaynağı)
+    {
+        const std::pair<const char*, float> mp[] = { { "mst_hp", 0 }, { "mst_lp", 100 }, { "mst_width", 50 }, { "mst_color", 50 } };
+        for (auto& [id, def] : mp) L.add (std::make_unique<AudioParameterFloat> (ParameterID { id, 6 }, juce::String ("Master ") + (juce::String (id).substring (4)), NormalisableRange<float> (0, 100, 1), def, pct));
+        L.add (std::make_unique<AudioParameterFloat> (ParameterID { "mst_out", 6 }, "Master output", NormalisableRange<float> (-24, 6, .1f), 0.0f, AudioParameterFloatAttributes().withLabel ("dB")));
+        L.add (std::make_unique<AudioParameterFloat> (ParameterID { "xs_alpha", 6 }, "Alpha knob", NormalisableRange<float> (0, 100, .1f), 0.0f, pct));
+    }
     // Koro: çalma ve makrolar (DAW otomasyonu için)
     L.add (std::make_unique<AudioParameterBool> (ParameterID { "ch_play", 5 }, "Choir play", false));
     {
@@ -199,7 +206,14 @@ void HitGenProcessor::loadPatch (int track, bool live)
     const auto& base = data.soundById (sounds[(size_t) track]);
     if (base.isVoid()) return;
     const int part = partOfTrack (track);
+    if (! xsEdit[(size_t) part].isObject() || xsAuto[(size_t) part])   // eski motor kullanılmaz: program yoksa (ya da otomatik çevrildiyse) sesten yeniden çevir
+    { xsEdit[(size_t) part] = juce::var(); xsEdit[(size_t) part] = xsFromClassic (part); xsAuto[(size_t) part] = true; ++xsVersion; }
     auto np = hg::Patch::fromVar (currentSoundVar (part), data, sr, tableCache[(size_t) part].get());
+    if (np->xs != nullptr)
+    {
+        auto& pf = perf[(size_t) part]; const auto& X = *np->xs;
+        pf.chord.store (X.chord.mode); pf.strum.store (X.chord.strum); pf.arpOn.store (X.arp.on ? 1 : 0); pf.arpMode.store (X.arp.mode); pf.arpDiv.store (X.arp.div); pf.arpOct.store (X.arp.oct); pf.gate.store (X.arp.gate);
+    }
     if (np->usesTable()) tableCache[(size_t) part] = std::make_unique<hg::Patch> (*np);
     // eski yamaları hemen sil: zamanlayıcı işlemeden peş peşe çok yama gelirse (ör. mesaj döngüsü olmayan test ya da sunucu)
     // 64'lük çöp kuyruğu dolup yama sızdırmasın. Yalnızca mesaj iş parçacığında: setStateInformation başka iş parçacığından gelebilir.
@@ -241,7 +255,7 @@ juce::var HitGenProcessor::currentSoundVar (int part) const
 
 void HitGenProcessor::setXsProgram (int part, const juce::var& prog)
 {
-    part = juce::jlimit (0, 2, part); xsEdit[(size_t) part] = prog.isObject() ? prog : juce::var(); ++xsVersion;
+    part = juce::jlimit (0, 2, part); xsEdit[(size_t) part] = prog.isObject() ? prog : juce::var(); xsAuto[(size_t) part] = ! prog.isObject(); ++xsVersion;
     loadPatch (trackOfPart (part), true);
 }
 
@@ -258,7 +272,8 @@ juce::var HitGenProcessor::xsFromClassic (int part) const
         auto O = P["o"][k];
         if (oa == nullptr || k >= oa->size()) { set (O, "t", 0); continue; }
         const auto L = (*oa)[k]; const auto w = L[0].toString();
-        set (O, "t", 1); set (O, "a", w == "q" ? 1 : w == "t" ? 2 : w == "s" ? 3 : w == "x" ? 5 : 0);
+        set (O, "t", 1); set (O, "a", w == "q" ? 1 : w == "t" ? 2 : w == "s" ? 3 : 0);
+        if (w == "x") { set (O, "t", 2); const auto* wt = s["wt"].getArray(); set (O, "a", 12 * 8 + juce::jlimit (0, 7, (int) std::lround ((wt != nullptr && wt->size() > 3 ? (double) (*wt)[3] : 1.0) * 7))); }
         const double det = (double) L[1], oct = (double) L[2], gain = (double) L[3];
         set (O, "oc", juce::jlimit (-3, 3, (int) std::lround (oct))); set (O, "fi", juce::jlimit (-1.0, 1.0, det / 100.0)); set (O, "lv", juce::jlimit (0.0, 1.0, gain > 0 ? gain : .8));
         if (const auto* u = s["u"].getArray()) { set (O, "u", juce::jlimit (1, 12, (int) (*u)[0])); set (O, "d", juce::jlimit (0.0, 1.0, (double) (*u)[1] / 40.0)); }
@@ -284,6 +299,38 @@ juce::var HitGenProcessor::xsFromClassic (int part) const
             set (Lf, "d", d);
         }
     set (P, "gl", s["gl"].isVoid() ? 0.0 : (double) s["gl"]);
+    // klasik sesin diğer özellikleri: alt osilatör, gürültü, FM, perde zarfı, vibrato, katlama, ünlü, seviye
+    const int used = oa != nullptr ? juce::jmin (3, oa->size()) : 0;
+    auto num = [&s] (const char* k) { return s[k].isVoid() ? 0.0 : (double) s[k]; };
+    if (num ("sub") > 0 && used < 3) { auto O = P["o"][used]; set (O, "t", 1); set (O, "a", 3); set (O, "oc", -1); set (O, "lv", juce::jlimit (0.0, 1.0, num ("sub"))); set (O["f"], "t", 0); }
+    if (num ("noi") > 0) { auto L = P["lx"]; set (L, "on", 1); set (L, "w", -1); set (L, "t", 1); set (L, "c", 2000); set (L, "lv", juce::jlimit (0.0, 1.0, num ("noi") * 2)); }
+    if (const auto* fm = s["fm"].getArray(); fm != nullptr && fm->size() >= 2)
+    {
+        auto O = P["o"][0]; set (O, "sm", 1); set (O, "fr", juce::jlimit (.25, 16.0, (double) (*fm)[0])); set (O, "fm", juce::jlimit (0.0, 1.0, (double) (*fm)[1] * .08 * (fm->size() > 3 ? (double) (*fm)[3] : .25)));
+        auto E = P["env"]; E.getArray()->set (2, juce::Array<juce::var> { .001, fm->size() > 2 ? (double) (*fm)[2] : .2, 0, .2, 0 });
+        juce::Array<juce::var> r; r.add (juce::Array<juce::var> { 9, juce::jlimit (0.0, 1.0, (double) (*fm)[1] * .08) }); for (int i = 1; i < 5; ++i) r.add (juce::Array<juce::var> { -1, 0 });
+        P["ed"].getArray()->set (1, r);
+    }
+    if (const auto* pe = s["pe"].getArray(); pe != nullptr && pe->size() >= 2 && (double) (*pe)[0] != 0)
+    {
+        P["env"].getArray()->set (3, juce::Array<juce::var> { .001, juce::jmax (.01, (double) (*pe)[1]), 0, .1, 0 });
+        juce::Array<juce::var> r; r.add (juce::Array<juce::var> { (int) xs::dPitch, juce::jlimit (-1.0, 1.0, (double) (*pe)[0] / 24.0) }); for (int i = 1; i < 5; ++i) r.add (juce::Array<juce::var> { -1, 0 });
+        P["ed"].getArray()->set (2, r);
+    }
+    if (const auto* vb = s["vib"].getArray(); vb != nullptr && vb->size() >= 2 && (double) (*vb)[1] > 0)
+    {
+        auto L = P["lfo"][1]; set (L, "w", 0); set (L, "sy", 0); set (L, "r", (double) (*vb)[0]); set (L, "fa", vb->size() > 2 ? (double) (*vb)[2] + .3 : .3);
+        juce::Array<juce::var> r; r.add (juce::Array<juce::var> { (int) xs::dPitch, juce::jlimit (0.0, 1.0, (double) (*vb)[1] / 100.0 / 24.0) }); for (int i = 1; i < 5; ++i) r.add (juce::Array<juce::var> { -1, 0 });
+        set (L, "d", r);
+    }
+    if (num ("fold") > 0) for (int k = 0; k < used; ++k) { auto O = P["o"][k]; if ((int) O["sm"] == 0) set (O, "sh", juce::jlimit (0.0, 1.0, num ("fold"))); }
+    if (s["vow"].toString().isNotEmpty() && used > 0)
+    {   // ünlü sesler: ROM "Vowel" tabloları (a e i o u)
+        const auto vw = s["vow"].toString(); const int vi = vw == "e" ? 1 : vw == "i" ? 2 : vw == "o" ? 3 : vw == "u" ? 4 : 0;
+        auto O = P["o"][0]; set (O, "t", 2); set (O, "a", 15 * 8 + vi);
+    }
+    const auto id = sounds[(size_t) trackOfPart (juce::jlimit (0, 2, part))];
+    set (P, "vol", juce::jlimit (.05, 1.0, (s["vol"].isVoid() ? .2 : (double) s["vol"]) * data.trim (id) / .24));
     return xs::Program::toVar (P);
 }
 
@@ -331,7 +378,7 @@ void HitGenProcessor::applyRefToProject (const hg::RefAnalysis& a)
 void HitGenProcessor::setSound (int track, const juce::String& id, bool isManual)
 {
     sounds[(size_t) track] = id; if (isManual) manual[(size_t) track] = true;
-    if (track != hg::kDrums) { const auto& xs = data.soundById (id)["xs"]; xsEdit[(size_t) partOfTrack (track)] = xs.isObject() ? xs::Program::toVar (xs) : juce::var(); ++xsVersion; applySoundToParams (partOfTrack (track)); }
+    if (track != hg::kDrums) { const auto& xs = data.soundById (id)["xs"]; xsEdit[(size_t) partOfTrack (track)] = xs.isObject() ? xs::Program::toVar (xs) : juce::var(); xsAuto[(size_t) partOfTrack (track)] = ! xs.isObject(); ++xsVersion; applySoundToParams (partOfTrack (track)); }
     loadPatch (track);
 }
 
@@ -585,6 +632,11 @@ void HitGenProcessor::pushLoopParams()
 
 void HitGenProcessor::timerCallback()
 {
+    if (auto r = result())   // akor modu için gam (12 bitlik perde sınıfı maskesi)
+    {
+        int mask = 0; if (const auto* iv = data.scale (r->P.scale)["iv"].getArray()) for (auto& x : *iv) mask |= 1 << (((int) x % 12 + 12) % 12);
+        if (mask != 0) { scaleMask.store (mask); scaleKey.store (r->P.key); }
+    }
     { const double hb = hostBpm.load(); loop.setTempo (hb > 0 ? hb : (double) p ("bpm")->load()); syncLoopParams(); loop.collect(); choir.setTempo (hb > 0 ? hb : (double) p ("bpm")->load()); syncChoirParams(); choir.collect(); }
     // ses iş parçacığının bıraktığı eski desenleri ve yamaları sil
     int s1, n1, s2, n2; patTrash.prepareToRead (patTrash.getNumReady(), s1, n1, s2, n2);
@@ -619,6 +671,11 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         fromIn = true;
     }
     captureFromInput.store (fromIn);
+    {   // Dynamic Link: giriş sesinin zarfı Synth X matrisine kaynak olur (giriş bağlı değilse 0)
+        float pk = 0; if (fromIn) pk = juce::jmax (capIn.getMagnitude (0, 0, n), capIn.getMagnitude (1, 0, n));
+        audioEnv = pk > audioEnv ? pk : audioEnv * std::pow (.5f, (float) n / (float) (getSampleRate() * .08));
+        engine.audioIn.store (juce::jlimit (0.0f, 1.0f, audioEnv * 2), std::memory_order_relaxed);
+    }
     if (fromIn) choir.feed (capIn.getReadPointer (0), capIn.getReadPointer (1), n, getSampleRate());   // koro kaydı: DAW girişi bağlıysa oradan
     buffer.clear();
     {   // çok çıkış: etkin ek bus'lara ilgili izi yönlendir (iz kimliği: 0 akor, 1 bas, 2 davul, 3 melodi)
@@ -654,6 +711,8 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     engine.quality = q == 0 ? hg::Quality { 2, 32, false } : q == 2 ? hg::Quality { 7, 8, true } : hg::Quality { 4, 16, true };
     engine.thick = pThick->load() / 100.0f; engine.pumpAmt = pPump->load() / 100.0f; engine.master = pMaster->load();
     engine.loudnessOn = pLoud->load() > .5f;
+    engine.masterSet = { p ("mst_hp")->load() / 100.0f, p ("mst_lp")->load() / 100.0f, p ("mst_width")->load() / 100.0f, p ("mst_color")->load() / 100.0f, std::pow (10.0f, p ("mst_out")->load() / 20.0f), 0 };
+    engine.alpha.store (p ("xs_alpha")->load() / 100.0f, std::memory_order_relaxed);
     {
         auto& dm = engine.drumMachine; dm.creative = pCreative->load() > .5f;
         for (int pad = 0; pad < hg::kNumPads; ++pad)
@@ -704,6 +763,7 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         if (msg.isNoteOn()) blockEv[(size_t) numBlockEv++] = { meta.samplePosition, 1, keysTrack, msg.getNoteNumber(), msg.getVelocity(), -1 };
         else if (msg.isNoteOff()) blockEv[(size_t) numBlockEv++] = { meta.samplePosition, 2, keysTrack, msg.getNoteNumber(), 0, 0 };
     }
+    perform (n, bpm, hostPlay, ppq);   // akor modu, strum, arpej
     if (const int rq = demoReq.exchange (-1); rq != -1)
     {
         if (rq == -2) { if (demoRun) engine.allNotesOff(); demoRun = false; demoOn.store (false); }
@@ -771,7 +831,7 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         }
         else if (e.kind == 3) engine.noteOn (e.track, e.note, e.vel, e.len, 0);   // ön dinleme: MIDI çıkışına gitmez
         else if (e.kind == 1) { if (sampOn && e.track != hg::kDrums) ref.samplerNoteOn (e.note, e.vel, e.off); else engine.noteOn (e.track, e.note, e.vel, -1, 0); }
-        else { if (sampOn && e.track != hg::kDrums) ref.samplerNoteOff (e.note); else engine.noteOff (e.track, e.note, 0); }
+        else if (e.kind == 2) { if (sampOn && e.track != hg::kDrums) ref.samplerNoteOff (e.note); else engine.noteOff (e.track, e.note, 0); }   // -1: arpej tarafından tüketildi
     }
     if (pos < n) engine.render (buffer, pos, n - pos);
     for (int t = 0; t < 4; ++t)   // ek çıkışlar: master düzeyi ve -1 dBFS yumuşak sınır (ana çıkışın limiter'ı bunlara uygulanmaz)
@@ -847,7 +907,7 @@ juce::ValueTree HitGenProcessor::stateTree()
     for (int t = 0; t < 4; ++t) { extra.setProperty (juce::String ("sound_") + kPartIds[t], sounds[(size_t) t], nullptr); extra.setProperty (juce::String ("manual_") + kPartIds[t], manual[(size_t) t], nullptr); }
     extra.setProperty ("lang", lang, nullptr); extra.setProperty ("uiScale", uiScale, nullptr); extra.setProperty ("contrast", highContrast, nullptr);
     extra.setProperty ("sdv", 1, nullptr);   // ses tasarımı parametreleri geçerli (2.2+)
-    for (int pt = 0; pt < 3; ++pt) if (xsEdit[(size_t) pt].isObject()) extra.setProperty ("xs_" + juce::String (pt), juce::JSON::toString (xsEdit[(size_t) pt], true), nullptr);
+    for (int pt = 0; pt < 3; ++pt) if (xsEdit[(size_t) pt].isObject() && ! xsAuto[(size_t) pt]) extra.setProperty ("xs_" + juce::String (pt), juce::JSON::toString (xsEdit[(size_t) pt], true), nullptr);   // otomatik çevirme kaydedilmez: sesten yeniden kurulur
     extra.setProperty ("userArtist", userArtist, nullptr); extra.setProperty ("userPreset", userPreset, nullptr);
     if (ref.hasPath() || ref.sampler.enabled.load() || ref.sampler.enabled.load()) extra.setProperty ("ref", juce::JSON::toString (ref.stateToVar(), true), nullptr);
     for (int pad = 0; pad < hg::kNumPads; ++pad) { const auto sp = drumSamplePath (pad); if (sp.isNotEmpty()) extra.setProperty (juce::String ("dmSample_") + hg::kPadIds[pad], sp, nullptr); }
@@ -921,7 +981,7 @@ void HitGenProcessor::restoreFromTree (const juce::ValueTree& source, bool inclu
             manual[(size_t) t] = (bool) extra.getProperty (juce::String ("manual_") + kPartIds[t]);
         }
         sdValid = (int) extra.getProperty ("sdv", 0) >= 1;
-        for (int pt = 0; pt < 3; ++pt) { const auto js = extra.getProperty ("xs_" + juce::String (pt)).toString(); const auto v = js.length() < 2000000 ? juce::JSON::parse (js) : juce::var(); xsEdit[(size_t) pt] = v.isObject() ? v : juce::var(); } ++xsVersion;
+        for (int pt = 0; pt < 3; ++pt) { const auto js = extra.getProperty ("xs_" + juce::String (pt)).toString(); const auto v = js.length() < 2000000 ? juce::JSON::parse (js) : juce::var(); xsEdit[(size_t) pt] = v.isObject() ? v : juce::var(); xsAuto[(size_t) pt] = ! v.isObject() || (bool) extra.getProperty ("xsAuto_" + juce::String (pt), false); } ++xsVersion;
         missingSamples.clear();
         for (int pad = 0; pad < hg::kNumPads; ++pad)
         {
@@ -1571,4 +1631,85 @@ void HitGenProcessor::coUnlock()
 {
     coRole = -1; coNotes.clear(); coName.clear();
     regenerateNow();
+}
+
+// ---------------------------------------------------------------- Synth X çalım yardımcıları (ses iş parçacığı; bellek ayırmaz)
+int HitGenProcessor::chordNotes (int part, int note, int* out) const noexcept
+{
+    const int mode = perf[(size_t) part].chord.load (std::memory_order_relaxed);
+    out[0] = note; if (mode == 0) return 1;
+    if (mode == 3) { out[1] = note + 7; return 2; }
+    if (mode == 4) { out[1] = note + 12; return 2; }
+    const int mask = scaleMask.load (std::memory_order_relaxed), key = scaleKey.load (std::memory_order_relaxed);
+    auto inScale = [&] (int n) { return (mask >> (((n - key) % 12 + 12) % 12) & 1) != 0; };
+    auto up = [&] (int steps) { int n = note, k = 0; while (k < steps && n < note + 24) { ++n; if (inScale (n)) ++k; } return n; };   // gamda kaç adım yukarı
+    if (mode == 5) { out[1] = up (1); out[2] = up (4); return 3; }
+    if (mode == 6) { out[1] = up (3); out[2] = up (4); return 3; }
+    out[1] = up (2); out[2] = up (4); if (mode == 2) { out[3] = up (6); return 4; }
+    return 3;
+}
+
+void HitGenProcessor::perform (int n, double bpm, bool hostPlay, double ppq)
+{
+    const double sr = getSampleRate(); const int count = numBlockEv;
+    auto push = [&] (BlockEv e) { if (numBlockEv < (int) blockEv.size()) blockEv[(size_t) numBlockEv++] = e; };
+    for (int i = 0; i < count; ++i)
+    {
+        auto& e = blockEv[(size_t) i];
+        if ((e.kind != 1 && e.kind != 2) || e.track == hg::kDrums) continue;
+        const int part = partOfTrack (e.track); auto& pf = perf[(size_t) part];
+        int cn[4]; const int nc = chordNotes (part, e.note, cn);
+        if (pf.arpOn.load (std::memory_order_relaxed) != 0)
+        {   // arpej: tuşlar yalnızca tutulan nota listesini değiştirir
+            auto& H = held[(size_t) part]; int& nh = numHeld[(size_t) part];
+            for (int k = 0; k < nc; ++k)
+            {
+                const int x = cn[k]; int at = -1; for (int j = 0; j < nh; ++j) if (H[(size_t) j] == x) at = j;
+                if (e.kind == 1 && at < 0 && nh < (int) H.size()) { H[(size_t) nh++] = x; arpVel[(size_t) part] = e.vel; }
+                if (e.kind == 2 && at >= 0) { for (int j = at; j < nh - 1; ++j) H[(size_t) j] = H[(size_t) j + 1]; --nh; }
+            }
+            if (nh == 0) arpIdx[(size_t) part] = 0;
+            e.kind = -1; continue;
+        }
+        if (nc == 1) continue;
+        const int strumS = (int) (pf.strum.load (std::memory_order_relaxed) * .12 * sr);
+        if (e.kind == 2)
+        {
+            for (int k = 1; k < nc; ++k) push ({ e.off, 2, e.track, cn[k], 0, 0 });
+            for (int j = 0; j < numPend;) if (pend[(size_t) j].track == e.track && pend[(size_t) j].root == e.note) pend[(size_t) j] = pend[(size_t) --numPend]; else ++j;   // bekleyen strum notaları iptal
+            continue;
+        }
+        for (int k = 1; k < nc; ++k)
+        {
+            if (strumS <= 0) push ({ e.off, 1, e.track, cn[k], e.vel, -1 });
+            else if (numPend < (int) pend.size()) pend[(size_t) numPend++] = { sampleClock + e.off + (long long) k * strumS, e.track, cn[k], juce::jmax (1, e.vel - k * 6), e.note };
+        }
+    }
+    for (int j = 0; j < numPend;)
+    {
+        const auto& q = pend[(size_t) j];
+        if (q.at < sampleClock + n) { push ({ (int) juce::jlimit (0LL, (long long) n - 1, q.at - sampleClock), 1, q.track, q.note, q.vel, -1 }); pend[(size_t) j] = pend[(size_t) --numPend]; }
+        else ++j;
+    }
+    static const double kDiv[6] = { 1, .5, .25, 1.0 / 3, 1.0 / 6, .125 };
+    const double bps = bpm / 60.0 / sr;
+    for (int part = 0; part < 3; ++part)
+    {
+        auto& pf = perf[(size_t) part]; const int nh = numHeld[(size_t) part];
+        const double b0 = hostPlay ? ppq : arpBeat[(size_t) part], b1 = b0 + n * bps; arpBeat[(size_t) part] = b1;
+        if (pf.arpOn.load (std::memory_order_relaxed) == 0 || nh == 0) continue;
+        const double step = kDiv[juce::jlimit (0, 5, pf.arpDiv.load())]; const int oct = juce::jlimit (1, 3, pf.arpOct.load()), mode = pf.arpMode.load(), total = nh * oct;
+        int sorted[48]; for (int j = 0; j < nh; ++j) sorted[j] = held[(size_t) part][(size_t) j];
+        if (mode != 4) std::sort (sorted, sorted + nh);
+        for (double k = std::ceil (b0 / step - 1e-9) * step; k < b1; k += step)
+        {
+            int idx = arpIdx[(size_t) part]++, pos;
+            if (mode == 1) pos = total - 1 - idx % total;
+            else if (mode == 2) { const int cyc = juce::jmax (1, total * 2 - 2); const int q = idx % cyc; pos = total == 1 ? 0 : (q < total ? q : cyc - q); }
+            else if (mode == 3) { arpRng = arpRng * 1664525u + 1013904223u; pos = (int) ((arpRng >> 8) % (uint32_t) total); }
+            else pos = idx % total;
+            const int note = juce::jlimit (0, 127, sorted[pos % nh] + 12 * (pos / nh));
+            push ({ juce::jlimit (0, n - 1, (int) ((k - b0) / bps)), 3, trackOfPart (part), note, arpVel[(size_t) part], step * pf.gate.load() * 60.0 / bpm });
+        }
+    }
 }

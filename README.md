@@ -353,3 +353,18 @@ Doğrulanmayan: kulakla dinleme, DAW'a sürükleme (FL Studio, Ableton), macOS v
 **Henüz doğrulanmayanlar:** sesler kulakla dinlenmedi; gerçek SoundFont dosyalarıyla denenmedi (test kendi ürettiği SF2 ile yapıldı); Synth X parametreleri henüz DAW otomasyonuna açık değil (makrolar açık); hedef, kaynak ve LFO dalga adları yalnızca İngilizce.
 
 **EN.** Chords, bass and melody can now play with the Synth X engine (SYNTH X button in Sound Design): 3 oscillators (Mod, ROM with 216 band-limited waves or a SoundFont, Multiwave with 32 voices), subtractive/FM/PD, FM filter, morph and wave surface, 4 PW modes, unison up to 12 x2 layers, 9 filter types and 5 saturation modes per oscillator, a layer FX oscillator, 4 ADSR, 2 LFOs with 24 shapes, a 16-step controller and a 2-source matrix (61 destinations), and 11 templates. Classic sounds are unchanged. Effects, sequencing and the special features follow in phases 2 and 3.
+
+## Synth X: tek ses motoru, 2. ve 3. aşama / Synth X only, phases 2 and 3
+
+**TR.** Eski ses motoru artık kullanılmıyor: akor, bas ve melodi her zaman Synth X ile çalar. Bir ses seçildiğinde (fabrika ya da kendi kaydettiğin) otomatik olarak Synth X programına çevrilir; alt osilatör, gürültü, FM, perde zarfı, vibrato, katlama, ünlüler ve seviye de çevrilir. Synth X'te bir şeyi değiştirdiğinde o program projeyle kaydedilir; "Sesten kur" programı seçili sesten yeniden kurar.
+
+- **FX (2. aşama):** parti başına 5 yuvalı efekt rafı, 14 efekt: Distortion (12 kip), Amp sim, Bit reducer, Crusher, Phaser (8 aşama), Flanger, Ensemble, Vibrato, Vowel filter, Equalizer (3 bant), Delay (tempoya kilitli, ping-pong), Hyperspace reverb (ön gecikmeli), Sidechainer (tempoya kilitli), Hyper filter (tempoya kilitli tarama). Her yuvada 4 ayar ve karışım.
+- **Master:** alçak kesim, yüksek kesim, stereo genişlik, çıkış rengi, çıkış seviyesi (DAW otomasyonuna açık; mevcut -1 dBFS limiter ve -14 LUFS normalleştirme bunlardan sonra çalışır).
+- **Çalım (3. aşama):** akıllı akor modu (gamda üçlü/yedili, power, oktav, sus2, sus4), strum (0-120 ms), arpej (yukarı, aşağı, yukarı-aşağı, rastgele, çalındığı sıra; 1/4-1/32, üçlemeler; 1-3 oktav; nota uzunluğu; DAW çalarken tempoya ve ölçüye kilitli), tuşa göre pan.
+- **Alpha düğmesi:** DAW'da otomasyonlanabilen tek düğme; matriste kaynak olarak seçilip istediğin kadar hedefe bağlanır (tek düğmeyle çok düğme, Morph).
+- **Dynamic Link:** Capture In girişine gelen sesin zarfı matriste "Audio input" kaynağıdır (sesle modülasyon).
+- **X-Gen:** partiye uygun (bas, akor, melodi) rastgele program üretir.
+
+**Yapılmayanlar:** MIDI dosyasını sekans olarak yükleme, split modu, çok katmanlı/split enstrüman modu, ayrı preset tarayıcısı ve hızlı tarayıcı (mevcut ses tarayıcısı kullanılıyor), portamento kuantize, nota yeniden eşleme, otomatik glide, harmonizer, kısayol tuşları, görünüm özelleştirme, kullanım analizi, akademi modu. Synth X'in kendi ayarları (Alpha ve master dışında) DAW otomasyonuna açık değil. Sesler kulakla dinlenmedi.
+
+**EN.** The classic engine is no longer used: every sound is converted to Synth X when selected. Added: a 5-slot FX rack per part with 14 effects, a master section (low/high cut, width, colour, output), chord mode with strum, an arpeggiator locked to the DAW, key panning, an automatable Alpha knob and an audio-input modulation source, and X-Gen random sounds. Not done: MIDI-file sequencing, split/multi mode, a separate preset browser, portamento quantize, note remapping, harmonizer, hotkeys, skins, analytics, academy.

@@ -16,8 +16,8 @@ var* resolve (var& root, const String& path)
     }
     return cur;
 }
-const char* const kTabKeys[8] = { "sxOsc1", "sxOsc2", "sxOsc3", "sxLayer", "sxEnv", "sxLfo", "sxStep", "sxMatrix" };
-const char* const kTabEn[8] = { "Osc 1", "Osc 2", "Osc 3", "Layer FX", "Envelopes", "LFO", "Step", "Matrix" };
+const char* const kTabKeys[10] = { "sxOsc1", "sxOsc2", "sxOsc3", "sxLayer", "sxEnv", "sxLfo", "sxStep", "sxMatrix", "sxFx", "sxPlay" };
+const char* const kTabEn[10] = { "Osc 1", "Osc 2", "Osc 3", "Layer FX", "Envelopes", "LFO", "Step", "Matrix", "FX", "Play" };
 const char* const kDiv[12] = { "8 bars", "4 bars", "2 bars", "1 bar", "1/2", "1/4", "1/4 T", "1/8", "1/8 T", "1/16", "1/16 T", "1/32" };
 struct Tpl { const char* key; const char* en; std::vector<std::pair<const char*, var>> set; };
 var arr (std::initializer_list<var> l) { Array<var> a; for (auto& x : l) a.add (x); return a; }
@@ -50,20 +50,15 @@ int SynthXPanel::numTemplates() { return (int) templates().size(); }
 
 SynthXPanel::SynthXPanel (HitGenProcessor& p, hgui::LookAndFeel& l) : proc (p), lnf (l), data (p.data)
 {
-    for (auto* c : std::initializer_list<Component*> { &engineBtn, &convertBtn, &initBtn, &sfBtn, &templBox, &sfLbl }) addAndMakeVisible (*c);
-    for (int i = 0; i < 8; ++i)
+    for (auto* c : std::initializer_list<Component*> { &convertBtn, &initBtn, &sfBtn, &xgenBtn, &templBox, &sfLbl }) addAndMakeVisible (*c);
+    for (int i = 0; i < 10; ++i)
     {
         auto& b = tabs[(size_t) i]; addAndMakeVisible (b); b.setClickingTogglesState (true); b.setRadioGroupId (771); b.setComponentID ("nav");
         b.onClick = [this, i] { if (tabs[(size_t) i].getToggleState() && section != i) showTab (i); };
     }
     addChildComponent (steps); addChildComponent (scope);
-    engineBtn.onClick = [this]
-    {
-        if (engineBtn.getToggleState() == active()) return;
-        proc.setXsProgram (part, engineBtn.getToggleState() ? proc.xsFromClassic (part) : var());
-        refresh();
-    };
-    convertBtn.onClick = [this] { proc.setXsProgram (part, proc.xsFromClassic (part)); refresh(); };
+    convertBtn.onClick = [this] { proc.setXsProgram (part, var()); refresh(); };   // seçili sesten yeniden kur
+    xgenBtn.onClick = [this] { xgen ((uint32_t) Random::getSystemRandom().nextInt()); };
     initBtn.onClick = [this] { applyTemplate (0); };
     templBox.onChange = [this] { const int i = templBox.getSelectedId() - 1; templBox.setSelectedId (0, dontSendNotification); if (i >= 0) applyTemplate (i); };
     sfBtn.onClick = [this]
@@ -89,12 +84,12 @@ String SynthXPanel::T (const String& key, const String& en) const { const auto s
 void SynthXPanel::setLanguage (const String& l)
 {
     lang = l;
-    engineBtn.setButtonText (T ("sxEngine", "Synth X engine")); engineBtn.setTooltip (T ("sxEngineTip", "On: this part plays with Synth X. Off: the classic engine"));
-    convertBtn.setButtonText (T ("sxConvert", "Convert sound")); convertBtn.setTooltip (T ("sxConvertTip", "Rebuild the selected classic sound as a Synth X program"));
+    convertBtn.setButtonText (T ("sxConvert", "From sound")); convertBtn.setTooltip (T ("sxConvertTip", "Rebuild this program from the selected sound (your edits are replaced)"));
+    xgenBtn.setButtonText ("X-Gen"); xgenBtn.setTooltip (T ("sxXgenTip", "Generate a new random sound that suits this part"));
     initBtn.setButtonText (T ("sxInit", "Init")); sfBtn.setButtonText (T ("sxLoadSf", "Load SoundFont"));
     templBox.clear (dontSendNotification); int id = 1; for (auto& t : templates()) templBox.addItem (T (t.key, t.en), id++);
     templBox.setTextWhenNothingSelected (T ("sxTemplate", "Templates"));
-    for (int i = 0; i < 8; ++i) tabs[(size_t) i].setButtonText (T (kTabKeys[i], kTabEn[i]));
+    for (int i = 0; i < 10; ++i) tabs[(size_t) i].setButtonText (T (kTabKeys[i], kTabEn[i]));
     rebuild();
 }
 
@@ -105,7 +100,6 @@ void SynthXPanel::refresh()
     shownVer = proc.xsVersion;
     const auto v = proc.xsProgram (part);
     prog = v.isObject() ? JSON::parse (JSON::toString (v)) : var();
-    engineBtn.setToggleState (active(), dontSendNotification);
     const auto sf = active() ? prog["sf"].toString() : String();
     sfLbl.setText (sf.isNotEmpty() ? File (sf).getFileName() : String(), dontSendNotification);
     syncAll(); repaint();
@@ -115,7 +109,7 @@ void SynthXPanel::commit()
 {
     if (building || ! active()) return;
     proc.setXsProgram (part, JSON::parse (JSON::toString (prog))); shownVer = proc.xsVersion;
-    engineBtn.setToggleState (true, dontSendNotification); scope.repaint(); steps.repaint();
+    scope.repaint(); steps.repaint();
 }
 
 var SynthXPanel::value (const String& path) const { auto copy = prog; auto* v = resolve (copy, path); return v != nullptr ? *v : var(); }
@@ -138,7 +132,7 @@ void SynthXPanel::applyTemplate (int i)
 
 void SynthXPanel::showTab (int t)
 {
-    section = jlimit (0, 7, t); tabs[(size_t) section].setToggleState (true, dontSendNotification);
+    section = jlimit (0, 9, t); tabs[(size_t) section].setToggleState (true, dontSendNotification);
     rebuild();
 }
 
@@ -169,9 +163,43 @@ SynthXPanel::Ctl& SynthXPanel::choice (const String& path, const String& label, 
         if (building) return;
         setValue (cp->path, cp->itemBase + cp->combo->getSelectedId() - 1);
         if (cp->path.startsWith ("o.") && cp->path.endsWith (".t") && ! cp->path.contains (".f.")) { prog = xs::Program::toVar (prog); commit(); }   // dalga dizinleri yeni türe uyar
-        if (cp->path.endsWith (".t") || cp->path.endsWith (".sy")) rebuild();
+        if (cp->path.endsWith (".t") || cp->path.endsWith (".sy") || (cp->path.startsWith ("fx.") && cp->path.endsWith (".0"))) rebuild();
     };
     ctls.push_back (std::move (c)); return *ctls.back();
+}
+
+void SynthXPanel::paramKnob (const char* id, const String& label, Rectangle<int> r)
+{
+    auto c = std::make_unique<Ctl>(); c->path = {}; c->kind = 4; c->r = r;
+    c->knob = std::make_unique<hgui::Knob>(); addAndMakeVisible (*c->knob); c->knob->setText (label, {});
+    atts.push_back (std::make_unique<AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, id, c->knob->slider)); hgui::tagParam (c->knob->slider, id);
+    ctls.push_back (std::move (c));
+}
+
+void SynthXPanel::xgen (uint32_t seed)
+{
+    Random R ((int64) seed); auto f = [&] (double a, double b) { return a + (b - a) * R.nextDouble(); };
+    prog = xs::Program::toVar (xs::Program::init()); const bool bass = part == 1, chords = part == 0;
+    auto set = [this] (const String& path, var v) { if (auto* x = resolve (prog, path)) *x = v; };
+    const int types[3] = { 1 + R.nextInt (3), R.nextInt (3) == 0 ? 0 : 1 + R.nextInt (3), R.nextInt (4) == 0 ? 1 : 0 };
+    for (int k = 0; k < 3; ++k)
+    {
+        const String o = "o." + String (k) + "."; set (o + "t", types[k]); if (types[k] == 0) continue;
+        set (o + "a", types[k] == 2 ? R.nextInt (xs::romCount()) : R.nextInt (xs::kBasic)); set (o + "b", types[k] == 2 ? R.nextInt (xs::romCount()) : R.nextInt (xs::kBasic));
+        set (o + "m", f (0, 1)); set (o + "mm", R.nextInt (3) == 0 ? 1 : 0); set (o + "sm", R.nextInt (4) == 0 ? 1 + R.nextInt (2) : 0); set (o + "sh", f (0, .6)); set (o + "fm", f (0, .4)); set (o + "fr", (double) (1 + R.nextInt (4)));
+        set (o + "u", bass ? 1 + R.nextInt (2) : 1 + R.nextInt (7)); set (o + "d", f (.05, .4)); set (o + "pm", R.nextInt (5) == 0 ? 1 + R.nextInt (3) : 0); set (o + "pw", f (.2, .8));
+        set (o + "oc", k == 2 ? -1 : bass ? -1 + R.nextInt (2) : R.nextInt (2) - (k == 1 ? 1 : 0)); set (o + "se", k == 1 && R.nextBool() ? 7 : 0); set (o + "lv", k == 0 ? .8 : f (.3, .7));
+        set (o + "n", 1 + R.nextInt (4));
+        set (o + "f.t", 1 + R.nextInt (3)); set (o + "f.c", bass ? f (300, 1800) : f (900, 9000)); set (o + "f.r", f (.05, .55)); set (o + "f.e", f (0, .6)); set (o + "f.sa", R.nextInt (3) == 0 ? 1 + R.nextInt (5) : 0); set (o + "f.dr", f (0, .4));
+    }
+    const double atk = bass ? f (.001, .01) : chords ? f (.005, .6) : f (.001, .08);
+    set ("env.0", Array<var> { atk, f (.15, 1.2), bass ? f (.5, 1) : f (.2, .9), bass ? f (.05, .3) : f (.2, 1.5), 0 });
+    set ("env.1", Array<var> { .001, f (.1, .8), f (0, .4), f (.1, .6), 0 });
+    if (R.nextBool()) { set ("lfo.0.w", R.nextInt (xs::kLfoShapes)); set ("lfo.0.sy", 1); set ("lfo.0.r", 3 + R.nextInt (7)); set ("lfo.0.d.0", Array<var> { 11, f (.1, .4) }); }
+    if (R.nextInt (3) == 0) { set ("fx.0", Array<var> { 11, f (.2, .7), f (.2, .5), f (0, 1), .5, f (.1, .3) }); }
+    if (! bass && R.nextBool()) { set ("fx.1", Array<var> { 12, f (.3, .9), .5, 1, .1, f (.1, .35) }); }
+    set ("vol", .7);
+    commit(); syncAll(); rebuild();
 }
 
 SynthXPanel::Ctl& SynthXPanel::toggle (const String& path, const String& label, Rectangle<int> r)
@@ -203,7 +231,7 @@ void SynthXPanel::rebuild()
 {
     const ScopedValueSetter<bool> b (building, true);
     for (auto& c : ctls) { for (Component* x : std::initializer_list<Component*> { c->knob.get(), c->combo.get(), c->toggle.get(), c->amount.get(), c->cap.get() }) if (x != nullptr) removeChildComponent (x); }
-    ctls.clear(); steps.setVisible (false); scope.setVisible (false);
+    atts.clear(); ctls.clear(); steps.setVisible (false); scope.setVisible (false);
     const int Y = 76, KW = 82, KH = 92;
     auto grid = [&] (int col, int row) { return Rectangle<int> (372 + col * KW, Y + row * KH, KW - 4, KH - 4); };
     auto pct = [] (double v) { return String (roundToInt (v * 100)) + "%"; };
@@ -303,6 +331,32 @@ void SynthXPanel::rebuild()
         knob ("stp.gl", T ("sxGlideS", "Smooth"), 0, 1, { 188, Y + 200, 82, 92 });
         routes ("stp.d", 300, Y + 200, 540);
     }
+    else if (section == 8)
+    {   // efekt rafı (5 yuva, sırayla işlenir) ve master
+        for (int i = 0; i < xs::kFxSlots; ++i)
+        {
+            const String p = "fx." + String (i) + "."; const int y = Y + 4 + i * 76, t = active() ? (int) value (p + "0") : 0;
+            choice (p + "0", T ("sxSlot", "Slot") + " " + String (i + 1), [] { StringArray s; for (int k = 0; k < xs::kFxTypes; ++k) s.add (xs::fxName (k)); return s; }, { 16, y + 22, 170, 26 });
+            if (t == 0) continue;
+            for (int k = 0; k < 4; ++k) if (xs::fxParamName (t, k) != "-") knob (p + String (k + 1), xs::fxParamName (t, k), 0, 1, { 196 + k * 74, y, 72, 72 });
+            knob (p + "5", T ("sxMixFx", "Mix"), 0, 1, { 196 + 4 * 74, y, 72, 72 });
+        }
+        paramKnob ("mst_hp", T ("sxMHp", "Low cut"), { 700, Y + 24, 82, 92 }); paramKnob ("mst_lp", T ("sxMLp", "High cut"), { 786, Y + 24, 82, 92 });
+        paramKnob ("mst_width", T ("sxMWidth", "Stereo width"), { 872, Y + 24, 82, 92 }); paramKnob ("mst_color", T ("sxMColor", "Output color"), { 958, Y + 24, 82, 92 });
+        paramKnob ("mst_out", T ("sxMOut", "Output"), { 1044, Y + 24, 82, 92 });
+    }
+    else if (section == 9)
+    {   // çalım: akıllı akor, strum, arpej, tuşa göre pan, Alpha düğmesi
+        choice ("chd.m", T ("sxChord", "Chord mode"), [this] { return StringArray { T ("sxOff", "Off"), T ("sxTriad", "Triad (in key)"), T ("sxSeventh", "Seventh (in key)"), "Power", T ("sxOct", "Octave"), "Sus2", "Sus4" }; }, { 16, Y + 26, 200, 26 });
+        knob ("chd.st", T ("sxStrum", "Strum"), 0, 1, { 226, Y + 10, 82, 92 }, 0, false, [] (double v) { return String (roundToInt (v * 120)) + " ms"; });
+        toggle ("arp.on", T ("sxArpOn", "Arpeggiator"), { 16, Y + 130, 200, 26 });
+        choice ("arp.md", T ("sxArpMode", "Arp mode"), [this] { return StringArray { T ("sxUp", "Up"), T ("sxDown", "Down"), T ("sxUpDown", "Up-down"), T ("sxRandom", "Random"), T ("sxPlayed", "As played") }; }, { 16, Y + 186, 200, 26 });
+        choice ("arp.dv", T ("sxArpRate", "Arp rate"), [] { return StringArray { "1/4", "1/8", "1/16", "1/8 T", "1/16 T", "1/32" }; }, { 226, Y + 186, 120, 26 });
+        choice ("arp.oc", T ("sxArpOct", "Octaves"), [] { return StringArray { "1", "2", "3" }; }, { 356, Y + 186, 90, 26 }, 1);
+        knob ("arp.gt", T ("sxGate", "Gate"), .05, 1, { 456, Y + 160, 82, 92 });
+        knob ("kp", T ("sxKeyPan", "Key panning"), -1, 1, { 16, Y + 250, 82, 92 }, 0, false, [] (double v) { const int x = roundToInt (v * 100); return (x > 0 ? "+" : "") + String (x) + "%"; });
+        paramKnob ("xs_alpha", T ("sxAlpha", "Alpha knob"), { 640, Y + 10, 82, 92 });
+    }
     else
     {
         for (int m = 0; m < xs::kMtx; ++m)
@@ -330,6 +384,7 @@ void SynthXPanel::syncAll()
     const bool on = active();
     for (auto& c : ctls)
     {
+        if (c->kind == 4) continue;   // DAW parametresi: bağlantı eşitler
         const auto v = on ? value (c->path) : var();
         if (c->knob) { c->knob->slider.setValue (v.isVoid() ? c->lo : (double) v, dontSendNotification); c->knob->slider.updateText(); c->knob->setEnabled (on); }
         if (c->combo) { c->combo->setSelectedId (v.isVoid() ? 0 : (int) v - c->itemBase + 1, dontSendNotification); c->combo->setEnabled (on); }
@@ -357,10 +412,10 @@ void SynthXPanel::paint (Graphics& g)
 void SynthXPanel::resized()
 {
     int x = 16; auto put = [&] (Component& c, int w) { c.setBounds (x, 8, w, 28); x += w + 8; };
-    put (engineBtn, 150); put (convertBtn, 130); put (initBtn, 60); put (templBox, 170); put (sfBtn, 140); sfLbl.setBounds (x, 8, getWidth() - x - 16, 28);
-    for (int i = 0; i < 8; ++i) tabs[(size_t) i].setBounds (16 + i * 110, 42, 106, 26);
+    put (convertBtn, 120); put (initBtn, 70); put (templBox, 180); put (xgenBtn, 80); put (sfBtn, 140); sfLbl.setBounds (x, 8, getWidth() - x - 16 - 190, 28);
+    for (int i = 0; i < 10; ++i) tabs[(size_t) i].setBounds (16 + i * 100, 42, 96, 26);
     steps.setBounds (16, 92, getWidth() - 32, 170);
-    scope.setBounds (getWidth() - 16 - 180, 8 + 34, 180, 26);
+    scope.setBounds (getWidth() - 16 - 180, 8, 180, 28);
 }
 
 void SynthXPanel::Steps::paint (Graphics& g)

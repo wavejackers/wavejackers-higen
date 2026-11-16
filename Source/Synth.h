@@ -114,7 +114,8 @@ public:
     // Blok başında ayarlanır
     std::array<Macros, 4> macros;
     float bpm = 126, thick = .7f, pumpAmt = 1, master = 1;
-    std::atomic<float> wheel { 0 }, after { 0 };   // mod tekerleği ve aftertouch (Synth X matris kaynakları)
+    std::atomic<float> wheel { 0 }, after { 0 }, audioIn { 0 }, alpha { 0 };   // matris kaynakları: mod tekerleği, aftertouch, giriş sesi (Dynamic Link), Alpha düğmesi
+    xs::Master masterSet;                       // blok başında işlemciden   // mod tekerleği ve aftertouch (Synth X matris kaynakları)
     // Çok çıkış: bir iz için işaretçi verilirse (blok başına göre) o izin sesi ana karışıma değil oraya yazılır.
     // İndeks iz kimliğidir (0 akor, 1 bas, 2 davul, 3 melodi). Reverb/delay gönderimleri ana çıkışta kalır.
     float* auxL[4] {}; float* auxR[4] {};
@@ -138,6 +139,7 @@ private:
     std::array<Voice, 64> voices;
     std::unique_ptr<std::array<xs::Voice, 64>> xv { std::make_unique<std::array<xs::Voice, 64>>() };   // Synth X ses durumları (voices ile aynı sıra; yığında değil)
     juce::AudioBuffer<float> xsTmp;
+    std::array<xs::FxRack, 3> racks; xs::MasterFx masterFx;
     std::array<float, 4> pumpDepth {}, pumpRel {}, pumpG { 1, 1, 1, 1 };
     std::array<int, 4> pumpWait {};
     float pumpTarget = 1;

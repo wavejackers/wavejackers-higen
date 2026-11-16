@@ -19,6 +19,7 @@ public:
     void showTab (int t);
     int tab() const noexcept { return section; }
     void applyTemplate (int i);
+    void xgen (uint32_t seed);                        // X-Gen: partiye uygun rastgele program
     static int numTemplates();
     void setValue (const juce::String& path, const juce::var& v);   // yol: "o.0.f.c", "env.1.2", "lfo.0.d.3.1"
     juce::var value (const juce::String& path) const;
@@ -44,9 +45,10 @@ private:
 
     HitGenProcessor& proc; hgui::LookAndFeel& lnf; const hg::Data& data;
     juce::String lang = "en"; int part = 0, section = 0, shownVer = -1; juce::var prog; bool building = false;
-    juce::ToggleButton engineBtn; juce::TextButton convertBtn, initBtn, sfBtn; juce::ComboBox templBox; juce::Label sfLbl;
-    std::array<juce::TextButton, 8> tabs;
+    juce::TextButton convertBtn, initBtn, sfBtn, xgenBtn; juce::ComboBox templBox; juce::Label sfLbl;
+    std::array<juce::TextButton, 10> tabs;
     std::vector<std::unique_ptr<Ctl>> ctls; Steps steps { *this }; Scope scope { *this };
+    std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>> atts;   // düğmelerden sonra yok edilir (önce bağlantılar)
     std::unique_ptr<juce::FileChooser> chooser;
 
     juce::String T (const juce::String& key, const juce::String& en) const;
@@ -57,6 +59,7 @@ private:
     Ctl& knob (const juce::String& path, const juce::String& label, double lo, double hi, juce::Rectangle<int> r, double skewMid = 0, bool integer = false, std::function<juce::String (double)> text = {});
     Ctl& choice (const juce::String& path, const juce::String& label, std::function<juce::StringArray()> items, juce::Rectangle<int> r, int base = 0);
     Ctl& toggle (const juce::String& path, const juce::String& label, juce::Rectangle<int> r);
+    void paramKnob (const char* id, const juce::String& label, juce::Rectangle<int> r);   // DAW parametresine bağlı düğme (master, Alpha)
     void routes (const juce::String& base, int x, int y, int w);   // 5 hedef satırı
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SynthXPanel)
 };
