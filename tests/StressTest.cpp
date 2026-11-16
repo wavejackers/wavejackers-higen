@@ -1754,12 +1754,12 @@ static void testSynthX (const FailFn& fail)
     }
     {   // modülasyon: LFO -> osilatör 1 perdesi değiştirir; matris hız -> düzey; adım kontrolcüsü -> kesim
         auto q = prog ([] (juce::DynamicObject&) {});
-        q["lfo"][0].getDynamicObject()->setProperty ("r", 4); q["lfo"][0].getDynamicObject()->setProperty ("d", juce::Array<juce::var> { juce::Array<juce::var> { 0, .5 } });
+        q["lfo"][0].getDynamicObject()->setProperty ("r", 4); { juce::Array<juce::var> rt; rt.add (juce::Array<juce::var> { 0, .5 }); q["lfo"][0].getDynamicObject()->setProperty ("d", rt); }   // MSVC: tek elemanlı iç içe süslü liste kopya sayılır
         auto r = render (q, 69, 1.0, 1.0); double lo = 1e9, hi = 0;
         for (int at = 4800; at < 40000; at += 2400) { const double f = pitchOf (r.first, at); if (f > 0) { lo = juce::jmin (lo, f); hi = juce::jmax (hi, f); } }
         if (hi / juce::jmax (1.0, lo) < 1.5) fail ("synthx: LFO to pitch had no effect (" + juce::String (lo) + ".." + juce::String (hi) + ")");
         auto m = prog ([] (juce::DynamicObject&) {});
-        m["mtx"][0].getDynamicObject()->setProperty ("s", (int) xs::sVel); m["mtx"][0].getDynamicObject()->setProperty ("d", juce::Array<juce::var> { juce::Array<juce::var> { 2, -1.0 } });
+        m["mtx"][0].getDynamicObject()->setProperty ("s", (int) xs::sVel); { juce::Array<juce::var> rt; rt.add (juce::Array<juce::var> { 2, -1.0 }); m["mtx"][0].getDynamicObject()->setProperty ("d", rt); }
         const float soft = render (m, 60, .3, .3, 20).first.getRMSLevel (0, 4800, 9600), loud = render (m, 60, .3, .3, 127).first.getRMSLevel (0, 4800, 9600);
         if (loud > soft * 1.2f) fail ("synthx: matrix velocity -> level (negative) had no effect");
         if (xs::destName (11) != "Osc 1 Cutoff" || xs::kNumDests < 60) fail ("synthx: destination list");
