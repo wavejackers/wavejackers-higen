@@ -361,6 +361,9 @@ SoundPage::SoundPage (HitGenProcessor& p, hgui::LookAndFeel& l)
     viewMacro.onClick = [this] { if (viewMacro.getToggleState()) setView (vMacro); };
     viewEdit.onClick = [this] { if (viewEdit.getToggleState()) setView (vEdit); };
     viewBrowse.onClick = [this] { if (viewBrowse.getToggleState()) setView (vBrowse); };
+    addAndMakeVisible (viewSynth); viewSynth.setClickingTogglesState (true); viewSynth.setComponentID ("nav");
+    viewSynth.onClick = [this] { if (viewSynth.getToggleState()) setView (vSynth); else if (view == vSynth) setView (vMacro); };
+    addChildComponent (synthPanel);
     addAndMakeVisible (octDown); addAndMakeVisible (octUp);
     octDown.onClick = [this] { setBaseNote (baseNote - 12); }; octUp.onClick = [this] { setBaseNote (baseNote + 12); };
     addAndMakeVisible (demoBtn); demoBtn.onClick = [this] { if (proc.demoPlaying()) proc.stopDemo(); else proc.playDemo (part); demoBtn.setToggleState (! demoBtn.getToggleState(), dontSendNotification); };
@@ -496,7 +499,7 @@ void SoundPage::setPart (int p)
     if (proc.demoPlaying()) proc.stopDemo();
     part = jlimit (0, 2, p);
     partBtns[(size_t) part]->setToggleState (true, dontSendNotification);
-    bind(); rebuildList (false); setLanguage (lang, rtl);
+    bind(); rebuildList (false); setLanguage (lang, rtl); synthPanel.setPart (part);
     if (isShowing()) proc.auditionPart.store (part);
     orb.repaint(); scope.repaint();
 }
@@ -504,7 +507,10 @@ void SoundPage::setPart (int p)
 void SoundPage::setView (View v)
 {
     view = v;
-    (v == vMacro ? viewMacro : v == vEdit ? viewEdit : viewBrowse).setToggleState (true, dontSendNotification);
+    if (v != vSynth) (v == vMacro ? viewMacro : v == vEdit ? viewEdit : viewBrowse).setToggleState (true, dontSendNotification);
+    else for (auto* b : { &viewMacro, &viewEdit, &viewBrowse }) b->setToggleState (false, dontSendNotification);
+    viewSynth.setToggleState (v == vSynth, dontSendNotification);
+    synthPanel.setVisible (v == vSynth); if (v == vSynth) synthPanel.refresh();
     const bool m = v == vMacro, e = v == vEdit, b = v == vBrowse;
     orb.setVisible (m); for (auto& a : arcs) a->setVisible (m);
     descLbl.setVisible (m); useLbl.setVisible (m); hint.setVisible (m);
@@ -552,7 +558,7 @@ void SoundPage::showCatMenu()
 void SoundPage::setLanguage (const String& l, bool r)
 {
     lang = l; rtl = r;
-    fillCombos();
+    fillCombos(); synthPanel.setLanguage (l); viewSynth.setTooltip (T ("sxViewTip") == "sxViewTip" ? String ("Synth X: oscillators, filters, envelopes, LFOs and matrix") : T ("sxViewTip"));
     for (int i = 0; i < 3; ++i) { partBtns[(size_t) i]->setButtonText (T (kPartKeys[i])); partBtns[(size_t) i]->setTitle (T ("editTrack") + ": " + T (kPartKeys[i])); }
     const String trackName = T (kPartKeys[part]);
     catBtn.setTitle (T ("sdCat") + ": " + trackName); catBtn.setTooltip (T ("sdCat"));
@@ -610,6 +616,7 @@ void SoundPage::setLanguage (const String& l, bool r)
 
 void SoundPage::tick()
 {
+    if (view == vSynth) synthPanel.tick();
     const auto cur = proc.soundId (trackOfPart());
     if (cur != shownId) { shownId = cur; const int row = list.indexOf (cur); if (row >= 0) soundList.selectRow (row, true, true); else rebuildList (true); refreshInfo(); }
     std::array<float, kNumSp> v {};
@@ -693,7 +700,8 @@ void SoundPage::resized()
     B (descLbl, { 232, 452, 700, 22 }); B (useLbl, { 232, 474, 700, 20 });
     B (hint, { 232, 494, 700, 18 });
     // görünüm çubuğu ve alt satır
-    B (viewMacro, { 516, 522, 44, 36 }); B (viewEdit, { 560, 522, 44, 36 }); B (viewBrowse, { 604, 522, 44, 36 });
+    B (viewMacro, { 516, 522, 44, 36 }); B (viewEdit, { 560, 522, 44, 36 }); B (viewBrowse, { 604, 522, 44, 36 }); B (viewSynth, { 656, 526, 92, 28 });
+    synthPanel.setBounds (8, 58, 1148, 458);
     B (keyboard, { 262, 572, 640, 76 });
     B (octDown, { 168, 598, 32, 32 }); B (octUp, { 204, 598, 32, 32 });
     B (demoBtn, { 922, 596, 112, 36 }); B (importBtn, { 1036, 596, 112, 36 });

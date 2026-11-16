@@ -11,6 +11,7 @@
 #include <vector>
 #include "DrumMachine.h"
 #include "Loudness.h"
+#include "SynthX.h"
 
 namespace hg
 {
@@ -55,6 +56,7 @@ struct Patch
     bool usesTable() const noexcept { for (int i = 0; i < numOsc; ++i) if (osc[(size_t) i].wave == 4) return true; return false; }
     bool sameTable (const Patch& o) const noexcept;
     double tableRate = 0;
+    std::shared_ptr<const xs::Program> xs;   // Synth X programı (varsa ses bu motorla çalar)
 };
 
 // Kullanıcının parça başına makro ayarları (otomasyonlanabilir parametrelerden okunur)
@@ -84,6 +86,7 @@ struct Voice
     float cA = 0, cD = 0, cR = 0; double atk = .01;   // zarf katsayıları
     const float* lv[3] {}; const float* lvTh = nullptr;
     const Patch* patch = nullptr;   // ses değişince eski sesler eski yamayla doğal biter
+    bool xsOn = false;              // Synth X sesi (durumu Engine::xv içinde)
 };
 
 class Engine
@@ -111,6 +114,7 @@ public:
     // Blok başında ayarlanır
     std::array<Macros, 4> macros;
     float bpm = 126, thick = .7f, pumpAmt = 1, master = 1;
+    std::atomic<float> wheel { 0 }, after { 0 };   // mod tekerleği ve aftertouch (Synth X matris kaynakları)
     // Çok çıkış: bir iz için işaretçi verilirse (blok başına göre) o izin sesi ana karışıma değil oraya yazılır.
     // İndeks iz kimliğidir (0 akor, 1 bas, 2 davul, 3 melodi). Reverb/delay gönderimleri ana çıkışta kalır.
     float* auxL[4] {}; float* auxR[4] {};
@@ -132,6 +136,8 @@ private:
     juce::AbstractFifo trashFifo { 64 }; std::array<Patch*, 64> trash {};
     std::unique_ptr<Patch> owned[4];   // yalnızca mesaj iş parçacığı dokunur
     std::array<Voice, 64> voices;
+    std::unique_ptr<std::array<xs::Voice, 64>> xv { std::make_unique<std::array<xs::Voice, 64>>() };   // Synth X ses durumları (voices ile aynı sıra; yığında değil)
+    juce::AudioBuffer<float> xsTmp;
     std::array<float, 4> pumpDepth {}, pumpRel {}, pumpG { 1, 1, 1, 1 };
     std::array<int, 4> pumpWait {};
     float pumpTarget = 1;
@@ -140,7 +146,7 @@ private:
     std::vector<float> dlBuf[2]; int dlPos = 0; float dlLp[2] {};
     juce::Reverb reverb; juce::dsp::Compressor<float> comp;
     float drumLpS[2] {}, drumLpR[2] {};
-    std::array<double, 3> lastFreq {};                 // glide için iz başına son nota frekansı
+    std::array<double, 3> lastFreq {}, lastGlide {};                 // glide için iz başına son nota frekansı
     float dcX[3][2] {}, dcY[3][2] {}, monoLp[3][2] {};    // iz başına DC engelleyici ve mono bas (yan kanal LP durumu)
     juce::AudioBuffer<float> partBuf, sendRv, sendDl, drumBuf;
     int lastActive = 0; double voiceClock = 0;
@@ -148,6 +154,8 @@ private:
     void startVoice (Voice& v, const Patch& p, int track, int note, int vel, double durSec);
     void migrateVoice (Voice& v, const Patch& p);
     void renderVoice (Voice& v, const Patch& p, const Macros& m, float* L, float* R, int n);
+    void renderX (Voice& v, const Patch& p, const Macros& m, float* L, float* R, int n);
+    xs::Ctx ctxFor (const Macros& m) const noexcept;
     void applyChorus (int track, float amt, float* L, float* R, int n);
     Voice* findVoice (int track);
     void retireNow (Patch* p);

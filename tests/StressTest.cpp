@@ -1672,6 +1672,183 @@ static void testChoir (const juce::File& outDir, const FailFn& fail, bool shots)
     std::cout << "choir: ok\n";
 }
 
+// Synth X: dalga kütüphanesi, perde, osilatör/filtre/sentez kipleri, unison, modülasyon, SoundFont, eklenti bağlantısı
+static void testSynthX (const FailFn& fail)
+{
+    const double sr = 48000;
+    {   // tablolar: 216 ROM dalgası, hepsi sonlu ve normalize; yüksek seviyeler bant sınırlı
+        if (xs::romCount() != 216) fail ("synthx: rom count");
+        for (int i = 0; i < xs::romCount(); ++i)
+        {
+            const auto& t = xs::romTable (i, sr); float pk = 0; bool fin = true;
+            for (float x : t.lv[0]) { pk = juce::jmax (pk, std::abs (x)); fin = fin && std::isfinite (x); }
+            if (! fin || pk < .9f || pk > 1.0001f) { fail ("synthx: rom " + juce::String (i) + " (" + xs::romName (i) + ") peak " + juce::String (pk)); break; }
+        }
+        const auto& saw = xs::basicTable (0, sr);
+        if (std::abs (saw.lv[0][512] - .5f) > .08f) fail ("synthx: saw table shape (" + juce::String (saw.lv[0][512]) + ")");
+        // 5 kHz'lik bir nota için seçilen seviyede en çok 4 harmonik var: komşu örnekler arasındaki fark küçük
+        const float* hi = saw.levelFor (5000); float jump = 0; for (int i = 1; i < xs::Table::kSize; ++i) jump = juce::jmax (jump, std::abs (hi[i] - hi[i - 1]));
+        if (jump > .05f) fail ("synthx: high table level is not band-limited (" + juce::String (jump) + ")");
+    }
+    auto prog = [] (std::function<void (juce::DynamicObject&)> edit)
+    {
+        auto v = xs::Program::toVar (xs::Program::init()); edit (*v.getDynamicObject()); return v;
+    };
+    auto oscSet = [] (juce::var v, int k, const char* key, juce::var x) { v["o"][k].getDynamicObject()->setProperty (key, x); };
+    auto render = [&] (const juce::var& pv, int note, double secs, double gateSecs, int vel = 100, xs::Ctx c = {})
+    {
+        auto P = xs::Program::fromVar (pv, sr); c.sr = sr;
+        auto V = std::make_unique<xs::Voice>(); xs::start (*V, *P, note, vel, 1, 12345, c);
+        const int N = (int) (secs * sr), G = (int) (gateSecs * sr); juce::AudioBuffer<float> b (2, N); b.clear();
+        for (int i = 0; i < N && ! V->done; i += 256)
+        {
+            if (i >= G && ! V->released) xs::release (*V);
+            xs::render (*V, *P, c, b.getWritePointer (0, i), b.getWritePointer (1, i), juce::jmin (256, N - i));
+        }
+        return std::make_pair (std::move (b), V->done);
+    };
+    auto pitchOf = [&] (const juce::AudioBuffer<float>& b, int at) { std::vector<float> d (1400); for (int i = 0; i < 1400; ++i) d[(size_t) i] = (b.getSample (0, at + i * 2) + b.getSample (1, at + i * 2)) * .5f; return ch::detectPitch (d.data(), 1400, sr / 2); };
+    {   // perde: A4 = 440 Hz; Mod osilatöründe oktav, ROM ve Multiwave'de de doğru perde
+        auto pv = prog ([] (juce::DynamicObject&) {});
+        auto r = render (pv, 69, .5, .5); const double f = pitchOf (r.first, 8000);
+        if (std::abs (f - 440) > 3) fail ("synthx: init program plays " + juce::String (f) + " Hz instead of 440");
+        oscSet (pv, 0, "oc", 1); r = render (pv, 57, .5, .5);
+        if (std::abs (pitchOf (r.first, 8000) - 440) > 3) fail ("synthx: octave switch wrong");
+        for (int type : { 2, 3 })
+        {
+            auto q = prog ([] (juce::DynamicObject&) {}); oscSet (q, 0, "t", type); oscSet (q, 0, "a", type == 2 ? 3 * 8 : 3); oscSet (q, 0, "u", 1); oscSet (q, 0, "n", 1); oscSet (q, 0, "d", 0);
+            q["o"][0]["f"].getDynamicObject()->setProperty ("t", 0);
+            auto rr = render (q, 69, .5, .5); const double fq = pitchOf (rr.first, 8000);
+            if (std::abs (fq - 440) > 4) fail ("synthx: osc type " + juce::String (type) + " plays " + juce::String (fq) + " Hz");
+        }
+    }
+    {   // her osilatör türü, sentez kipi, PW kipi, filtre ve doygunluk: sonlu, sessiz değil, tavan makul
+        for (int type = 1; type <= 3; ++type)
+            for (int sm = 0; sm < 3; ++sm)
+                for (int pm = 0; pm < 4; ++pm)
+                    for (int ft = 0; ft < xs::kFilterTypes; ++ft)
+                    {
+                        if ((sm + pm + ft) % 2 && ft > 1) continue;   // süre: kombinasyonların yarısı yeter
+                        auto q = prog ([] (juce::DynamicObject&) {});
+                        oscSet (q, 0, "t", type); oscSet (q, 0, "a", type == 2 ? 100 : 0); oscSet (q, 0, "b", type == 2 ? 140 : 2); oscSet (q, 0, "m", .4); oscSet (q, 0, "sm", sm); oscSet (q, 0, "sh", .5);
+                        oscSet (q, 0, "fm", .4); oscSet (q, 0, "ff", sm == 1 ? .3 : 0.0); oscSet (q, 0, "pm", pm); oscSet (q, 0, "pw", .3); oscSet (q, 0, "u", 5); oscSet (q, 0, "ly", 2); oscSet (q, 0, "mm", pm % 2);
+                        auto F = q["o"][0]["f"].getDynamicObject(); F->setProperty ("t", ft); F->setProperty ("c", 1500); F->setProperty ("r", .6); F->setProperty ("sa", (ft + pm) % xs::kSatModes); F->setProperty ("dr", .4);
+                        auto r = render (q, 48 + ft, .25, .2);
+                        const float pk = r.first.getMagnitude (0, r.first.getNumSamples());
+                        if (! std::isfinite (pk) || pk < .003f || pk > 2.5f) { fail ("synthx: type " + juce::String (type) + " synth " + juce::String (sm) + " pw " + juce::String (pm) + " filter " + juce::String (ft) + " peak " + juce::String (pk)); return; }
+                    }
+    }
+    {   // unison / katman / multiwave ses sayıları ve kalite sınırı
+        auto q = prog ([] (juce::DynamicObject&) {}); oscSet (q, 0, "u", 12); oscSet (q, 0, "ly", 2);
+        auto P = xs::Program::fromVar (q, sr); auto Vp = std::make_unique<xs::Voice>(); auto& V = *Vp; xs::Ctx c; c.sr = sr;
+        xs::start (V, *P, 60, 100, 1, 1, c); if (V.o[0].n != 24) fail ("synthx: 12 unison x 2 layers should give 24 voices (" + juce::String (V.o[0].n) + ")");
+        c.maxPh = 8; xs::start (V, *P, 60, 100, 1, 1, c); if (V.o[0].n != 8) fail ("synthx: eco quality should cap voices");
+        oscSet (q, 1, "t", 3); oscSet (q, 1, "n", 4); P = xs::Program::fromVar (q, sr); c.maxPh = 32; xs::start (V, *P, 60, 100, 1, 1, c);
+        if (V.o[1].n != 32) fail ("synthx: multiwave 4 stacks should give 32 voices");
+    }
+    {   // zarf: bırakınca ses biter; atak yumuşaktır
+        auto q = prog ([] (juce::DynamicObject& o) { o.setProperty ("env", juce::Array<juce::var> { juce::Array<juce::var> { .1, .2, .7, .15 }, juce::Array<juce::var> { .01, .3, 0, .2 }, juce::Array<juce::var> { .01, .3, .5, .2 }, juce::Array<juce::var> { .01, .3, .5, .2 } }); });
+        auto r = render (q, 60, 2.0, .5);
+        if (! r.second) fail ("synthx: voice did not end after release");
+        if (r.first.getMagnitude (0, 0, 480) > r.first.getMagnitude (0, 9600, 480) * .3f) fail ("synthx: 100 ms attack is not soft");
+    }
+    {   // modülasyon: LFO -> osilatör 1 perdesi değiştirir; matris hız -> düzey; adım kontrolcüsü -> kesim
+        auto q = prog ([] (juce::DynamicObject&) {});
+        q["lfo"][0].getDynamicObject()->setProperty ("r", 4); q["lfo"][0].getDynamicObject()->setProperty ("d", juce::Array<juce::var> { juce::Array<juce::var> { 0, .5 } });
+        auto r = render (q, 69, 1.0, 1.0); double lo = 1e9, hi = 0;
+        for (int at = 4800; at < 40000; at += 2400) { const double f = pitchOf (r.first, at); if (f > 0) { lo = juce::jmin (lo, f); hi = juce::jmax (hi, f); } }
+        if (hi / juce::jmax (1.0, lo) < 1.5) fail ("synthx: LFO to pitch had no effect (" + juce::String (lo) + ".." + juce::String (hi) + ")");
+        auto m = prog ([] (juce::DynamicObject&) {});
+        m["mtx"][0].getDynamicObject()->setProperty ("s", (int) xs::sVel); m["mtx"][0].getDynamicObject()->setProperty ("d", juce::Array<juce::var> { juce::Array<juce::var> { 2, -1.0 } });
+        const float soft = render (m, 60, .3, .3, 20).first.getRMSLevel (0, 4800, 9600), loud = render (m, 60, .3, .3, 127).first.getRMSLevel (0, 4800, 9600);
+        if (loud > soft * 1.2f) fail ("synthx: matrix velocity -> level (negative) had no effect");
+        if (xs::destName (11) != "Osc 1 Cutoff" || xs::kNumDests < 60) fail ("synthx: destination list");
+    }
+    {   // SoundFont: 441 Hz döngülü sinüs örneği; kök nota A4, C5 çalınca 3 yarım ton yukarı
+        auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("hitgen-test.sf2");
+        juce::MemoryOutputStream smp; const int N = 44100; for (int i = 0; i < N; ++i) smp.writeShort ((short) (std::sin (2 * juce::MathConstants<double>::pi * 441 * i / 44100.0) * 20000));
+        auto chunk = [] (const char* id, const juce::MemoryBlock& d) { juce::MemoryOutputStream o; o.write (id, 4); o.writeInt ((int) d.getSize()); o.write (d.getData(), d.getSize()); if (d.getSize() & 1) o.writeByte (0); return o.getMemoryBlock(); };
+        auto list = [&] (const char* id, std::initializer_list<juce::MemoryBlock> parts) { juce::MemoryOutputStream o; o.write (id, 4); for (auto& p : parts) o.write (p.getData(), p.getSize()); return chunk ("LIST", o.getMemoryBlock()); };
+        auto rec = [] (std::function<void (juce::MemoryOutputStream&)> w) { juce::MemoryOutputStream o; w (o); return o.getMemoryBlock(); };
+        auto name = [] (juce::MemoryOutputStream& o, const char* n) { char b[20] = {}; strncpy (b, n, 19); o.write (b, 20); };
+        const auto phdr = rec ([&] (auto& o) { name (o, "Test"); o.writeShort (0); o.writeShort (0); o.writeShort (0); o.writeInt (0); o.writeInt (0); o.writeInt (0); name (o, "EOP"); o.writeShort (0); o.writeShort (0); o.writeShort (1); o.writeInt (0); o.writeInt (0); o.writeInt (0); });
+        const auto pbag = rec ([] (auto& o) { o.writeShort (0); o.writeShort (0); o.writeShort (1); o.writeShort (0); });
+        const auto pgen = rec ([] (auto& o) { o.writeShort (41); o.writeShort (0); o.writeShort (0); o.writeShort (0); });
+        const auto mod = rec ([] (auto& o) { for (int i = 0; i < 5; ++i) o.writeShort (0); });
+        const auto inst = rec ([&] (auto& o) { name (o, "Sine"); o.writeShort (0); name (o, "EOI"); o.writeShort (1); });
+        const auto ibag = rec ([] (auto& o) { o.writeShort (0); o.writeShort (0); o.writeShort (2); o.writeShort (0); });
+        const auto igen = rec ([] (auto& o) { o.writeShort (54); o.writeShort (1); o.writeShort (53); o.writeShort (0); o.writeShort (0); o.writeShort (0); });
+        const auto shdr = rec ([&] (auto& o) { name (o, "sine"); o.writeInt (0); o.writeInt (N); o.writeInt (1000); o.writeInt (N - 1000); o.writeInt (44100); o.writeByte (69); o.writeByte (0); o.writeShort (0); o.writeShort (1);
+                                                name (o, "EOS"); for (int i = 0; i < 5; ++i) o.writeInt (0); o.writeByte (0); o.writeByte (0); o.writeShort (0); o.writeShort (0); });
+        juce::MemoryOutputStream body; body.write ("sfbk", 4);
+        for (auto& b : { list ("INFO", { chunk ("ifil", rec ([] (auto& o) { o.writeShort (2); o.writeShort (1); })) }), list ("sdta", { chunk ("smpl", smp.getMemoryBlock()) }),
+                         list ("pdta", { chunk ("phdr", phdr), chunk ("pbag", pbag), chunk ("pmod", mod), chunk ("pgen", pgen), chunk ("inst", inst), chunk ("ibag", ibag), chunk ("imod", mod), chunk ("igen", igen), chunk ("shdr", shdr) }) })
+            body.write (b.getData(), b.getSize());
+        f.replaceWithData (chunk ("RIFF", body.getMemoryBlock()).getData(), chunk ("RIFF", body.getMemoryBlock()).getSize());
+        juce::String err; auto sf = xs::loadSoundFont (f, err);
+        if (sf == nullptr || sf->zones.size() != 1 || ! sf->zones[0].loop || sf->zones[0].root != 69) fail ("synthx: soundfont not parsed (" + err + ")");
+        else
+        {
+            auto q = prog ([&] (juce::DynamicObject& o) { o.setProperty ("sf", f.getFullPathName()); });
+            oscSet (q, 0, "t", 2); oscSet (q, 0, "a", -1); oscSet (q, 0, "u", 1); q["o"][0]["f"].getDynamicObject()->setProperty ("t", 0);
+            auto r = render (q, 72, 2.0, 2.0); const double fq = pitchOf (r.first, 70000), want = 441 * std::pow (2.0, 3 / 12.0);
+            if (std::abs (fq / want - 1) > .02) fail ("synthx: soundfont note plays " + juce::String (fq) + " Hz, expected " + juce::String (want));
+            if (r.first.getRMSLevel (0, 80000, 8000) < .01f) fail ("synthx: soundfont loop stopped");
+        }
+        f.deleteFile();
+    }
+    {   // program gidiş-dönüş: toVar(fromVar(x)) sabit
+        auto q = prog ([] (juce::DynamicObject&) {}); oscSet (q, 1, "t", 3); oscSet (q, 2, "t", 2); oscSet (q, 2, "a", 77);
+        const auto a = juce::JSON::toString (xs::Program::toVar (q)), b = juce::JSON::toString (xs::Program::toVar (juce::JSON::parse (a)));
+        if (a != b) fail ("synthx: program round trip changed values");
+    }
+    // eklenti: akor partisine Synth X programı; klasik sesten çevirme; proje kaydı; çalma
+    HitGenProcessor p; p.setPlayConfigDetails (0, 2, sr, 512); p.prepareToPlay (sr, 512); p.idle();
+    { juce::MidiBuffer mid; juce::AudioBuffer<float> blk (2, 512); for (int i = 0; i < 300; ++i) { blk.clear(); p.processBlock (blk, mid); } }   // ses yüksekliği ölçeri ve açılış sesi yerleşsin
+    if (p.xsProgram (0).isObject()) fail ("synthx: classic factory sound should not carry a Synth X program");
+    auto conv = p.xsFromClassic (0);
+    if (! conv.isObject() || (int) conv["o"][0]["t"] != 1) fail ("synthx: classic conversion produced no oscillator");
+    p.setXsProgram (0, conv);
+    {
+        juce::MidiBuffer mid; juce::AudioBuffer<float> blk (2, 512); float pk = 0;
+        mid.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0); mid.addEvent (juce::MidiMessage::noteOn (1, 64, (juce::uint8) 100), 0);
+        auto* kt = p.apvts.getParameter ("keysTo"); if (kt != nullptr) kt->setValueNotifyingHost (0);
+        for (int i = 0; i < 60; ++i) { blk.clear(); p.processBlock (blk, mid); mid.clear(); pk = juce::jmax (pk, blk.getMagnitude (0, 512)); }
+        if (pk < .01f) fail ("synthx: plugin produced no sound with a Synth X program (" + juce::String (pk) + ")");
+        mid.addEvent (juce::MidiMessage::noteOff (1, 60), 0); mid.addEvent (juce::MidiMessage::noteOff (1, 64), 0);
+        for (int i = 0; i < 400; ++i) { blk.clear(); p.processBlock (blk, mid); mid.clear(); }
+        if (blk.getMagnitude (0, 512) > 1e-3f) fail ("synthx: notes did not release");
+    }
+    juce::MemoryBlock mb; p.getStateInformation (mb);
+    HitGenProcessor q; q.setPlayConfigDetails (0, 2, sr, 512); q.prepareToPlay (sr, 512); q.setStateInformation (mb.getData(), (int) mb.getSize());
+    if (juce::JSON::toString (q.xsProgram (0)) != juce::JSON::toString (p.xsProgram (0))) fail ("synthx: program not restored with the project");
+    {   // arayüz: Synth X görünümü, sekmeler, şablonlar, denetimden programa ve programdan sese
+        std::unique_ptr<HitGenEditor> ed (dynamic_cast<HitGenEditor*> (p.createEditor()));
+        ed->setTab (1); auto& sp = ed->sounds(); sp.setPart (1); sp.setView (SoundPage::vSynth);
+        auto& X = sp.synthX();
+        if (! X.isVisible()) fail ("synthx: editor not visible");
+        if (p.xsProgram (1).isObject()) fail ("synthx: bass part should start on the classic engine");
+        X.applyTemplate (4);   // PD bas
+        if (! p.xsProgram (1).isObject() || (int) p.xsProgram (1)["o"][0]["sm"] != 2) fail ("synthx: template did not reach the part");
+        for (int t = 0; t < 8; ++t) { X.showTab (t); if (X.numControls() < (t == 6 ? 8 : 10)) fail ("synthx: tab " + juce::String (t) + " has only " + juce::String (X.numControls()) + " controls"); }
+        X.setValue ("o.0.f.c", 333.0);
+        if (std::abs ((double) p.xsProgram (1)["o"][0]["f"]["c"] - 333.0) > .01) fail ("synthx: control edit did not reach the program");
+        for (int i = 0; i < SynthXPanel::numTemplates(); ++i)
+        {
+            X.applyTemplate (i); auto P = xs::Program::fromVar (p.xsProgram (1), sr); auto Vp = std::make_unique<xs::Voice>(); auto& V = *Vp; xs::Ctx c; c.sr = sr; xs::start (V, *P, 48, 100, 1, 3, c);
+            juce::AudioBuffer<float> b (2, 72000); b.clear(); for (int k = 0; k < 72000; k += 256) xs::render (V, *P, c, b.getWritePointer (0, k), b.getWritePointer (1, k), juce::jmin (256, 72000 - k));
+            const float pk = b.getMagnitude (0, 72000);
+            if (! std::isfinite (pk) || pk < .01f || pk > 2) fail ("synthx: template " + juce::String (i) + " peak " + juce::String (pk));
+        }
+        X.applyTemplate (1); X.showTab (0);
+        auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f);
+        auto f = juce::File ("/tmp/b-asan/synthx-page.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os);
+        X.showTab (4); auto img2 = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f);
+        auto f2 = juce::File ("/tmp/b-asan/synthx-env.png"); f2.deleteFile(); juce::FileOutputStream os2 (f2); png.writeImageToStream (img2, os2);
+    }
+    std::cout << "synthx: ok\n";
+}
+
 static void testSoundPageUi (const juce::File& outDir, const FailFn& fail, bool shots)
 {
     HitGenProcessor p; p.setPlayConfigDetails (0, 2, 48000, 256); p.prepareToPlay (48000, 256);
@@ -2060,6 +2237,7 @@ int main (int argc, char** argv)
     auto fail = [&] (const juce::String& m) { std::cout << "FAIL " << m << "\n"; ++failures; };
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_DEMO", {}).isNotEmpty()) { testLoudness (outDir, fail, false); return failures == 0 ? 0 : 1; }   // yalnızca dinleme demoları
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_CALIBRATE", {}).isNotEmpty()) { testFactoryBank (fail, true); return 0; }   // fabrika bankası seviye ayarı
+    if (juce::SystemStats::getEnvironmentVariable ("HITGEN_SYNTHX", {}).isNotEmpty()) { testSynthX (fail); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_CHOIR", {}).isNotEmpty()) { testChoir (outDir, fail, true); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_SHOT", {}).isNotEmpty()) { testSoundPageUi (outDir, fail, true); testLoopForge (outDir, fail, true); testChoir (outDir, fail, true); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_BANK", {}).isNotEmpty()) { testHookRules (fail); testRiffChopRules (fail); testFactoryBank (fail, false); testBankBehaviour (fail); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
@@ -2316,6 +2494,7 @@ int main (int argc, char** argv)
     testSoundPageUi (outDir, fail, false);
     testLoopForge (outDir, fail, false);
     testChoir (outDir, fail, false);
+    testSynthX (fail);
     testMultiOut (fail);
     testReference (outDir, fail); testSampler (fail); testLibrary (fail); testMidiLearn (outDir, fail);
     testLoudness (outDir, fail, quick); testDrumMachine (outDir, fail); testGuideAndAssistant (outDir, fail);

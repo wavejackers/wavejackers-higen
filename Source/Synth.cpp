@@ -102,6 +102,7 @@ std::unique_ptr<Patch> Patch::fromVar (const juce::var& v, const Data& data, dou
             auto tg = at (L, 2).toString(), sh = at (L, 3).toString();
             p->lfo[(size_t) li++] = { (float) num (at (L, 0), 1), (float) num (at (L, 1)), tg == "pit" ? 1 : tg == "amp" ? 2 : 0, sh == "triangle" ? 1 : sh == "square" ? 2 : sh == "sawtooth" ? 3 : 0, num (at (L, 4)) > 0 };
         }
+    if (v["xs"].isObject()) p->xs = xs::Program::fromVar (v["xs"], sampleRate);
     if (auto* lf = v["lf"].getArray()) p->lfo[2] = { (float) num ((*lf)[0], 1), (float) num ((*lf)[1]), 0, 0, false };   // eski filtre LFO'su
     p->rv = (float) num (v["rv"]); p->dl = (float) num (v["dl"]); p->ch = (float) num (v["ch"]); p->dr = (float) num (v["dr"]); p->fd = (float) num (v["fd"]);
     p->vol = (float) num (v["vol"], .2); p->kt = has (v, "kt") ? (float) num (v["kt"]) : .5f; p->noi = (float) num (v["noi"]); p->sub = (float) num (v["sub"]);
@@ -146,7 +147,7 @@ void Engine::prepare (double sampleRate, int maxBlock)
     basic[0].build (saw, sr); basic[1].build (sq, sr); basic[2].build (tri, sr); basic[3].build (sine, sr);
     for (int t = 0; t < 3; ++t) for (int c = 0; c < 2; ++c) chorusBuf[t][c].assign ((size_t) (sr * 0.06) + 4, 0.0f);
     for (int c = 0; c < 2; ++c) dlBuf[c].assign ((size_t) (sr * 2.0) + 4, 0.0f);
-    partBuf.setSize (8, maxBlockSize); sendRv.setSize (2, maxBlockSize); sendDl.setSize (2, maxBlockSize); drumBuf.setSize (2, maxBlockSize);
+    partBuf.setSize (8, maxBlockSize); xsTmp.setSize (2, maxBlockSize); sendRv.setSize (2, maxBlockSize); sendDl.setSize (2, maxBlockSize); drumBuf.setSize (2, maxBlockSize);
     juce::Reverb::Parameters rp; rp.roomSize = .84f; rp.damping = .45f; rp.wetLevel = .9f; rp.dryLevel = 0; rp.width = 1; rp.freezeMode = 0;
     reverb.setParameters (rp); reverb.setSampleRate (sr);
     juce::dsp::ProcessSpec spec { sr, (juce::uint32) maxBlockSize, 2 };
@@ -245,7 +246,7 @@ void Engine::noteOff (int track, int note, int)
     const int ti = track == 3 ? 2 : track;
     if (inst[(size_t) ti].active()) { inst[(size_t) ti].noteOff (note); return; }
     const float R = cur[(size_t) ti] ? cur[(size_t) ti]->R * std::pow (2.0f, macros[(size_t) (ti == 2 ? 3 : ti)].release * 3) : .3f;
-    for (auto& v : voices) if (v.active && v.track == ti && v.gate && v.note == note && ! v.released) { v.gate = false; v.relT = v.t; v.endT = v.t + juce::jmax (.02f, R) * 2.5 + .05; }
+    for (auto& v : voices) if (v.active && v.track == ti && v.gate && v.note == note && ! v.released) { v.gate = false; v.relT = v.t; if (! v.xsOn) v.endT = v.t + juce::jmax (.02f, R) * 2.5 + .05; }
 }
 
 void Engine::allNotesOff()
@@ -284,10 +285,59 @@ void Engine::startVoice (Voice& v, const Patch& p, int track, int note, int vel,
     const size_t ti = (size_t) juce::jlimit (0, 2, track);
     if (p.glide > 0 && lastFreq[ti] > 0) v.glideFrom = juce::jlimit (.125, 8.0, lastFreq[ti] / v.f0);
     lastFreq[ti] = v.f0;
+    if (p.xs != nullptr)
+    {
+        const size_t idx = (size_t) (&v - voices.data());
+        double gf = 1; if (p.xs->glide > 0 && v.glideFrom != 1) gf = v.glideFrom; else if (p.xs->glide > 0 && lastGlide[ti] > 0) gf = juce::jlimit (.125, 8.0, lastGlide[ti] / v.f0);
+        lastGlide[ti] = v.f0;
+        xs::start ((*xv)[idx], *p.xs, note, vel, gf, v.rng, ctxFor (m));
+        v.xsOn = true; v.endT = 1e18;
+    }
+}
+
+xs::Ctx Engine::ctxFor (const Macros& m) const noexcept
+{
+    xs::Ctx c; c.sr = sr; c.bpm = bpm; c.cutMul = std::pow (2.0f, m.cutoff * 3); c.resAdd = m.reso * .5f; c.atkMul = std::pow (2.0f, m.attack * 3); c.relMul = std::pow (2.0f, m.release * 3);
+    c.drive = juce::jmax (0.0f, m.drive * .6f); c.lfoMul = juce::jmax (0.0f, 1 + juce::jlimit (-1.0f, 1.0f, m.movement)); c.wheel = wheel.load (std::memory_order_relaxed); c.after = after.load (std::memory_order_relaxed);
+    c.maxPh = quality.maxUnison <= 2 ? 8 : quality.maxUnison <= 4 ? 16 : 32; c.controlRate = quality.controlRate;
+    return c;
+}
+
+// Synth X sesi: geçici tampona işlenir; çalınan (sökülen) ses 6 ms içinde kısılarak biter
+void Engine::renderX (Voice& v, const Patch& p, const Macros& m, float* L, float* R, int n)
+{
+    auto& X = (*xv)[(size_t) (&v - voices.data())];
+    float* tl = xsTmp.getWritePointer (0); float* tr = xsTmp.getWritePointer (1);
+    juce::FloatVectorOperations::clear (tl, n); juce::FloatVectorOperations::clear (tr, n);
+    const double dt = 1.0 / sr; int k = 0;
+    if (! X.released && v.t + n * dt >= v.relT) { k = juce::jlimit (0, n, (int) std::ceil ((v.relT - v.t) / dt)); }
+    const auto c = ctxFor (m);
+    if (! X.released && v.t + n * dt >= v.relT)
+    {
+        if (k > 0) xs::render (X, *p.xs, c, tl, tr, k);
+        xs::release (X); v.released = true;
+        if (k < n && ! X.done) xs::render (X, *p.xs, c, tl + k, tr + k, n - k);
+    }
+    else xs::render (X, *p.xs, c, tl, tr, n);
+    for (int i = 0; i < n; ++i)
+    {
+        const double t = v.t + i * dt; const float g = v.endT < 1e17 ? (float) juce::jlimit (0.0, 1.0, (v.endT - t) / .006) : 1.0f;
+        L[i] += tl[i] * g; R[i] += tr[i] * g;
+    }
+    v.t += n * dt;
+    if (X.done || (v.endT < 1e17 && v.t >= v.endT)) v.active = false;
 }
 
 void Engine::migrateVoice (Voice& v, const Patch& p)
 {
+    if (p.xs != nullptr || v.xsOn)
+    {
+        auto& X = (*xv)[(size_t) (&v - voices.data())]; const auto c = ctxFor (macros[(size_t) (v.track == 2 ? 3 : v.track)]);
+        if (p.xs != nullptr && v.xsOn) xs::migrate (X, *p.xs, c);
+        else if (p.xs != nullptr) { xs::start (X, *p.xs, v.note, (int) (v.vel * 127), 1, v.rng, c); if (v.released || ! v.gate) xs::release (X); v.xsOn = true; v.endT = 1e18; }
+        else { v.active = false; return; }   // Synth X -> klasik: bu nota biter, sonraki notalar klasik motorla
+        v.patch = &p; return;
+    }
     const Macros& m = macros[(size_t) (v.track == 2 ? 3 : v.track)];
     const float relM = std::pow (2.0f, m.release * 3);
     const double D = juce::jmax (.01, (double) p.D), R = juce::jmax (.02, (double) p.R * relM);
@@ -302,6 +352,7 @@ void Engine::migrateVoice (Voice& v, const Patch& p)
 
 void Engine::renderVoice (Voice& v, const Patch& p, const Macros& m, float* L, float* R, int n)
 {
+    if (v.xsOn) { if (p.xs != nullptr) renderX (v, p, m, L, R, n); else v.active = false; return; }
     const double dt = 1.0 / sr; const int CR = quality.controlRate;
     const float uniNorm = 1.0f / std::sqrt ((float) v.uniN);
     const bool bass = p.cat == "Bas" || p.cat == "Sub" || p.cat == "Rolling" || p.cat == "Acid", vox = p.cat == "Vox";

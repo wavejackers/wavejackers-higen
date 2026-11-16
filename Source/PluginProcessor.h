@@ -75,8 +75,13 @@ public:
     juce::File writeMidi (int which);
     // ---- ses tasarımı (part: 0 akor, 1 bas, 2 melodi)
     void resetSoundDesign (int part);          // seçili sesin ilk haline dön
+    // Synth X: parça başına program (void = klasik motor). Ses seçilince sesin kendi programı (varsa) gelir.
+    juce::var xsProgram (int part) const { return xsEdit[(size_t) juce::jlimit (0, 2, part)]; }
+    void setXsProgram (int part, const juce::var& prog);   // canlı: çalan notalar yeni programla sürer
+    juce::var xsFromClassic (int part) const;              // seçili klasik sesi Synth X programına çevirir (yaklaşık)
     void randomizeSound (int part);            // role uygun rastgele ses
-    juce::var currentSoundVar (int part) const;   // parametrelerden kurulan güncel ses
+    juce::var currentSoundVar (int part) const;   // parametrelerden kurulan güncel ses (Synth X programı dahil)
+    std::array<juce::var, 3> xsEdit; int xsVersion = 0;   // Synth X programı değişince artar (düzenleyici yeniler)
     void applySoundParams (int part, const float* vals);     // Benzerini üret / geçmiş: değerleri yaz ve yamayı hemen kur
     void readSoundParams (int part, float* vals) const;
     void applyRefToProject (const hg::RefAnalysis& a);       // tespit edilen tempo, ton ve makamı üretici ayarlarına uygula

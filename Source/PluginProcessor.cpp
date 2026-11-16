@@ -199,8 +199,7 @@ void HitGenProcessor::loadPatch (int track, bool live)
     const auto& base = data.soundById (sounds[(size_t) track]);
     if (base.isVoid()) return;
     const int part = partOfTrack (track);
-    float vals[hg::kNumSp]; readSd (part, vals);
-    auto np = hg::Patch::fromVar (hg::spToSound (base, vals), data, sr, tableCache[(size_t) part].get());
+    auto np = hg::Patch::fromVar (currentSoundVar (part), data, sr, tableCache[(size_t) part].get());
     if (np->usesTable()) tableCache[(size_t) part] = std::make_unique<hg::Patch> (*np);
     // eski yamaları hemen sil: zamanlayıcı işlemeden peş peşe çok yama gelirse (ör. mesaj döngüsü olmayan test ya da sunucu)
     // 64'lük çöp kuyruğu dolup yama sızdırmasın. Yalnızca mesaj iş parçacığında: setStateInformation başka iş parçacığından gelebilir.
@@ -235,7 +234,57 @@ void HitGenProcessor::applySoundToParams (int part)
 juce::var HitGenProcessor::currentSoundVar (int part) const
 {
     float vals[hg::kNumSp]; readSd (part, vals);
-    return hg::spToSound (data.soundById (sounds[(size_t) trackOfPart (part)]), vals);
+    auto s = hg::spToSound (data.soundById (sounds[(size_t) trackOfPart (part)]), vals);
+    if (auto* o = s.getDynamicObject()) { if (xsEdit[(size_t) part].isObject()) o->setProperty ("xs", xsEdit[(size_t) part]); else o->removeProperty ("xs"); }
+    return s;
+}
+
+void HitGenProcessor::setXsProgram (int part, const juce::var& prog)
+{
+    part = juce::jlimit (0, 2, part); xsEdit[(size_t) part] = prog.isObject() ? prog : juce::var(); ++xsVersion;
+    loadPatch (trackOfPart (part), true);
+}
+
+juce::var HitGenProcessor::xsFromClassic (int part) const
+{
+    // klasik sesin yaklaşık karşılığı: osilatörler Mod osilatörüne, filtre her osilatöre, ADSR 1. zarfa, filtre zarfı 2. zarfa, LFO'lar LFO'lara
+    const auto s = currentSoundVar (juce::jlimit (0, 2, part)); auto P = xs::Program::toVar (xs::Program::init());
+    auto set = [] (juce::var o, const char* k, juce::var v) { if (auto* d = o.getDynamicObject()) d->setProperty (k, v); };
+    const auto* oa = s["o"].getArray(); const auto* f = s["f"].getArray();
+    const juce::String ft = f != nullptr ? (*f)[0].toString() : "lowpass";
+    const int ftype = ft == "highpass" ? 4 : ft == "bandpass" ? 5 : (f != nullptr && f->size() > 6 && (double) (*f)[6] > 0) ? 2 : 1;
+    for (int k = 0; k < 3; ++k)
+    {
+        auto O = P["o"][k];
+        if (oa == nullptr || k >= oa->size()) { set (O, "t", 0); continue; }
+        const auto L = (*oa)[k]; const auto w = L[0].toString();
+        set (O, "t", 1); set (O, "a", w == "q" ? 1 : w == "t" ? 2 : w == "s" ? 3 : w == "x" ? 5 : 0);
+        const double det = (double) L[1], oct = (double) L[2], gain = (double) L[3];
+        set (O, "oc", juce::jlimit (-3, 3, (int) std::lround (oct))); set (O, "fi", juce::jlimit (-1.0, 1.0, det / 100.0)); set (O, "lv", juce::jlimit (0.0, 1.0, gain > 0 ? gain : .8));
+        if (const auto* u = s["u"].getArray()) { set (O, "u", juce::jlimit (1, 12, (int) (*u)[0])); set (O, "d", juce::jlimit (0.0, 1.0, (double) (*u)[1] / 40.0)); }
+        auto F = O["f"]; set (F, "t", ftype);
+        if (f != nullptr) { set (F, "c", (double) (*f)[1]); set (F, "r", juce::jlimit (0.0, 1.0, (double) (*f)[2] / 24.0)); set (F, "e", juce::jlimit (-1.0, 1.0, (double) (*f)[3] / 5.0)); }
+        set (F, "k", s["kt"].isVoid() ? .5 : (double) s["kt"]);
+    }
+    juce::Array<juce::var> env;
+    if (const auto* a = s["a"].getArray()) env.add (juce::Array<juce::var> { (*a)[0], (*a)[1], (*a)[2], (*a)[3], 0 }); else env.add (P["env"][0]);
+    env.add (juce::Array<juce::var> { f != nullptr && f->size() > 4 ? (*f)[4] : juce::var (.005), f != nullptr && f->size() > 5 ? (*f)[5] : juce::var (.3), 0, .3, 0 });
+    env.add (P["env"][2]); env.add (P["env"][3]);
+    set (P, "env", env);
+    if (const auto* l = s["l"].getArray())
+        for (int i = 0; i < 2 && i < l->size(); ++i)
+        {
+            const auto L = (*l)[i]; auto Lf = P["lfo"][i]; const auto tg = L[2].toString(), sh = L[3].toString();
+            set (Lf, "w", sh == "triangle" ? 1 : sh == "square" ? 4 : sh == "sawtooth" ? 2 : 0); set (Lf, "sy", 0); set (Lf, "r", (double) L[0]);
+            const double depth = juce::jlimit (0.0, 1.0, (double) L[1]);
+            juce::Array<juce::var> d;
+            if (tg == "pit") d.add (juce::Array<juce::var> { (int) xs::dPitch, depth * .05 });
+            else if (tg == "amp") d.add (juce::Array<juce::var> { (int) xs::dAmp, depth * .5 });
+            else for (int k = 0; k < 3; ++k) d.add (juce::Array<juce::var> { k * 16 + 11, depth * .3 });
+            set (Lf, "d", d);
+        }
+    set (P, "gl", s["gl"].isVoid() ? 0.0 : (double) s["gl"]);
+    return xs::Program::toVar (P);
 }
 
 void HitGenProcessor::resetSoundDesign (int part)
@@ -282,7 +331,7 @@ void HitGenProcessor::applyRefToProject (const hg::RefAnalysis& a)
 void HitGenProcessor::setSound (int track, const juce::String& id, bool isManual)
 {
     sounds[(size_t) track] = id; if (isManual) manual[(size_t) track] = true;
-    if (track != hg::kDrums) applySoundToParams (partOfTrack (track));
+    if (track != hg::kDrums) { const auto& xs = data.soundById (id)["xs"]; xsEdit[(size_t) partOfTrack (track)] = xs.isObject() ? xs::Program::toVar (xs) : juce::var(); ++xsVersion; applySoundToParams (partOfTrack (track)); }
     loadPatch (track);
 }
 
@@ -639,6 +688,9 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     {
         const auto msg = meta.getMessage();
         if (msg.isController() && midiLearn.handle (msg)) continue;      // eşlenmiş CC ya da MIDI Learn: kilitsiz, bellek ayırmadan
+        if (msg.isControllerOfType (1)) engine.wheel.store (msg.getControllerValue() / 127.0f, std::memory_order_relaxed);   // Synth X matrisi: mod tekerleği
+        else if (msg.isChannelPressure()) engine.after.store (msg.getChannelPressureValue() / 127.0f, std::memory_order_relaxed);
+        else if (msg.isAftertouch()) engine.after.store (msg.getAfterTouchValue() / 127.0f, std::memory_order_relaxed);
         if (numBlockEv >= (int) blockEv.size()) break;
         if (msg.isNoteOn()) blockEv[(size_t) numBlockEv++] = { meta.samplePosition, 1, keysTrack, msg.getNoteNumber(), msg.getVelocity(), -1 };
         else if (msg.isNoteOff()) blockEv[(size_t) numBlockEv++] = { meta.samplePosition, 2, keysTrack, msg.getNoteNumber(), 0, 0 };
@@ -795,6 +847,7 @@ juce::ValueTree HitGenProcessor::stateTree()
     for (int t = 0; t < 4; ++t) { extra.setProperty (juce::String ("sound_") + kPartIds[t], sounds[(size_t) t], nullptr); extra.setProperty (juce::String ("manual_") + kPartIds[t], manual[(size_t) t], nullptr); }
     extra.setProperty ("lang", lang, nullptr); extra.setProperty ("uiScale", uiScale, nullptr); extra.setProperty ("contrast", highContrast, nullptr);
     extra.setProperty ("sdv", 1, nullptr);   // ses tasarımı parametreleri geçerli (2.2+)
+    for (int pt = 0; pt < 3; ++pt) if (xsEdit[(size_t) pt].isObject()) extra.setProperty ("xs_" + juce::String (pt), juce::JSON::toString (xsEdit[(size_t) pt], true), nullptr);
     extra.setProperty ("userArtist", userArtist, nullptr); extra.setProperty ("userPreset", userPreset, nullptr);
     if (ref.hasPath() || ref.sampler.enabled.load() || ref.sampler.enabled.load()) extra.setProperty ("ref", juce::JSON::toString (ref.stateToVar(), true), nullptr);
     for (int pad = 0; pad < hg::kNumPads; ++pad) { const auto sp = drumSamplePath (pad); if (sp.isNotEmpty()) extra.setProperty (juce::String ("dmSample_") + hg::kPadIds[pad], sp, nullptr); }
@@ -868,6 +921,7 @@ void HitGenProcessor::restoreFromTree (const juce::ValueTree& source, bool inclu
             manual[(size_t) t] = (bool) extra.getProperty (juce::String ("manual_") + kPartIds[t]);
         }
         sdValid = (int) extra.getProperty ("sdv", 0) >= 1;
+        for (int pt = 0; pt < 3; ++pt) { const auto js = extra.getProperty ("xs_" + juce::String (pt)).toString(); const auto v = js.length() < 2000000 ? juce::JSON::parse (js) : juce::var(); xsEdit[(size_t) pt] = v.isObject() ? v : juce::var(); } ++xsVersion;
         missingSamples.clear();
         for (int pad = 0; pad < hg::kNumPads; ++pad)
         {

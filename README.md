@@ -331,3 +331,25 @@ Doğrulanmayan: kulakla dinleme, DAW'a sürükleme (FL Studio, Ableton), macOS v
 **Henüz doğrulanmayanlar:** koro kulakla dinlenmedi; gerçek bir mikrofonla kayıt (eklenti ve tarayıcı) denenmedi; FL Studio ve Ableton'da sürükleme denenmedi. Tarayıcıda mikrofon izni sayfanın açıldığı yere bağlıdır; izin yoksa dosya yükleme çalışır.
 
 **EN.** The new **Choir** tab exists in the plugin and the web version. Record a few seconds of your voice (12 s max) or load any vocal: it becomes a four-part choir (bass, tenor, alto, soprano) that follows the chords of the current idea and plays as a tempo-locked, seamless loop. Without a voice the built-in choir sings (Aah, Ooh, Eeh, Mmm). Pitch is detected with YIN and moved to each part's note with formant-preserving TD-PSOLA. The 3D stage (an elder and four angels, 8676 triangles) is drawn by a software rasteriser, so it needs no OpenGL or WebGL; angels sing their part, wings flap on the beat, and clicking an angel toggles its part. Not yet verified: listening tests, recording with a real microphone, and dragging into FL Studio or Ableton.
+
+## Synth X ses motoru (1. aşama) / Synth X engine (phase 1)
+
+**TR.** Akor, bas ve melodi partileri artık genişletilmiş bir ses motoruyla da çalabiliyor. Ses tasarımı sayfasında **SYNTH X** düğmesi düzenleyiciyi açar. Bir partide Synth X açıksa o parti yeni motorla, kapalıysa klasik motorla çalar. Klasik sesler ve kalibrasyonları değişmedi; "Sesi çevir" seçili klasik sesi yaklaşık bir Synth X programına dönüştürür.
+
+- **3 osilatör**, her biri: **Mod** (6 temel dalga: testere, kare, üçgen, sinüs, darbe, org), **ROM** (27 aile x 8 = 216 bant sınırlı dalga ya da yüklenen SoundFont örneği), **Multiwave** (4 yığın x 8 ses = 32 ses, süpertestere aralıklarıyla).
+- **Sentez kipleri:** çıkarımlı (biçim = dalga katlama), FM (oran ve miktar), faz bozma (PD). **FM filtre:** filtre kesimi ses hızında modüle edilir.
+- **Dalga A/B geçişi** ve **dalga yüzeyi** (A ile B arasındaki ROM tablolarını tarar). **4 PW kipi:** kapalı, genişlik, çift testere (gerçek PWM), senkron.
+- **Unison 1-12**, **katmanlama x2** (toplam 24 ses), 4 faz kipi (serbest, sıfırla, eşit yay, sabit).
+- **Osilatör başına filtre:** Multi 12 dB, Multi 24 dB, Analog (merdiven), alçak/yüksek/bant geçiren, bant durduran, ikili paralel, ikili seri. **5 doygunluk kipi** (yumuşak, sert, tüp, katlama, fuzz).
+- **Katman FX osilatörü:** beyaz/pembe gürültü, çıtırtı ya da 216 ROM dalgasından biri; LP/HP/BP/çentik filtre; nota ve hız aralığı.
+- **Modülasyon:** 4 ADSR (1. ses düzeyi, diğerleri 5 hedefe), 2 LFO (24 dalga, tempoya kilit, notada baştan başlama, yavaş giriş), 16 adımlı adım kontrolcüsü, 2 kaynaklı matris (hız, tuş, mod tekerleği, aftertouch, rastgele, zarflar, LFO'lar, adım). 61 hedef.
+- **SoundFont (SF2):** ilk preset'in örnek bölgeleri (tuş/hız aralığı, kök nota, ince ayar, döngü) okunur.
+- **11 şablon:** Başlangıç, Süpertestere lead, PWM pad, FM çan, PD bas, Ünlü pad, Wobble bas, Pluck, Hoover, Sub bas, Gürültü yükselişi.
+- Mevcut makrolar (parlaklık, rezonans, atak, bırakma, sürüş, hareket) Synth X'e de uygulanır. Kalite ayarı nota başına ses sayısını sınırlar (Eco 8, Dengeli 16, Yüksek 32).
+- Program proje ve preset ile kaydedilir; düzenlemeler çalan notalara canlı geçer.
+
+**Sonraki aşamalar:** 2. aşama 14 efekt ve master bölümü (limiter, filtreler, stereo genişletici). 3. aşama sekans/arp, akor modu, Morph, tek düğmeyle çok düğme, otomatik preset üretici, ses girişiyle modülasyon, preset tarayıcı. Web sürümü VST oturduktan sonra gelecek.
+
+**Henüz doğrulanmayanlar:** sesler kulakla dinlenmedi; gerçek SoundFont dosyalarıyla denenmedi (test kendi ürettiği SF2 ile yapıldı); Synth X parametreleri henüz DAW otomasyonuna açık değil (makrolar açık); hedef, kaynak ve LFO dalga adları yalnızca İngilizce.
+
+**EN.** Chords, bass and melody can now play with the Synth X engine (SYNTH X button in Sound Design): 3 oscillators (Mod, ROM with 216 band-limited waves or a SoundFont, Multiwave with 32 voices), subtractive/FM/PD, FM filter, morph and wave surface, 4 PW modes, unison up to 12 x2 layers, 9 filter types and 5 saturation modes per oscillator, a layer FX oscillator, 4 ADSR, 2 LFOs with 24 shapes, a 16-step controller and a 2-source matrix (61 destinations), and 11 templates. Classic sounds are unchanged. Effects, sequencing and the special features follow in phases 2 and 3.
