@@ -214,7 +214,7 @@ void HitGenProcessor::loadPatch (int track, bool live)
         auto& pf = perf[(size_t) part]; const auto& X = *np->xs;
         pf.chord.store (X.chord.mode); pf.strum.store (X.chord.strum); pf.scaleLock.store (X.chord.scaleLock ? 1 : 0); pf.split.store (X.chord.split); pf.side.store (X.chord.side);
         {   // sekans: boştaki tampona yaz, sonra etkin tamponu çevir
-            const int nx = 1 - pf.seqIdx.load(); auto& B = pf.seq[(size_t) nx]; B.count = 0; B.beats = X.seqBeats;
+            const int nx = 1 - pf.seqIdx.load(); auto& B = pf.seq (nx); B.count = 0; B.beats = X.seqBeats;
             for (auto& q : X.seq) if (B.count < (int) B.n.size()) B.n[(size_t) B.count++] = { q.beat, q.len, (float) q.rel, (float) q.vel };
             pf.seqIdx.store (nx);
         } pf.arpOn.store (X.arp.on ? 1 : 0); pf.arpMode.store (X.arp.mode); pf.arpDiv.store (X.arp.div); pf.arpOct.store (X.arp.oct); pf.gate.store (X.arp.gate);
@@ -1671,7 +1671,7 @@ void HitGenProcessor::perform (int n, double bpm, bool hostPlay, double ppq)
         }
         const int sd = pf.side.load (std::memory_order_relaxed), sp = pf.split.load (std::memory_order_relaxed);
         if ((sd == 1 && e.note >= sp) || (sd == 2 && e.note < sp)) continue;   // split: bu taraf yardımcılar olmadan normal çalar
-        const auto& SQ = pf.seq[(size_t) pf.seqIdx.load (std::memory_order_acquire)];
+        const auto& SQ = pf.seq (pf.seqIdx.load (std::memory_order_acquire));
         if (SQ.count > 0 && pf.arpOn.load (std::memory_order_relaxed) == 0)
         {   // MIDI dosyası sekansı: en son basılan tuş sekansı aktarır; bırakınca durur
             if (e.kind == 1) { seqRoot[(size_t) part] = e.note; seqPos[(size_t) part] = 0; arpVel[(size_t) part] = e.vel; }
@@ -1716,7 +1716,7 @@ void HitGenProcessor::perform (int n, double bpm, bool hostPlay, double ppq)
     for (int part = 0; part < 3; ++part)
     {
         const int root = seqRoot[(size_t) part]; if (root < 0) continue;
-        const auto& SQ = perf[(size_t) part].seq[(size_t) perf[(size_t) part].seqIdx.load (std::memory_order_acquire)]; if (SQ.count == 0) { seqRoot[(size_t) part] = -1; continue; }
+        const auto& SQ = perf[(size_t) part].seq (perf[(size_t) part].seqIdx.load (std::memory_order_acquire)); if (SQ.count == 0) { seqRoot[(size_t) part] = -1; continue; }
         const double L = juce::jmax (.25, (double) SQ.beats), b0 = seqPos[(size_t) part], b1 = b0 + n * bps; seqPos[(size_t) part] = b1;
         for (int k = 0; k < SQ.count; ++k)
         {

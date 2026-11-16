@@ -2301,6 +2301,7 @@ static void testGuideAndAssistant (const juce::File& outDir, const FailFn& fail)
 
 int main (int argc, char** argv)
 {
+    std::setvbuf (stdout, nullptr, _IONBF, 0);   // çökmede son test adı görünsün
     juce::ScopedJuceInitialiser_GUI gui;
     const juce::File outDir (argc > 1 ? juce::String (argv[1]) : juce::File::getCurrentWorkingDirectory().getFullPathName());
     int failures = 0;

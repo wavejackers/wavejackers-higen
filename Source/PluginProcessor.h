@@ -218,7 +218,8 @@ public:   // testler okur
     {
         std::atomic<int> chord { 0 }, arpOn { 0 }, arpMode { 0 }, arpDiv { 2 }, arpOct { 1 }, scaleLock { 0 }, split { 60 }, side { 0 }; std::atomic<float> strum { 0 }, gate { .8f };
         struct SeqBuf { std::array<std::array<float, 4>, 256> n {}; int count = 0; float beats = 4; };
-        std::array<SeqBuf, 2> seq; std::atomic<int> seqIdx { 0 };   // çift tampon: mesaj iş parçacığı boştakine yazar, sonra çevirir
+        std::unique_ptr<std::array<SeqBuf, 2>> seqP { std::make_unique<std::array<SeqBuf, 2>>() }; std::atomic<int> seqIdx { 0 };   // heap: işlemci küçük kalır
+        SeqBuf& seq (int i) const noexcept { return (*seqP)[(size_t) i]; }   // çift tampon: mesaj iş parçacığı boştakine yazar, sonra çevirir
     };
     std::array<Perf, 3> perf; std::atomic<int> scaleMask { 0xAD5 }, scaleKey { 9 };
     struct Pend { long long at = 0; int track = 0, note = 0, vel = 0, root = 0; };
