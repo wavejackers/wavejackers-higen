@@ -94,6 +94,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout HitGenProcessor::createLayou
         for (auto& [id, def] : mp) L.add (std::make_unique<AudioParameterFloat> (ParameterID { id, 6 }, juce::String ("Master ") + (juce::String (id).substring (4)), NormalisableRange<float> (0, 100, 1), def, pct));
         L.add (std::make_unique<AudioParameterFloat> (ParameterID { "mst_out", 6 }, "Master output", NormalisableRange<float> (-24, 6, .1f), 0.0f, AudioParameterFloatAttributes().withLabel ("dB")));
         L.add (std::make_unique<AudioParameterFloat> (ParameterID { "xs_alpha", 6 }, "Alpha knob", NormalisableRange<float> (0, 100, .1f), 0.0f, pct));
+        static const char* const pn[3] = { "Chords", "Bass", "Melody" };
+        for (int pt = 0; pt < 3; ++pt)   // Synth X makroları ve Morph X/Y: matriste kaynak; DAW'dan otomasyon
+        {
+            for (int k = 1; k <= 4; ++k) L.add (std::make_unique<AudioParameterFloat> (ParameterID { "xs_" + juce::String (hg::spPartCode (pt)) + "_k" + juce::String (k), 7 }, juce::String (pn[pt]) + " macro " + juce::String (k), NormalisableRange<float> (0, 100, .1f), 0.0f, pct));
+            L.add (std::make_unique<AudioParameterFloat> (ParameterID { "xs_" + juce::String (hg::spPartCode (pt)) + "_mx", 7 }, juce::String (pn[pt]) + " morph X", NormalisableRange<float> (0, 100, .1f), 50.0f, pct));
+            L.add (std::make_unique<AudioParameterFloat> (ParameterID { "xs_" + juce::String (hg::spPartCode (pt)) + "_my", 7 }, juce::String (pn[pt]) + " morph Y", NormalisableRange<float> (0, 100, .1f), 50.0f, pct));
+        }
+        L.add (std::make_unique<AudioParameterChoice> (ParameterID { "kb_mode", 7 }, "Keyboard mode", StringArray { "Single", "Layer all parts", "Split" }, 0));
+        L.add (std::make_unique<AudioParameterInt> (ParameterID { "kb_split", 7 }, "Keyboard split", 24, 96, 54));
     }
     // Koro: çalma ve makrolar (DAW otomasyonu için)
     L.add (std::make_unique<AudioParameterBool> (ParameterID { "ch_play", 5 }, "Choir play", false));
@@ -136,6 +145,7 @@ HitGenProcessor::HitGenProcessor()
     for (int pad = 0; pad < hg::kNumPads; ++pad)
         for (int k = 0; k < kDmCtl; ++k) dmPtr[(size_t) pad][(size_t) k] = apvts.getRawParameterValue (dmParamId (pad, k));
     pLoud = p ("loudness"); pCreative = p ("drumCreative");
+    for (int pt = 0; pt < 3; ++pt) { const juce::String b = juce::String ("xs_") + hg::spPartCode (pt) + "_"; for (int k = 0; k < 4; ++k) xsMac[(size_t) pt][(size_t) k] = p ((b + "k" + juce::String (k + 1)).toRawUTF8()); xsMac[(size_t) pt][4] = p ((b + "mx").toRawUTF8()); xsMac[(size_t) pt][5] = p ((b + "my").toRawUTF8()); }
     pQuality = p ("quality"); pThick = p ("thick"); pPump = p ("pump"); pMaster = p ("master"); pBpm = p ("bpm"); pPattern = p ("pattern"); pMidiOut = p ("midiOut"); pKeysTo = p ("keysTo");
     auto ul = juce::SystemStats::getUserLanguage().substring (0, 2).toLowerCase();
     lang = data.langCodes.contains (ul) ? ul : "en";
@@ -212,6 +222,7 @@ void HitGenProcessor::loadPatch (int track, bool live)
     if (np->xs != nullptr)
     {
         auto& pf = perf[(size_t) part]; const auto& X = *np->xs;
+        pf.h1.store (X.chord.h1); pf.h2.store (X.chord.h2); pf.hKey.store (X.chord.hKey ? 1 : 0);
         pf.chord.store (X.chord.mode); pf.strum.store (X.chord.strum); pf.scaleLock.store (X.chord.scaleLock ? 1 : 0); pf.split.store (X.chord.split); pf.side.store (X.chord.side);
         {   // sekans: boştaki tampona yaz, sonra etkin tamponu çevir
             const int nx = 1 - pf.seqIdx.load(); auto& B = pf.seq (nx); B.count = 0; B.beats = X.seqBeats;
@@ -260,7 +271,7 @@ juce::var HitGenProcessor::currentSoundVar (int part) const
 
 void HitGenProcessor::setXsProgram (int part, const juce::var& prog)
 {
-    part = juce::jlimit (0, 2, part); xsEdit[(size_t) part] = prog.isObject() ? prog : juce::var(); xsAuto[(size_t) part] = ! prog.isObject(); ++xsVersion;
+    part = juce::jlimit (0, 2, part); xsEdit[(size_t) part] = prog.isObject() ? prog : juce::var(); xsAuto[(size_t) part] = ! prog.isObject(); ++xsVersion; ++statEdits;
     loadPatch (trackOfPart (part), true);
 }
 
@@ -718,6 +729,13 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     engine.loudnessOn = pLoud->load() > .5f;
     engine.masterSet = { p ("mst_hp")->load() / 100.0f, p ("mst_lp")->load() / 100.0f, p ("mst_width")->load() / 100.0f, p ("mst_color")->load() / 100.0f, std::pow (10.0f, p ("mst_out")->load() / 20.0f), 0 };
     engine.alpha.store (p ("xs_alpha")->load() / 100.0f, std::memory_order_relaxed);
+    for (int pt = 0; pt < 3; ++pt)
+    {
+        const juce::String b = juce::String ("xs_") + hg::spPartCode (pt) + "_";
+        for (int k = 0; k < 4; ++k) engine.macroVals[(size_t) pt][(size_t) k].store (xsMac[(size_t) pt][(size_t) k]->load() / 100.0f, std::memory_order_relaxed);
+        engine.macroVals[(size_t) pt][4].store (xsMac[(size_t) pt][4]->load() / 50.0f - 1, std::memory_order_relaxed); engine.macroVals[(size_t) pt][5].store (xsMac[(size_t) pt][5]->load() / 50.0f - 1, std::memory_order_relaxed);   // Morph: -1..1
+        juce::ignoreUnused (b);
+    }
     {
         auto& dm = engine.drumMachine; dm.creative = pCreative->load() > .5f;
         for (int pad = 0; pad < hg::kNumPads; ++pad)
@@ -740,6 +758,7 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     hostPlaying.store (hostPlay); hostBpm.store (hasHostBpm ? bpm : 0.0);
     engine.bpm = (float) bpm;
     const bool preview = previewPlaying.load() && ! hostPlay;
+    if (hostPlay || preview) statPlaySec.store (statPlaySec.load (std::memory_order_relaxed) + n / getSampleRate(), std::memory_order_relaxed);
     if (preview) ppq = previewPos;
     const bool run = pPattern->load() > .5f && (hostPlay || preview) && livePattern != nullptr;
     const bool mOut = pMidiOut->load() > .5f;
@@ -912,6 +931,7 @@ juce::ValueTree HitGenProcessor::stateTree()
     for (int t = 0; t < 4; ++t) { extra.setProperty (juce::String ("sound_") + kPartIds[t], sounds[(size_t) t], nullptr); extra.setProperty (juce::String ("manual_") + kPartIds[t], manual[(size_t) t], nullptr); }
     extra.setProperty ("lang", lang, nullptr); extra.setProperty ("uiScale", uiScale, nullptr); extra.setProperty ("contrast", highContrast, nullptr);
     extra.setProperty ("sdv", 1, nullptr);   // ses tasarımı parametreleri geçerli (2.2+)
+    if (! customAccent.isTransparent()) extra.setProperty ("accent", customAccent.toString(), nullptr);
     for (int pt = 0; pt < 3; ++pt) if (xsEdit[(size_t) pt].isObject() && ! xsAuto[(size_t) pt]) extra.setProperty ("xs_" + juce::String (pt), juce::JSON::toString (xsEdit[(size_t) pt], true), nullptr);   // otomatik çevirme kaydedilmez: sesten yeniden kurulur
     extra.setProperty ("userArtist", userArtist, nullptr); extra.setProperty ("userPreset", userPreset, nullptr);
     if (ref.hasPath() || ref.sampler.enabled.load() || ref.sampler.enabled.load()) extra.setProperty ("ref", juce::JSON::toString (ref.stateToVar(), true), nullptr);
@@ -986,6 +1006,7 @@ void HitGenProcessor::restoreFromTree (const juce::ValueTree& source, bool inclu
             manual[(size_t) t] = (bool) extra.getProperty (juce::String ("manual_") + kPartIds[t]);
         }
         sdValid = (int) extra.getProperty ("sdv", 0) >= 1;
+        if (includeUi) { const auto ac = extra.getProperty ("accent").toString(); customAccent = ac.isNotEmpty() ? juce::Colour::fromString (ac) : juce::Colour(); }
         for (int pt = 0; pt < 3; ++pt) { const auto js = extra.getProperty ("xs_" + juce::String (pt)).toString(); const auto v = js.length() < 2000000 ? juce::JSON::parse (js) : juce::var(); xsEdit[(size_t) pt] = v.isObject() ? v : juce::var(); xsAuto[(size_t) pt] = ! v.isObject() || (bool) extra.getProperty ("xsAuto_" + juce::String (pt), false); } ++xsVersion;
         missingSamples.clear();
         for (int pad = 0; pad < hg::kNumPads; ++pad)
@@ -1641,6 +1662,23 @@ void HitGenProcessor::coUnlock()
 // ---------------------------------------------------------------- Synth X çalım yardımcıları (ses iş parçacığı; bellek ayırmaz)
 int HitGenProcessor::chordNotes (int part, int note, int* out) const noexcept
 {
+    int n = chordCore (part, note, out);
+    const auto& pf = perf[(size_t) part]; const bool inKey = pf.hKey.load (std::memory_order_relaxed) != 0;
+    const int mask = scaleMask.load (std::memory_order_relaxed), key = scaleKey.load (std::memory_order_relaxed);
+    auto inScale = [&] (int x) { return (mask >> (((x - key) % 12 + 12) % 12) & 1) != 0; };
+    for (int h : { pf.h1.load (std::memory_order_relaxed), pf.h2.load (std::memory_order_relaxed) })   // harmonizer: her notaya sabit aralıkta ek ses
+    {
+        if (h == 0 || n >= 6) continue;
+        int x = note;
+        if (inKey) { int k = 0; const int dir = h > 0 ? 1 : -1; while (k < std::abs (h) && std::abs (x - note) < 36) { x += dir; if (inScale (x)) ++k; } }
+        else x = note + h;
+        if (x >= 0 && x <= 127) out[n++] = x;
+    }
+    return n;
+}
+
+int HitGenProcessor::chordCore (int part, int note, int* out) const noexcept
+{
     const int mode = perf[(size_t) part].chord.load (std::memory_order_relaxed);
     out[0] = note; if (mode == 0) return 1;
     if (mode == 3) { out[1] = note + 7; return 2; }
@@ -1656,8 +1694,21 @@ int HitGenProcessor::chordNotes (int part, int note, int* out) const noexcept
 
 void HitGenProcessor::perform (int n, double bpm, bool hostPlay, double ppq)
 {
-    const double sr = getSampleRate(); const int count = numBlockEv;
+    const double sr = getSampleRate();
     auto push = [&] (BlockEv e) { if (numBlockEv < (int) blockEv.size()) blockEv[(size_t) numBlockEv++] = e; };
+    {   // Multi modu: klavye tüm partileri katman olarak çalar ya da split tuşunda bas / seçili parti olarak bölünür
+        const int km = (int) p ("kb_mode")->load(), sp = (int) p ("kb_split")->load(), base = numBlockEv;
+        if (km != 0)
+            for (int i = 0; i < base; ++i)
+            {
+                auto& e = blockEv[(size_t) i]; if ((e.kind != 1 && e.kind != 2) || e.track == hg::kDrums) continue;
+                if (km == 1) { for (int t : { hg::kChords, hg::kBass, hg::kMelody }) if (t != e.track) push ({ e.off, e.kind, t, e.note, e.vel, e.len }); }
+                else if (e.note < sp) e.track = hg::kBass;
+                else if (e.track == hg::kBass) e.track = hg::kChords;
+            }
+    }
+    const int count = numBlockEv;
+    for (int i = 0; i < count; ++i) if (blockEv[(size_t) i].kind == 1) statNotes.fetch_add (1, std::memory_order_relaxed);
     for (int i = 0; i < count; ++i)
     {
         auto& e = blockEv[(size_t) i];
@@ -1678,7 +1729,7 @@ void HitGenProcessor::perform (int n, double bpm, bool hostPlay, double ppq)
             else if (e.note == seqRoot[(size_t) part]) seqRoot[(size_t) part] = -1;
             e.kind = -1; continue;
         }
-        int cn[4]; const int nc = chordNotes (part, e.note, cn);
+        int cn[6]; const int nc = chordNotes (part, e.note, cn);
         if (pf.arpOn.load (std::memory_order_relaxed) != 0)
         {   // arpej: tuşlar yalnızca tutulan nota listesini değiştirir
             auto& H = held[(size_t) part]; int& nh = numHeld[(size_t) part];

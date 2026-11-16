@@ -48,7 +48,7 @@ enum Dest
     kNumDests
 };
 juce::String destName (int d);
-enum Source { sOff, sVel, sKey, sWheel, sAfter, sRand, sEnv1, sEnv2, sEnv3, sEnv4, sLfo1, sLfo2, sStep, sAudio, sAlpha, kNumSources };
+enum Source { sOff, sVel, sKey, sWheel, sAfter, sRand, sEnv1, sEnv2, sEnv3, sEnv4, sLfo1, sLfo2, sStep, sAudio, sAlpha, sMacro1, sMacro2, sMacro3, sMacro4, sMorphX, sMorphY, kNumSources };
 juce::String sourceName (int s);
 juce::String lfoShapeName (int s);
 juce::String filterName (int t);
@@ -97,7 +97,8 @@ struct Program
     float vol = .7f, glide = 0, bend = 2, keyPan = 0;
     FxChain fx {};
     struct Arp { bool on = false; int mode = 0, div = 2, oct = 1; float gate = .8f; } arp;   // mode: 0 yukarı 1 aşağı 2 yukarı-aşağı 3 rastgele 4 çalındığı sıra; div: 0 1/4, 1 1/8, 2 1/16, 3 1/8T, 4 1/16T, 5 1/32
-    struct Chord { int mode = 0; float strum = 0; bool scaleLock = false; int split = 60, side = 0; } chord;   // side: 0 tüm klavye, 1 split altı, 2 split üstü (akor/arpej/sekans yalnız orada)
+    struct Chord { int mode = 0; float strum = 0; bool scaleLock = false; int split = 60, side = 0; int h1 = 0, h2 = 0; bool hKey = true; } chord;   // h1/h2: harmonizer (0 kapalı; hKey: gam adımı, değilse yarım ton)
+    juce::String cat;   // program kategorisi (tarayıcı)   // side: 0 tüm klavye, 1 split altı, 2 split üstü (akor/arpej/sekans yalnız orada)
     int glideMode = 0, glideSync = 0;   // glideMode: 0 her nota, 1 yalnızca legato (otomatik); glideSync: 0 kapalı, 1-6 = 1/4..1/32
     struct SeqNote { float beat = 0, len = .25f; int rel = 0, vel = 100; };
     std::vector<SeqNote> seq; float seqBeats = 4; juce::String seqName;   // MIDI dosyasından sekans: tutulan tuşa göre aktarılır   // mode: 0 kapalı 1 üçlü 2 yedili 3 power 4 oktav 5 sus2 6 sus4; strum: 0..1 = 0..120 ms
@@ -135,7 +136,7 @@ struct Voice
     int ctl = 0;
 };
 
-struct Ctx { double sr = 48000, bpm = 120; float cutMul = 1, resAdd = 0, atkMul = 1, relMul = 1, drive = 0, lfoMul = 1, wheel = 0, after = 0, audioIn = 0, alpha = 0; int maxPh = 32, controlRate = 16; };
+struct Ctx { double sr = 48000, bpm = 120; float cutMul = 1, resAdd = 0, atkMul = 1, relMul = 1, drive = 0, lfoMul = 1, wheel = 0, after = 0, audioIn = 0, alpha = 0; std::array<float, 6> macro {}; int maxPh = 32, controlRate = 16; };
 void start (Voice&, const Program&, int note, int vel, double glideFrom, uint32_t seed, const Ctx&);
 void migrate (Voice&, const Program&, const Ctx&);   // canlı düzenleme: sesler yeni programla sürer
 void release (Voice&) noexcept;

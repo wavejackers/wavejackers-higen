@@ -152,6 +152,7 @@ HitGenEditor::HitGenEditor (HitGenProcessor& p) : AudioProcessorEditor (p), proc
     refreshStyleList(); fillSoundBoxes(); applyPalette(); relabel(); refreshResult();
     soundPage->setLanguage (lang, rtl); presetPage->setLanguage (lang, rtl); projectPage->setLanguage (lang, rtl); refPage->setLanguage (lang, rtl); drumPage->setLanguage (lang, rtl); loopPage->setLanguage (lang, rtl); choirPage->setLanguage (lang, rtl);
     proc.onResultChanged = [this] { refreshResult(); };
+    proc.onAccentChanged = [this] { applyPalette(); };
     // asistan karakteri (başlıkta) ve öneri kartı; kılavuz tüm içeriğin üstünde
     addC (orb); orb.onClick = [this] { if (bubble.isVisible()) bubble.setVisible (false); else openAssistant(); };
     content.addChildComponent (bubble);
@@ -197,7 +198,7 @@ HitGenEditor::~HitGenEditor()
 {
     stopTimer(); removeMouseListener (this);
     if (proc.midiLearn.learning() >= 0) proc.midiLearn.cancelLearn();
-    proc.onResultChanged = nullptr; proc.auditionPart.store (-1);
+    proc.onResultChanged = nullptr; proc.onAccentChanged = nullptr; proc.auditionPart.store (-1);
     choirPage.reset(); loopPage.reset(); soundPage.reset(); presetPage.reset(); projectPage.reset(); refPage.reset(); drumPage.reset();
     partSa.clear(); sa.clear(); ca.clear(); ba.clear(); muteBa.clear();
     styleList.setModel (nullptr);
@@ -211,6 +212,7 @@ void HitGenEditor::setParam (const char* id, float plain)
 
 Colour HitGenEditor::styleAccent() const
 {
+    if (! proc.customAccent.isTransparent()) return proc.customAccent;   // Picasso: kullanıcının rengi
     const int si = jlimit (0, data.numStyles() - 1, (int) proc.apvts.getRawParameterValue ("style")->load());
     return Colour::fromString ("ff" + data.style (si)["accent"].toString().substring (1));
 }

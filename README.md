@@ -373,3 +373,20 @@ Doğrulanmayan: kulakla dinleme, DAW'a sürükleme (FL Studio, Ableton), macOS v
 **Yapılmayanlar:** çok katmanlı/split enstrüman modu (partiler zaten ayrı), kategorili ayrı preset tarayıcısı (kayıtlı programlar şablon listesinde), harmonizer, kısayol tuşları, görünüm özelleştirme, kullanım analizi, akademi modu. Synth X'in kendi ayarları (Alpha ve master dışında) DAW otomasyonuna açık değil. Sesler kulakla dinlenmedi.
 
 **EN.** The classic engine is no longer used: every sound is converted to Synth X when selected. Added: a 5-slot FX rack per part with 14 effects, a master section (low/high cut, width, colour, output), chord mode with strum, an arpeggiator locked to the DAW, key panning, an automatable Alpha knob and an audio-input modulation source, and X-Gen random sounds. Not done: MIDI-file sequencing, split/multi mode, a separate preset browser, portamento quantize, note remapping, harmonizer, hotkeys, skins, analytics, academy.
+
+## Synth X: son aşama / final phase
+
+**TR.** Listedeki kalan özellikler eklendi:
+
+- **Makro sekmesi:** parti başına 4 makro düğmesi ve **Morph X/Y** pad'i. Hepsi DAW'dan otomasyonlanabilir; matriste "Makro 1-4" ya da "Morph X/Y" kaynağı olarak istediğin hedeflere gönderilir. "Morph X/Y bağla" tek tıkla Osilatör 1 geçişini, kesimleri, biçimi ve rezonansı bağlar.
+- **Multi modu:** klavye tek partiyi, üç partiyi birden (katman) ya da split tuşunun altında bası, üstünde seçili partiyi çalar.
+- **Harmonizer (Çalım sekmesi):** her notaya iki ek ses; gam adımı ya da yarım ton olarak.
+- **Tarayıcı sekmesi:** şablonlar ve kayıtlı programlar kategorilere göre (Bas, Lead, Pad, Klavye, Pluck, FX, Diğer, Programlarım), arama, dinleme (Demo), silme; kaydederken kategori seçilir.
+- **Kısayol tuşları:** Ctrl/Cmd+G X-Gen, Ctrl/Cmd+S kaydet, Ctrl/Cmd+B tarayıcı, Alt+1..0 sekmeler, tarayıcıda yukarı/aşağı ok sonraki/önceki program, boşluk dinleme.
+- **Picasso modu:** arayüz rengini seç (Stil = stilin rengi); projeyle kaydedilir.
+- **Çalışma istatistikleri:** açık süre, çalma süresi, çalınan nota, ses düzenlemesi (Tarayıcı sekmesi).
+- Efekt, kaynak, hedef, filtre ve LFO dalga adları Türkçe.
+
+**Yapılmayanlar:** Akademi modu (listede de "gelecek güncelleme" olarak geçiyor). Web sürümü hâlâ eski motorla çalışıyor.
+
+**EN.** Added the remaining features: a Macro tab (4 automatable macros and a Morph X/Y pad as matrix sources), keyboard multi mode (layer all parts or split with bass below), a harmonizer, a categorised program browser with search and audition, hotkeys, Picasso colour choice, session statistics, and Turkish names for all lists. Not done: Academy mode; the web version still uses the old engine.

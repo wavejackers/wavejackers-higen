@@ -16,10 +16,14 @@ var* resolve (var& root, const String& path)
     }
     return cur;
 }
-const char* const kTabKeys[10] = { "sxOsc1", "sxOsc2", "sxOsc3", "sxLayer", "sxEnv", "sxLfo", "sxStep", "sxMatrix", "sxFx", "sxPlay" };
-const char* const kTabEn[10] = { "Osc 1", "Osc 2", "Osc 3", "Layer FX", "Envelopes", "LFO", "Step", "Matrix", "FX", "Play" };
+const char* const kTabKeys[12] = { "sxOsc1", "sxOsc2", "sxOsc3", "sxLayer", "sxEnv", "sxLfo", "sxStep", "sxMatrix", "sxFx", "sxPlay", "sxMacro", "sxBrowse" };
+const char* const kTabEn[12] = { "Osc 1", "Osc 2", "Osc 3", "Layer FX", "Envelopes", "LFO", "Step", "Matrix", "FX", "Play", "Macro", "Browse" };
 const char* const kDiv[12] = { "8 bars", "4 bars", "2 bars", "1 bar", "1/2", "1/4", "1/4 T", "1/8", "1/8 T", "1/16", "1/16 T", "1/32" };
 struct Tpl { const char* key; const char* en; std::vector<std::pair<const char*, var>> set; };
+const char* const kTplCat[11] = { "Other", "Lead", "Pad", "Keys", "Bass", "Pad", "Bass", "Pluck", "Lead", "Bass", "FX" };
+const char* const kCats[9] = { "All", "Bass", "Lead", "Pad", "Keys", "Pluck", "FX", "Other", "Mine" };
+const char* const kCatKeys[9] = { "gAll", "sxCatBass", "sxCatLead", "sxCatPad", "sxCatKeys", "sxCatPluck", "sxCatFx", "sxCatOther", "sxMine" };
+const uint32 kSwatch[9] = { 0, 0xffd9b14a, 0xff4fb3a8, 0xff6c8cff, 0xffe0607e, 0xff9b6cf0, 0xff5fc46b, 0xffff8a3d, 0xffeaeaea };
 var arr (std::initializer_list<var> l) { Array<var> a; for (auto& x : l) a.add (x); return a; }
 const std::vector<Tpl>& templates()
 {
@@ -51,12 +55,37 @@ int SynthXPanel::numTemplates() { return (int) templates().size(); }
 SynthXPanel::SynthXPanel (HitGenProcessor& p, hgui::LookAndFeel& l) : proc (p), lnf (l), data (p.data)
 {
     for (auto* c : std::initializer_list<Component*> { &convertBtn, &initBtn, &sfBtn, &xgenBtn, &templBox, &sfLbl }) addAndMakeVisible (*c);
-    for (int i = 0; i < 10; ++i)
+    for (int i = 0; i < 12; ++i)
     {
         auto& b = tabs[(size_t) i]; addAndMakeVisible (b); b.setClickingTogglesState (true); b.setRadioGroupId (771); b.setComponentID ("nav");
         b.onClick = [this, i] { if (tabs[(size_t) i].getToggleState() && section != i) showTab (i); };
     }
     addChildComponent (steps); addChildComponent (scope);
+    setWantsKeyboardFocus (true);
+    for (auto* c : std::initializer_list<Component*> { &xy, &list, &search, &auditionBtn, &deleteBtn, &linkBtn, &saveCat, &kbMode, &stats, &hint }) addChildComponent (*c);
+    list.setModel (this); list.setRowHeight (26); list.setColour (ListBox::backgroundColourId, lnf.pal().panel2);
+    search.setTextToShowWhenEmpty ("Search", lnf.pal().mute); search.onTextChange = [this] { searchText = search.getText(); refreshBrowser(); };
+    for (int i = 0; i < 9; ++i)
+    {
+        auto& b = catBtns[(size_t) i]; addChildComponent (b); b.setClickingTogglesState (true); b.setRadioGroupId (772); b.setComponentID ("nav");
+        b.onClick = [this, i] { if (catBtns[(size_t) i].getToggleState()) { catFilter = kCats[i]; refreshBrowser(); } };
+        auto& w = swatches[(size_t) i]; addChildComponent (w);
+        w.col = i == 0 ? Colour() : Colour (kSwatch[i]); w.o = this; w.onClick = [this, i] { setAccent (i == 0 ? Colour() : Colour (kSwatch[i])); repaint(); };
+    }
+    catBtns[0].setToggleState (true, dontSendNotification);
+    auditionBtn.setClickingTogglesState (true);
+    auditionBtn.onClick = [this] { if (proc.demoPlaying()) proc.stopDemo(); else proc.playDemo (part); auditionBtn.setToggleState (! auditionBtn.getToggleState(), dontSendNotification); };
+    deleteBtn.onClick = [this] { const int r = list.getSelectedRow(); if (r >= 0 && r < (int) shown.size() && shown[(size_t) r].file.existsAsFile()) { shown[(size_t) r].file.moveToTrash(); fillTemplates(); refreshBrowser(); } };
+    linkBtn.onClick = [this]
+    {   // Morph X/Y'yi hızlıca bağla: X -> Osc 1 geçiş ve tüm kesimler, Y -> Osc 1 biçim ve rezonans
+        if (! active()) prog = proc.xsFromClassic (part);
+        auto set = [this] (const String& path, var v) { if (auto* x = resolve (prog, path)) *x = v; };
+        set ("mtx.0.s", (int) xs::sMorphX); set ("mtx.0.d.0", Array<var> { 4, .5 }); set ("mtx.0.d.1", Array<var> { 11, .25 }); set ("mtx.0.d.2", Array<var> { 27, .25 }); set ("mtx.0.d.3", Array<var> { 43, .25 });
+        set ("mtx.1.s", (int) xs::sMorphY); set ("mtx.1.d.0", Array<var> { 5, .5 }); set ("mtx.1.d.1", Array<var> { 12, .3 });
+        commit(); syncAll();
+    };
+    saveCat.addItemList ({ "Bass", "Lead", "Pad", "Keys", "Pluck", "FX", "Other" }, 1); saveCat.setSelectedId (1, dontSendNotification);
+    kbAtt = std::make_unique<AudioProcessorValueTreeState::ComboBoxAttachment> (proc.apvts, "kb_mode", kbMode);
     convertBtn.onClick = [this] { proc.setXsProgram (part, var()); refresh(); };   // seçili sesten yeniden kur
     xgenBtn.onClick = [this] { xgen ((uint32_t) Random::getSystemRandom().nextInt()); };
     addChildComponent (seqBtn); addChildComponent (seqClear); seqClear.setButtonText ("x");
@@ -78,7 +107,7 @@ SynthXPanel::SynthXPanel (HitGenProcessor& p, hgui::LookAndFeel& l) : proc (p), 
     {
         auto* w = new AlertWindow (T ("sxSave", "Save"), T ("sxSaveName", "Name"), MessageBoxIconType::NoIcon, this);
         w->addTextEditor ("n", data.soundName (proc.soundId (part == 2 ? hg::kMelody : part), lang)); w->addButton ("OK", 1, KeyPress (KeyPress::returnKey)); w->addButton (T ("cancel", "Cancel"), 0, KeyPress (KeyPress::escapeKey));
-        w->enterModalState (true, ModalCallbackFunction::create ([this, w] (int r) { if (r == 1) { const auto f = saveProgram (w->getTextEditorContents ("n")); sfLbl.setText (f.existsAsFile() ? f.getFileNameWithoutExtension() : String(), dontSendNotification); } }), true);
+        w->enterModalState (true, ModalCallbackFunction::create ([this, w] (int r) { if (r == 1) { const auto f = saveProgram (w->getTextEditorContents ("n"), kCats[jlimit (1, 7, saveCat.getSelectedId())]); refreshBrowser(); sfLbl.setText (f.existsAsFile() ? f.getFileNameWithoutExtension() : String(), dontSendNotification); } }), true);
     };
     sfBtn.onClick = [this]
     {
@@ -99,6 +128,13 @@ SynthXPanel::SynthXPanel (HitGenProcessor& p, hgui::LookAndFeel& l) : proc (p), 
 }
 
 String SynthXPanel::T (const String& key, const String& en) const { const auto s = data.tr (lang, key); return s == key ? en : s; }
+String SynthXPanel::N (const String& kind, int i, const String& en) const { return T ("sx" + kind + String (i), en); }
+String SynthXPanel::destLabel (int d) const
+{
+    if (d < 48) { static const char* const en[16] = { "Pitch", "Fine", "Level", "Pan", "Morph", "Shape", "PW", "Detune", "Spread", "FM", "FM filter", "Cutoff", "Resonance", "Drive", "Layer level", "Phase" };
+                  return T ("sxOscN", "Osc") + " " + String (d / 16 + 1) + " " + N ("Dst", d % 16, en[d % 16]); }
+    return N ("Dg", d - 48, xs::destName (d));
+}
 
 void SynthXPanel::setLanguage (const String& l)
 {
@@ -108,7 +144,13 @@ void SynthXPanel::setLanguage (const String& l)
     initBtn.setButtonText (T ("sxInit", "Init")); sfBtn.setButtonText (T ("sxLoadSf", "Load SoundFont"));
     fillTemplates();
     saveBtn.setButtonText (T ("sxSave", "Save")); saveBtn.setTooltip (T ("sxSaveTip", "Save this program; it appears in the list next to the templates"));
-    for (int i = 0; i < 10; ++i) tabs[(size_t) i].setButtonText (T (kTabKeys[i], kTabEn[i]));
+    for (int i = 0; i < 12; ++i) tabs[(size_t) i].setButtonText (T (kTabKeys[i], kTabEn[i]));
+    for (int i = 0; i < 9; ++i) { catBtns[(size_t) i].setButtonText (T (kCatKeys[i], kCats[i])); swatches[(size_t) i].setButtonText (i == 0 ? T ("sxStyleCol", "Style") : String()); }
+    auditionBtn.setButtonText (T ("demoPlay", "Audition")); deleteBtn.setButtonText (T ("sxDelete", "Delete")); linkBtn.setButtonText (T ("sxLinkMorph", "Link Morph X/Y"));
+    linkBtn.setTooltip (T ("sxLinkTip", "Morph X: Osc 1 morph and all cutoffs. Morph Y: Osc 1 shape and resonance (Matrix tab)"));
+    search.setTextToShowWhenEmpty (T ("sxSearch", "Search"), lnf.pal().mute);
+    { const int sel = kbMode.getSelectedId(); kbMode.clear (dontSendNotification); kbMode.addItemList ({ T ("sxKbSingle", "Single part"), T ("sxKbLayer", "Layer all parts"), T ("sxKbSplit", "Split: bass below") }, 1); kbMode.setSelectedId (jmax (1, sel), dontSendNotification); kbAtt = std::make_unique<AudioProcessorValueTreeState::ComboBoxAttachment> (proc.apvts, "kb_mode", kbMode); }
+    saveCat.clear (dontSendNotification); { int k = 1; for (auto* c : { "sxCatBass", "sxCatLead", "sxCatPad", "sxCatKeys", "sxCatPluck", "sxCatFx", "sxCatOther" }) saveCat.addItem (T (c, kCats[k]), k), ++k; } saveCat.setSelectedId (1, dontSendNotification);
     rebuild();
 }
 
@@ -151,7 +193,7 @@ void SynthXPanel::applyTemplate (int i)
 
 void SynthXPanel::showTab (int t)
 {
-    section = jlimit (0, 9, t); tabs[(size_t) section].setToggleState (true, dontSendNotification);
+    section = jlimit (0, 11, t); tabs[(size_t) section].setToggleState (true, dontSendNotification);
     rebuild();
 }
 
@@ -241,6 +283,8 @@ void SynthXPanel::paramKnob (const char* id, const String& label, Rectangle<int>
     auto c = std::make_unique<Ctl>(); c->path = {}; c->kind = 4; c->r = r;
     c->knob = std::make_unique<hgui::Knob>(); addAndMakeVisible (*c->knob); c->knob->setText (label, {});
     atts.push_back (std::make_unique<AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, id, c->knob->slider)); hgui::tagParam (c->knob->slider, id);
+    if (String (id) == "kb_split") c->knob->slider.textFromValueFunction = [this] (double v) { const int n = roundToInt (v); return data.noteNames[n % 12] + String (n / 12 - 1); };   // bağlantıdan sonra: nota adı
+    c->knob->slider.updateText();
     ctls.push_back (std::move (c));
 }
 
@@ -281,7 +325,7 @@ SynthXPanel::Ctl& SynthXPanel::toggle (const String& path, const String& label, 
 
 void SynthXPanel::routes (const String& base, int x, int y, int w)
 {
-    const auto dests = [] { StringArray s; s.add ("-"); for (int d = 0; d < xs::kNumDests; ++d) s.add (xs::destName (d)); return s; };
+    const auto dests = [this] { StringArray s; s.add ("-"); for (int d = 0; d < xs::kNumDests; ++d) s.add (destLabel (d)); return s; };
     for (int i = 0; i < xs::kSlots; ++i)
     {
         const auto p = base + "." + String (i);
@@ -299,7 +343,10 @@ void SynthXPanel::rebuild()
 {
     const ScopedValueSetter<bool> b (building, true);
     for (auto& c : ctls) { for (Component* x : std::initializer_list<Component*> { c->knob.get(), c->combo.get(), c->toggle.get(), c->amount.get(), c->cap.get() }) if (x != nullptr) removeChildComponent (x); }
-    atts.clear(); ctls.clear(); seqBtn.setVisible (false); seqClear.setVisible (false); steps.setVisible (false); scope.setVisible (false);
+    atts.clear(); ctls.clear(); seqBtn.setVisible (false); seqClear.setVisible (false);
+    for (auto* c : std::initializer_list<Component*> { &xy, &list, &search, &auditionBtn, &deleteBtn, &linkBtn, &saveCat, &kbMode, &stats, &hint }) c->setVisible (false);
+    for (auto& c : catBtns) c.setVisible (false);
+    for (auto& w : swatches) w.setVisible (false); steps.setVisible (false); scope.setVisible (false);
     const int Y = 76, KW = 82, KH = 92;
     auto grid = [&] (int col, int row) { return Rectangle<int> (372 + col * KW, Y + row * KH, KW - 4, KH - 4); };
     auto pct = [] (double v) { return String (roundToInt (v * 100)) + "%"; };
@@ -331,8 +378,8 @@ void SynthXPanel::rebuild()
         }
         choice (o + "pm", T ("sxPwMode", "PW mode"), [this] { return StringArray { T ("sxOff", "Off"), T ("sxWidth", "Width"), T ("sxDual", "Dual saw"), T ("sxSync", "Sync") }; }, col (1, 4));
         choice (o + "oc", T ("sxOctave", "Octave"), [] { return StringArray { "-3", "-2", "-1", "0", "+1", "+2", "+3" }; }, col (0, 5), -3);
-        choice (o + "f.t", T ("sxFilter", "Filter"), [] { StringArray s; for (int i = 0; i < xs::kFilterTypes; ++i) s.add (xs::filterName (i)); return s; }, col (1, 5));
-        choice (o + "f.sa", T ("sxSat", "Saturation"), [] { StringArray s; for (int i = 0; i < xs::kSatModes; ++i) s.add (xs::satName (i)); return s; }, col (0, 6));
+        choice (o + "f.t", T ("sxFilter", "Filter"), [this] { StringArray s; for (int i = 0; i < xs::kFilterTypes; ++i) s.add (N ("Flt", i, xs::filterName (i))); return s; }, col (1, 5));
+        choice (o + "f.sa", T ("sxSat", "Saturation"), [this] { StringArray s; for (int i = 0; i < xs::kSatModes; ++i) s.add (N ("Sat", i, xs::satName (i))); return s; }, col (0, 6));
         int k = 0; auto K = [&] (const String& path, const String& key, const String& en, double lo, double hi, double mid = 0, bool integer = false, std::function<String (double)> tx = {}) { knob (o + path, T (key, en), lo, hi, grid (k % 9, k / 9), mid, integer, tx); ++k; };
         K ("lv", "sxLevel", "Level", 0, 1); K ("pa", "sxPan", "Pan", -1, 1, 0, false, bip); K ("se", "sxSemi", "Semitone", -12, 12, 0, true); K ("fi", "sxFine", "Fine", -1, 1, 0, false, [] (double v) { return String (roundToInt (v * 100)) + " ct"; });
         if (multi) { K ("d", "sxDetune", "Detune", 0, 1); K ("mx", "sxMix", "Center/sides", 0, 1); for (int s = 0; s < 4; ++s) { knob (o + "ml." + String (s), T ("sxStack", "Stack") + " " + String (s + 1), 0, 1, grid (k % 9, k / 9)); ++k; } }
@@ -382,7 +429,7 @@ void SynthXPanel::rebuild()
         for (int l = 0; l < xs::kLfos; ++l)
         {
             const int x = 16 + l * 570; const String p = "lfo." + String (l) + ".";
-            choice (p + "w", T ("sxShapeL", "Shape"), [] { StringArray s; for (int i = 0; i < xs::kLfoShapes; ++i) s.add (xs::lfoShapeName (i)); return s; }, { x, Y + 16, 200, 26 });
+            choice (p + "w", T ("sxShapeL", "Shape"), [this] { StringArray s; for (int i = 0; i < xs::kLfoShapes; ++i) s.add (N ("Lfo", i, xs::lfoShapeName (i))); return s; }, { x, Y + 16, 200, 26 });
             toggle (p + "sy", T ("sxSyncT", "Tempo sync"), { x, Y + 56, 140, 26 }); toggle (p + "rt", T ("sxRetrig", "Restart on note"), { x, Y + 90, 200, 26 });
             const bool sync = active() && (int) value (p + "sy") != 0;
             if (sync) knob (p + "r", T ("sxRate", "Rate"), 0, 11, { x + 220, Y + 10, 82, 92 }, 0, true, [] (double v) { return String (kDiv[jlimit (0, 11, roundToInt (v))]); });
@@ -404,9 +451,9 @@ void SynthXPanel::rebuild()
         for (int i = 0; i < xs::kFxSlots; ++i)
         {
             const String p = "fx." + String (i) + "."; const int y = Y + 4 + i * 76, t = active() ? (int) value (p + "0") : 0;
-            choice (p + "0", T ("sxSlot", "Slot") + " " + String (i + 1), [] { StringArray s; for (int k = 0; k < xs::kFxTypes; ++k) s.add (xs::fxName (k)); return s; }, { 16, y + 22, 170, 26 });
+            choice (p + "0", T ("sxSlot", "Slot") + " " + String (i + 1), [this] { StringArray s; for (int k = 0; k < xs::kFxTypes; ++k) s.add (N ("Fx", k, xs::fxName (k))); return s; }, { 16, y + 22, 170, 26 });
             if (t == 0) continue;
-            for (int k = 0; k < 4; ++k) if (xs::fxParamName (t, k) != "-") knob (p + String (k + 1), xs::fxParamName (t, k), 0, 1, { 196 + k * 74, y, 72, 72 });
+            for (int k = 0; k < 4; ++k) if (xs::fxParamName (t, k) != "-") knob (p + String (k + 1), N ("FxP", t * 4 + k, xs::fxParamName (t, k)), 0, 1, { 196 + k * 74, y, 72, 72 });
             knob (p + "5", T ("sxMixFx", "Mix"), 0, 1, { 196 + 4 * 74, y, 72, 72 });
         }
         paramKnob ("mst_hp", T ("sxMHp", "Low cut"), { 700, Y + 24, 82, 92 }); paramKnob ("mst_lp", T ("sxMLp", "High cut"), { 786, Y + 24, 82, 92 });
@@ -429,16 +476,34 @@ void SynthXPanel::rebuild()
         knob ("chd.sp", T ("sxSplit", "Split key"), 24, 96, { 850, Y + 124, 82, 92 }, 0, true, [this] (double v) { const int n = roundToInt (v); return data.noteNames[n % 12] + String (n / 12 - 1); });
         choice ("glm", T ("sxGlideMode", "Glide"), [this] { return StringArray { T ("sxGlideAll", "Every note"), T ("sxGlideLeg", "Auto (legato only)") }; }, { 640, Y + 250, 200, 26 });
         choice ("glq", T ("sxGlideQ", "Glide time"), [this] { return StringArray { T ("sxGlideFree", "Free (Matrix tab)"), "1/4", "1/8", "1/16", "1/8 T", "1/16 T", "1/32" }; }, { 850, Y + 250, 170, 26 });
+        knob ("chd.h1", T ("sxHarm1", "Harmony 1"), -24, 24, { 330, Y + 10, 82, 92 }, 0, true, [] (double v) { const int x = roundToInt (v); return x == 0 ? String ("-") : (x > 0 ? "+" : "") + String (x); });
+        knob ("chd.h2", T ("sxHarm2", "Harmony 2"), -24, 24, { 416, Y + 10, 82, 92 }, 0, true, [] (double v) { const int x = roundToInt (v); return x == 0 ? String ("-") : (x > 0 ? "+" : "") + String (x); });
+        toggle ("chd.hk", T ("sxHarmKey", "Harmony in key (steps)"), { 330, Y + 104, 240, 24 });
         seqBtn.setVisible (true); seqClear.setVisible (true);
         const auto nm = active() ? prog["seq"]["nm"].toString() : String();
         seqBtn.setButtonText (nm.isNotEmpty() ? T ("sxSeqOn", "Sequence") + ": " + nm : T ("sxSeqLoad", "Load MIDI sequence")); seqClear.setEnabled (nm.isNotEmpty());
+    }
+    else if (section == 10)
+    {   // makrolar, Morph X/Y, klavye (Multi) modu, Picasso
+        const String b = "xs_" + partCode() + "_";
+        for (int k = 0; k < 4; ++k) paramKnob ((b + "k" + String (k + 1)).toRawUTF8(), T ("sxMacroN", "Macro") + " " + String (k + 1), { 16 + k * 90, Y + 10, 86, 92 });
+        xy.setVisible (true); linkBtn.setVisible (true); kbMode.setVisible (true); hint.setVisible (true);
+        paramKnob ("kb_split", T ("sxKbSplitKey", "Split key"), { 640, Y + 210, 82, 92 });
+        for (auto& w : swatches) w.setVisible (true);
+    }
+    else if (section == 11)
+    {   // tarayıcı
+        list.setVisible (true); search.setVisible (true); auditionBtn.setVisible (true); deleteBtn.setVisible (true); saveCat.setVisible (true); stats.setVisible (true);
+        for (auto& c : catBtns) c.setVisible (true);
+        saveBtn.setVisible (true);
+        refreshBrowser();
     }
     else
     {
         for (int m = 0; m < xs::kMtx; ++m)
         {
             const int x = 16 + m * 440;
-            choice ("mtx." + String (m) + ".s", T ("sxSource", "Source") + " " + String (m + 1), [] { StringArray s; for (int i = 0; i < xs::kNumSources; ++i) s.add (xs::sourceName (i)); return s; }, { x, Y + 16, 200, 26 });
+            choice ("mtx." + String (m) + ".s", T ("sxSource", "Source") + " " + String (m + 1), [this] { StringArray s; for (int i = 0; i < xs::kNumSources; ++i) s.add (N ("Src", i, xs::sourceName (i))); return s; }, { x, Y + 16, 200, 26 });
             routes ("mtx." + String (m) + ".d", x, Y + 60, 420);
         }
         knob ("vol", T ("sxVolume", "Volume"), 0, 1, { 900, Y + 10, 82, 92 });
@@ -482,6 +547,12 @@ void SynthXPanel::paint (Graphics& g)
         g.drawFittedText (T ("sxOffHint", "This part plays with the classic engine. Switch on Synth X, convert the sound or pick a template to edit it here."), getLocalBounds().withTrimmedTop (300).reduced (40, 0), Justification::centredTop, 2);
     }
     if (section == 4) for (int e = 0; e < xs::kEnvs; ++e) { g.setColour (P.mute); g.setFont (lnf.font (12, true)); g.drawText ((e == 0 ? T ("sxEnvAmp", "Env 1 (volume)") : "Env " + String (e + 1)), 16 + e * 284, 74, 270, 16, Justification::centredLeft); }
+    if (section == 10)
+    {
+        g.setColour (P.mute); g.setFont (lnf.font (12, true));
+        g.drawText (T ("sxPicasso", "Picasso: interface colour"), 640, 74 + 10, 400, 18, Justification::centredLeft);
+        g.drawText (T ("sxKbMode", "Keyboard (Multi mode)"), 640, 74 + 154, 400, 18, Justification::centredLeft);
+    }
     if (section == 5) for (int l = 0; l < 2; ++l) { g.setColour (P.mute); g.setFont (lnf.font (12, true)); g.drawText ("LFO " + String (l + 1), 16 + l * 570, 186, 200, 16, Justification::centredLeft); }
 }
 
@@ -489,9 +560,18 @@ void SynthXPanel::resized()
 {
     int x = 16; auto put = [&] (Component& c, int w) { c.setBounds (x, 8, w, 28); x += w + 8; };
     put (convertBtn, 110); put (initBtn, 64); put (templBox, 180); put (saveBtn, 64); put (xgenBtn, 70); put (sfBtn, 130); sfLbl.setBounds (x, 8, getWidth() - x - 16 - 190, 28);
-    for (int i = 0; i < 10; ++i) tabs[(size_t) i].setBounds (16 + i * 100, 42, 96, 26);
+    for (int i = 0; i < 12; ++i) tabs[(size_t) i].setBounds (16 + i * 92, 42, 88, 26);
     steps.setBounds (16, 92, getWidth() - 32, 170);
     seqBtn.setBounds (310, 76 + 250 + 26, 260, 28); seqClear.setBounds (576, 76 + 250 + 26, 28, 28);
+    const int Y = 76;
+    xy.setBounds (400, Y + 10, 200, 200); linkBtn.setBounds (400, Y + 220, 200, 28);
+    hint.setBounds (16, Y + 120, 370, 120); hint.setJustificationType (Justification::topLeft);
+    kbMode.setBounds (640, Y + 176, 220, 26);
+    for (int i = 0; i < 9; ++i) swatches[(size_t) i].setBounds (640 + i * 52, Y + 40, i == 0 ? 48 : 40, 32);
+    for (int i = 0; i < 9; ++i) catBtns[(size_t) i].setBounds (16 + i * 96, Y + 4, 92, 26);
+    search.setBounds (16, Y + 36, 300, 26); list.setBounds (16, Y + 68, 760, 300);
+    auditionBtn.setBounds (790, Y + 68, 160, 30); deleteBtn.setBounds (790, Y + 104, 160, 30); saveCat.setBounds (790, Y + 160, 160, 26);
+    stats.setBounds (790, Y + 200, 340, 160); stats.setJustificationType (Justification::topLeft);
     scope.setBounds (getWidth() - 16 - 180, 8, 180, 28);
 }
 
@@ -529,4 +609,80 @@ void SynthXPanel::Scope::paint (Graphics& g)
     Path p; const float h = (float) getHeight() * .5f - 3;
     for (int i = 0; i < n; ++i) { const float y = (float) getHeight() * .5f - (wa[(size_t) i] + (wb[(size_t) i] - wa[(size_t) i]) * m) * h; if (i == 0) p.startNewSubPath (0, y); else p.lineTo ((float) i, y); }
     g.setColour (P.accent); g.strokePath (p, PathStrokeType (1.5f));
+}
+
+// ---- tarayıcı, istatistik, kısayollar, Picasso, Morph pad
+void SynthXPanel::refreshBrowser()
+{
+    shown.clear(); const auto q = searchText.trim().toLowerCase();
+    auto add = [&] (Entry e) { if ((catFilter == "All" || e.cat == catFilter || (catFilter == "Mine" && e.file != File())) && (q.isEmpty() || e.name.toLowerCase().contains (q))) shown.push_back (e); };
+    for (int i = 0; i < numTemplates(); ++i) add ({ T (templates()[(size_t) i].key, templates()[(size_t) i].en), kTplCat[i], i, {} });
+    for (auto& f : userProgs) { const auto v = JSON::parse (f.loadFileAsString()); add ({ f.getFileNameWithoutExtension(), v["cat"].toString().isNotEmpty() ? v["cat"].toString() : String ("Other"), -1, f }); }
+    list.updateContent(); list.repaint();
+    stats.setText (statsText(), dontSendNotification); hint.setText (T ("sxMacroHint", "Macros and Morph X/Y are automatable from your DAW. In the Matrix tab pick Macro 1-4 or Morph X/Y as a source and send it to any targets."), dontSendNotification);
+}
+void SynthXPanel::paintListBoxItem (int row, Graphics& g, int w, int h, bool selected)
+{
+    if (row < 0 || row >= (int) shown.size()) return; const auto& P = lnf.pal(); const auto& e = shown[(size_t) row];
+    if (selected) { g.setColour (P.accent.withAlpha (.25f)); g.fillRect (0, 0, w, h); }
+    g.setColour (P.ink); g.setFont (lnf.font (13, e.file != File())); g.drawText (e.name, 10, 0, w - 160, h, Justification::centredLeft);
+    g.setColour (P.mute); g.setFont (lnf.font (11)); g.drawText (T ("sxCat" + e.cat, e.cat) + (e.file != File() ? "  ·  " + T ("sxMine", "My programs") : String()), w - 200, 0, 190, h, Justification::centredRight);
+}
+void SynthXPanel::openEntry (int row)
+{
+    if (row < 0 || row >= (int) shown.size()) return;
+    const auto& e = shown[(size_t) row]; if (e.tpl >= 0) applyTemplate (e.tpl); else loadProgram (e.file);
+    list.selectRow (row); if (proc.demoPlaying()) proc.playDemo (part);   // dinleme açıkken yeni sesle yeniden başlar
+}
+String SynthXPanel::statsText() const
+{
+    const int mins = (int) ((Time::currentTimeMillis() - proc.statStart) / 60000), play = (int) proc.statPlaySec.load();
+    return T ("sxStats", "This session") + "\n" + T ("sxStatTime", "Open for") + ": " + String (mins) + " min\n" + T ("sxStatPlay", "Playing") + ": " + String (play / 60) + ":" + String (play % 60).paddedLeft ('0', 2)
+         + "\n" + T ("sxStatNotes", "Notes played") + ": " + String (proc.statNotes.load()) + "\n" + T ("sxStatEdits", "Sound edits") + ": " + String (proc.statEdits);
+}
+File SynthXPanel::saveProgram (const String& name, const String& cat)
+{
+    if (! active()) return {};
+    prog.getDynamicObject()->setProperty ("cat", cat);
+    return saveProgram (name);
+}
+bool SynthXPanel::keyPressed (const KeyPress& k)
+{
+    const auto m = k.getModifiers(); const int c = k.getKeyCode();
+    if (m.isCommandDown() && (c == 'G' || c == 'g')) { xgen ((uint32_t) Random::getSystemRandom().nextInt()); return true; }
+    if (m.isCommandDown() && (c == 'B' || c == 'b')) { showTab (11); return true; }
+    if (m.isCommandDown() && (c == 'S' || c == 's')) { saveBtn.triggerClick(); return true; }
+    if (m.isAltDown() && c >= '1' && c <= '9') { showTab (c - '1'); return true; }
+    if (m.isAltDown() && c == '0') { showTab (9); return true; }
+    if (section == 11 && (c == KeyPress::upKey || c == KeyPress::downKey) && ! shown.empty()) { openEntry (jlimit (0, (int) shown.size() - 1, list.getSelectedRow() + (c == KeyPress::upKey ? -1 : 1))); return true; }
+    if (section == 11 && c == KeyPress::spaceKey) { auditionBtn.triggerClick(); return true; }
+    return false;
+}
+void SynthXPanel::setAccent (Colour col)
+{
+    proc.customAccent = col; if (proc.onAccentChanged) proc.onAccentChanged();
+}
+void SynthXPanel::Swatch::paintButton (Graphics& g, bool over, bool)
+{
+    const auto& P = o->lnf.pal(); auto r = getLocalBounds().toFloat().reduced (2);
+    const bool sel = col.isTransparent() ? o->proc.customAccent.isTransparent() : o->proc.customAccent == col;
+    if (col.isTransparent()) { g.setColour (P.panel2); g.fillRoundedRectangle (r, 8); g.setColour (P.ink); g.setFont (o->lnf.font (12, true)); g.drawText (getButtonText(), r, Justification::centred); }
+    else { g.setColour (col); g.fillEllipse (r.withSizeKeepingCentre (r.getHeight(), r.getHeight())); }
+    if (sel || over) { g.setColour (sel ? P.ink : P.mute); g.drawRoundedRectangle (r, 8, sel ? 2.0f : 1.0f); }
+}
+void SynthXPanel::XY::paint (Graphics& g)
+{
+    const auto& P = o.lnf.pal(); const auto r = getLocalBounds().toFloat(); g.setColour (P.panel2); g.fillRoundedRectangle (r, 10);
+    g.setColour (P.line); g.drawLine (r.getCentreX(), r.getY(), r.getCentreX(), r.getBottom()); g.drawLine (r.getX(), r.getCentreY(), r.getRight(), r.getCentreY());
+    const String b = "xs_" + o.partCode() + "_"; const float x = o.proc.apvts.getRawParameterValue (b + "mx")->load() / 100.0f, y = o.proc.apvts.getRawParameterValue (b + "my")->load() / 100.0f;
+    g.setColour (P.accent); g.fillEllipse (r.getX() + x * r.getWidth() - 9, r.getBottom() - y * r.getHeight() - 9, 18, 18);
+    g.setColour (P.mute); g.setFont (o.lnf.font (11)); g.drawText ("Morph X / Y", r.reduced (8), Justification::topLeft);
+}
+void SynthXPanel::XY::mouseDrag (const MouseEvent& e)
+{
+    const String b = "xs_" + o.partCode() + "_";
+    const float x = jlimit (0.0f, 1.0f, (float) e.x / (float) jmax (1, getWidth())), y = jlimit (0.0f, 1.0f, 1 - (float) e.y / (float) jmax (1, getHeight()));
+    if (auto* p = o.proc.apvts.getParameter (b + "mx")) p->setValueNotifyingHost (x);
+    if (auto* p = o.proc.apvts.getParameter (b + "my")) p->setValueNotifyingHost (y);
+    repaint();
 }

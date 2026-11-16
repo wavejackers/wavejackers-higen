@@ -293,15 +293,16 @@ void Engine::startVoice (Voice& v, const Patch& p, int track, int note, int vel,
         const bool glideOn = (p.xs->glide > 0 || p.xs->glideSync > 0) && (p.xs->glideMode == 0 || legato);   // otomatik glide: yalnızca bağlı notalarda
         double gf = 1; if (glideOn && lastGlide[ti] > 0) gf = juce::jlimit (.125, 8.0, lastGlide[ti] / v.f0);
         lastGlide[ti] = v.f0;
-        xs::start ((*xv)[idx], *p.xs, note, vel, gf, v.rng, ctxFor (m));
+        xs::start ((*xv)[idx], *p.xs, note, vel, gf, v.rng, ctxFor (m, track));
         v.xsOn = true; v.endT = 1e18;
     }
 }
 
-xs::Ctx Engine::ctxFor (const Macros& m) const noexcept
+xs::Ctx Engine::ctxFor (const Macros& m, int track) const noexcept
 {
     xs::Ctx c; c.sr = sr; c.bpm = bpm; c.cutMul = std::pow (2.0f, m.cutoff * 3); c.resAdd = m.reso * .5f; c.atkMul = std::pow (2.0f, m.attack * 3); c.relMul = std::pow (2.0f, m.release * 3);
     c.drive = juce::jmax (0.0f, m.drive * .6f); c.lfoMul = juce::jmax (0.0f, 1 + juce::jlimit (-1.0f, 1.0f, m.movement)); c.wheel = wheel.load (std::memory_order_relaxed); c.after = after.load (std::memory_order_relaxed); c.audioIn = audioIn.load (std::memory_order_relaxed); c.alpha = alpha.load (std::memory_order_relaxed);
+    for (int k = 0; k < 6; ++k) c.macro[(size_t) k] = macroVals[(size_t) juce::jlimit (0, 2, track)][(size_t) k].load (std::memory_order_relaxed);
     c.maxPh = quality.maxUnison <= 2 ? 8 : quality.maxUnison <= 4 ? 16 : 32; c.controlRate = quality.controlRate;
     return c;
 }
@@ -314,7 +315,7 @@ void Engine::renderX (Voice& v, const Patch& p, const Macros& m, float* L, float
     juce::FloatVectorOperations::clear (tl, n); juce::FloatVectorOperations::clear (tr, n);
     const double dt = 1.0 / sr; int k = 0;
     if (! X.released && v.t + n * dt >= v.relT) { k = juce::jlimit (0, n, (int) std::ceil ((v.relT - v.t) / dt)); }
-    const auto c = ctxFor (m);
+    const auto c = ctxFor (m, v.track);
     if (! X.released && v.t + n * dt >= v.relT)
     {
         if (k > 0) xs::render (X, *p.xs, c, tl, tr, k);
@@ -335,7 +336,7 @@ void Engine::migrateVoice (Voice& v, const Patch& p)
 {
     if (p.xs != nullptr || v.xsOn)
     {
-        auto& X = (*xv)[(size_t) (&v - voices.data())]; const auto c = ctxFor (macros[(size_t) (v.track == 2 ? 3 : v.track)]);
+        auto& X = (*xv)[(size_t) (&v - voices.data())]; const auto c = ctxFor (macros[(size_t) (v.track == 2 ? 3 : v.track)], v.track);
         if (p.xs != nullptr && v.xsOn) xs::migrate (X, *p.xs, c);
         else if (p.xs != nullptr) { xs::start (X, *p.xs, v.note, (int) (v.vel * 127), 1, v.rng, c); if (v.released || ! v.gate) xs::release (X); v.xsOn = true; v.endT = 1e18; }
         else { v.active = false; return; }   // Synth X -> klasik: bu nota biter, sonraki notalar klasik motorla

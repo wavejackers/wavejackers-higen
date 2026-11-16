@@ -115,7 +115,8 @@ public:
     std::array<Macros, 4> macros;
     float bpm = 126, thick = .7f, pumpAmt = 1, master = 1;
     std::atomic<float> wheel { 0 }, after { 0 }, audioIn { 0 }, alpha { 0 };   // matris kaynakları: mod tekerleği, aftertouch, giriş sesi (Dynamic Link), Alpha düğmesi
-    xs::Master masterSet;                       // blok başında işlemciden   // mod tekerleği ve aftertouch (Synth X matris kaynakları)
+    xs::Master masterSet;
+    std::array<std::array<std::atomic<float>, 6>, 3> macroVals {};   // parti başına makro 1-4, Morph X/Y (DAW otomasyonu)                       // blok başında işlemciden   // mod tekerleği ve aftertouch (Synth X matris kaynakları)
     // Çok çıkış: bir iz için işaretçi verilirse (blok başına göre) o izin sesi ana karışıma değil oraya yazılır.
     // İndeks iz kimliğidir (0 akor, 1 bas, 2 davul, 3 melodi). Reverb/delay gönderimleri ana çıkışta kalır.
     float* auxL[4] {}; float* auxR[4] {};
@@ -157,7 +158,7 @@ private:
     void migrateVoice (Voice& v, const Patch& p);
     void renderVoice (Voice& v, const Patch& p, const Macros& m, float* L, float* R, int n);
     void renderX (Voice& v, const Patch& p, const Macros& m, float* L, float* R, int n);
-    xs::Ctx ctxFor (const Macros& m) const noexcept;
+    xs::Ctx ctxFor (const Macros& m, int track) const noexcept;
     void applyChorus (int track, float amt, float* L, float* R, int n);
     Voice* findVoice (int track);
     void retireNow (Patch* p);

@@ -72,6 +72,7 @@ public:
     float uiScale = 1.0f; bool highContrast = false; bool animations = true;
     hg::IntroSound intro;                  // açılış sesi (DAW çalarken ve dışa aktarımda sessiz)
     std::function<void()> onResultChanged;
+    std::function<void()> onAccentChanged;   // Picasso: editör paleti yeniler
     juce::File writeMidi (int which);
     // ---- ses tasarımı (part: 0 akor, 1 bas, 2 melodi)
     void resetSoundDesign (int part);          // seçili sesin ilk haline dön
@@ -216,7 +217,7 @@ public:   // testler okur
     // Synth X çalım yardımcıları (klavye ve MIDI girişi): akıllı akor, strum, arpej. Ayarlar mesaj iş parçacığında atomiklere yazılır.
     struct Perf
     {
-        std::atomic<int> chord { 0 }, arpOn { 0 }, arpMode { 0 }, arpDiv { 2 }, arpOct { 1 }, scaleLock { 0 }, split { 60 }, side { 0 }; std::atomic<float> strum { 0 }, gate { .8f };
+        std::atomic<int> chord { 0 }, arpOn { 0 }, arpMode { 0 }, arpDiv { 2 }, arpOct { 1 }, scaleLock { 0 }, split { 60 }, side { 0 }, h1 { 0 }, h2 { 0 }, hKey { 1 }; std::atomic<float> strum { 0 }, gate { .8f };
         struct SeqBuf { std::array<std::array<float, 4>, 256> n {}; int count = 0; float beats = 4; };
         std::unique_ptr<std::array<SeqBuf, 2>> seqP { std::make_unique<std::array<SeqBuf, 2>>() }; std::atomic<int> seqIdx { 0 };   // heap: işlemci küçük kalır
         SeqBuf& seq (int i) const noexcept { return (*seqP)[(size_t) i]; }   // çift tampon: mesaj iş parçacığı boştakine yazar, sonra çevirir
@@ -227,8 +228,13 @@ public:   // testler okur
     std::array<double, 3> seqPos {}; std::array<int, 3> seqRoot { { -1, -1, -1 } };
     std::array<std::array<int, 48>, 3> held {}; std::array<int, 3> numHeld {}, arpIdx {}, arpVel { { 100, 100, 100 } }; std::array<double, 3> arpBeat {}; uint32_t arpRng = 1;
     void perform (int n, double bpm, bool hostPlay, double ppq);
-    int chordNotes (int part, int note, int* out) const noexcept;
+    int chordNotes (int part, int note, int* out) const noexcept;   // akor + harmonizer (en çok 6)
+    int chordCore (int part, int note, int* out) const noexcept;
+    std::array<std::array<std::atomic<float>*, 6>, 3> xsMac {};
     float audioEnv = 0;
+    // çalışma istatistikleri (Synth X tarayıcısında gösterilir)
+    std::atomic<int> statNotes { 0 }; std::atomic<double> statPlaySec { 0 }; int statEdits = 0; juce::int64 statStart = juce::Time::currentTimeMillis();
+    juce::Colour customAccent;   // Picasso: kullanıcı rengi (saydam = stilin rengi)
 private:
     struct PendingOff { long long at; int ch, note; };
     std::array<PendingOff, 512> offs {}; int numOffs = 0; long long sampleClock = 0;

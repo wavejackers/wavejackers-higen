@@ -1830,7 +1830,7 @@ static void testSynthX (const FailFn& fail)
         if (! p.xsProgram (1).isObject()) fail ("synthx: bass part should be converted to Synth X");
         X.applyTemplate (4);   // PD bas
         if (! p.xsProgram (1).isObject() || (int) p.xsProgram (1)["o"][0]["sm"] != 2) fail ("synthx: template did not reach the part");
-        for (int t = 0; t < 10; ++t) { X.showTab (t); if (X.numControls() < (t == 6 ? 8 : t == 9 ? 9 : 10)) fail ("synthx: tab " + juce::String (t) + " has only " + juce::String (X.numControls()) + " controls"); }
+        for (int t = 0; t < 12; ++t) { X.showTab (t); if (X.numControls() < (t == 6 ? 8 : t == 9 ? 9 : t == 10 ? 5 : t == 11 ? 0 : 10)) fail ("synthx: tab " + juce::String (t) + " has only " + juce::String (X.numControls()) + " controls"); }
         X.setValue ("o.0.f.c", 333.0);
         if (std::abs ((double) p.xsProgram (1)["o"][0]["f"]["c"] - 333.0) > .01) fail ("synthx: control edit did not reach the program");
         for (int i = 0; i < SynthXPanel::numTemplates(); ++i)
@@ -1916,6 +1916,50 @@ static void testSynthX (const FailFn& fail)
         auto f = juce::File ("/tmp/b-asan/synthx-fx.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os);
         X.showTab (9); auto img2 = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f);
         auto f2 = juce::File ("/tmp/b-asan/synthx-play.png"); f2.deleteFile(); juce::FileOutputStream os2 (f2); png.writeImageToStream (img2, os2);
+    }
+    {   // son aşama: makro/Morph kaynakları, harmonizer, Multi modu, tarayıcı, istatistik, kısayollar, Picasso
+        auto hP = std::make_unique<HitGenProcessor>(); auto& h = *hP; h.setPlayConfigDetails (0, 2, sr, 512); h.prepareToPlay (sr, 512); h.idle();
+        auto prg = h.xsProgram (2); prg.getDynamicObject()->setProperty ("chd", juce::JSON::parse ("{\"m\":0,\"h1\":7,\"h2\":12,\"hk\":0}")); h.setXsProgram (2, prg); h.idle();
+        int cn[6]; const int nc = h.chordNotes (2, 60, cn);
+        if (nc != 3 || cn[1] != 67 || cn[2] != 72) fail ("harmonizer: notes " + juce::String (nc));
+        // Morph X matrisi: Osc 1 düzeyini sıfıra çeken bir Morph X, ses seviyesini düşürür
+        auto mp = h.xsProgram (0); mp.getDynamicObject()->setProperty ("mtx", juce::JSON::parse ("[{\"s\":19,\"d\":[[53,-1]]},{\"s\":0,\"d\":[]}]")); h.setXsProgram (0, mp); h.idle();
+        auto level = [&] (float mx)
+        {
+            if (auto* pr = h.apvts.getParameter ("xs_c_mx")) pr->setValueNotifyingHost (mx);
+            if (auto* kt = h.apvts.getParameter ("keysTo")) kt->setValueNotifyingHost (0);
+            juce::MidiBuffer mid; juce::AudioBuffer<float> blk (2, 512); float pk = 0; mid.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
+            for (int i = 0; i < 300; ++i) { blk.clear(); h.processBlock (blk, mid); mid.clear(); if (i > 280) pk = juce::jmax (pk, blk.getRMSLevel (0, 0, 512)); }
+            mid.addEvent (juce::MidiMessage::noteOff (1, 60), 0); for (int i = 0; i < 300; ++i) { blk.clear(); h.processBlock (blk, mid); mid.clear(); }
+            return pk;
+        };
+        if (auto* lp = h.apvts.getParameter ("loudness")) lp->setValueNotifyingHost (0);   // normalleştirme kapalı: seviye farkı ölçülebilsin
+        { juce::MidiBuffer mid; juce::AudioBuffer<float> blk (2, 512); for (int i = 0; i < 300; ++i) { blk.clear(); h.processBlock (blk, mid); } }   // açılış sesi ve ölçer yerleşsin
+        const float hi = level (.5f), lo = level (1.0f);
+        if (! (lo < hi * .5f)) fail ("morph x: matrix source had no effect (" + juce::String (hi) + " -> " + juce::String (lo) + ")");
+        // Multi modu: katman = bir tuş üç partiyi çalar
+        if (auto* km = h.apvts.getParameter ("kb_mode")) km->setValueNotifyingHost (km->convertTo0to1 (1));
+        { juce::MidiBuffer mid; juce::AudioBuffer<float> blk (2, 512); mid.addEvent (juce::MidiMessage::noteOn (1, 64, (juce::uint8) 100), 0); const int n0 = h.statNotes.load(); blk.clear(); h.processBlock (blk, mid);
+          if (h.statNotes.load() - n0 != 3) fail ("multi mode: layer should trigger 3 parts (" + juce::String (h.statNotes.load() - n0) + ")");
+          mid.addEvent (juce::MidiMessage::noteOff (1, 64), 0); blk.clear(); h.processBlock (blk, mid); }
+        if (h.statPlaySec.load() < 0) fail ("stats");
+        std::unique_ptr<HitGenEditor> ed (dynamic_cast<HitGenEditor*> (h.createEditor()));
+        ed->setTab (1); auto& sp = ed->sounds(); sp.setView (SoundPage::vSynth); auto& X = sp.synthX();
+        X.showTab (11); X.setBrowserFilter ("Bass", {});
+        if (X.browserEntries().size() < 3) fail ("browser: bass category has " + juce::String ((int) X.browserEntries().size()) + " entries");
+        for (auto& e : X.browserEntries()) if (e.cat != "Bass") fail ("browser: filter leaked " + e.name);
+        X.setBrowserFilter ("All", "hoover"); if (X.browserEntries().size() != 1) fail ("browser: search");
+        X.openEntry (0); if ((int) h.xsProgram (sp.currentPart())["o"][0]["t"] != 3) fail ("browser: opening an entry did not load it");
+        if (! X.statsText().contains ("3")) fail ("stats: text " + X.statsText());
+        X.keyPressed (juce::KeyPress ('2', juce::ModifierKeys::altModifier, 0)); if (X.tab() != 1) fail ("hotkey: Alt+2 should open Osc 2");
+        X.keyPressed (juce::KeyPress ('b', juce::ModifierKeys::commandModifier, 0)); if (X.tab() != 11) fail ("hotkey: Ctrl+B should open the browser");
+        X.setAccent (juce::Colour (0xff6c8cff)); if (h.customAccent != juce::Colour (0xff6c8cff)) fail ("picasso: accent not stored");
+        { juce::MemoryBlock mb; h.getStateInformation (mb); auto q2 = std::make_unique<HitGenProcessor>(); q2->setStateInformation (mb.getData(), (int) mb.getSize()); if (q2->customAccent != h.customAccent) fail ("picasso: accent not saved with the project"); }
+        X.showTab (11); auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f);
+        { auto f = juce::File ("/tmp/b-asan/synthx-browse.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os); }
+        X.showTab (10); auto img2 = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f);
+        { auto f = juce::File ("/tmp/b-asan/synthx-macro.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img2, os); }
+        X.setAccent ({});
     }
     std::cout << "synthx: ok\n";
 }
