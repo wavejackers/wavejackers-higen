@@ -111,7 +111,7 @@ const Table& tableFor (int bank, int idx, double sr)
 
 inline float lookup (const float* t, double p) noexcept
 {
-    const double x = p * Table::kSize; const int i = (int) x; const float f = (float) (x - i);
+    const double x = p * Table::kSize; const int i = ((int) x) & (Table::kSize - 1); const float f = (float) (x - std::floor (x));   // p = 1.0 ya da NaN olsa da tablo dışına çıkmaz
     return t[i] + (t[i + 1] - t[i]) * f;
 }
 
@@ -813,7 +813,7 @@ void FxRack::process (const FxChain& chain, float* L, float* R, int n, double bp
         if (F.type != S.type) { if (S.type >= 0) { for (auto& b : S.buf) std::fill (b.begin(), b.end(), 0.0f); S.rev.reset(); std::memset (S.svf, 0, sizeof (S.svf)); std::memset (S.ap, 0, sizeof (S.ap)); } S.type = F.type; }
         if (F.type == 0 || F.mix <= 0) continue;
         const float a = F.p[0], b = F.p[1], c = F.p[2], d = F.p[3], wet = F.mix, dry = 1 - (F.type == 13 || F.type == 10 ? 0.0f : wet);
-        auto delayRead = [&] (int ch, double dl) { const int D = maxD; double rp = S.w - dl; while (rp < 0) rp += D; const int i0 = (int) rp % D, i1 = (i0 + 1) % D; const float f = (float) (rp - std::floor (rp)); return S.buf[ch][(size_t) i0] + (S.buf[ch][(size_t) i1] - S.buf[ch][(size_t) i0]) * f; };
+        auto delayRead = [&] (int ch, double dl) { const int D = maxD; double rp = std::fmod (S.w - (std::isfinite (dl) ? dl : 0.0), (double) D); if (rp < 0) rp += D; const int i0 = (int) rp % D, i1 = (i0 + 1) % D; const float f = (float) (rp - std::floor (rp)); return S.buf[ch][(size_t) i0] + (S.buf[ch][(size_t) i1] - S.buf[ch][(size_t) i0]) * f; };
         if (F.type == 12)
         {
             juce::Reverb::Parameters rp; rp.roomSize = .5f + .5f * a; rp.damping = b; rp.width = c; rp.wetLevel = 1; rp.dryLevel = 0; rp.freezeMode = 0; S.rev.setParameters (rp);

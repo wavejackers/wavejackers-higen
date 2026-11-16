@@ -1803,7 +1803,7 @@ static void testSynthX (const FailFn& fail)
         if (a != b) fail ("synthx: program round trip changed values");
     }
     // eklenti: akor partisine Synth X programı; klasik sesten çevirme; proje kaydı; çalma
-    HitGenProcessor p; p.setPlayConfigDetails (0, 2, sr, 512); p.prepareToPlay (sr, 512); p.idle();
+    auto pP = std::make_unique<HitGenProcessor>(); auto& p = *pP; p.setPlayConfigDetails (0, 2, sr, 512);   // yığında değil: Windows yığını 1 MB p.prepareToPlay (sr, 512); p.idle();
     { juce::MidiBuffer mid; juce::AudioBuffer<float> blk (2, 512); for (int i = 0; i < 300; ++i) { blk.clear(); p.processBlock (blk, mid); } }   // ses yüksekliği ölçeri ve açılış sesi yerleşsin
     if (! p.xsProgram (0).isObject()) fail ("synthx: every part should play with Synth X (sound converted automatically)");
     auto conv = p.xsFromClassic (0);
@@ -1820,7 +1820,7 @@ static void testSynthX (const FailFn& fail)
         if (blk.getMagnitude (0, 512) > 1e-3f) fail ("synthx: notes did not release");
     }
     juce::MemoryBlock mb; p.getStateInformation (mb);
-    HitGenProcessor q; q.setPlayConfigDetails (0, 2, sr, 512); q.prepareToPlay (sr, 512); q.setStateInformation (mb.getData(), (int) mb.getSize());
+    auto qP = std::make_unique<HitGenProcessor>(); auto& q = *qP; q.setPlayConfigDetails (0, 2, sr, 512); q.prepareToPlay (sr, 512); q.setStateInformation (mb.getData(), (int) mb.getSize());
     if (juce::JSON::toString (q.xsProgram (0)) != juce::JSON::toString (p.xsProgram (0))) fail ("synthx: program not restored with the project");
     {   // arayüz: Synth X görünümü, sekmeler, şablonlar, denetimden programa ve programdan sese
         std::unique_ptr<HitGenEditor> ed (dynamic_cast<HitGenEditor*> (p.createEditor()));
@@ -1847,7 +1847,7 @@ static void testSynthX (const FailFn& fail)
         auto f2 = juce::File ("/tmp/b-asan/synthx-env.png"); f2.deleteFile(); juce::FileOutputStream os2 (f2); png.writeImageToStream (img2, os2);
     }
     {   // 2. aşama: 14 efektin her biri sonlu, sesi değiştirir; boş yuva dokunmaz; master genişlik 0 = mono
-        xs::FxRack rack; rack.prepare (sr); juce::AudioBuffer<float> src (2, 24000); juce::Random rn (3);
+        auto rackP = std::make_unique<xs::FxRack>(); auto& rack = *rackP; rack.prepare (sr); juce::AudioBuffer<float> src (2, 24000); juce::Random rn (3);
         for (int i = 0; i < 24000; ++i) { const float x = (float) std::sin (2 * juce::MathConstants<double>::pi * 220 * i / sr) * .4f + (rn.nextFloat() - .5f) * .05f; src.setSample (0, i, x); src.setSample (1, i, x * .8f); }
         for (int t = 0; t < xs::kFxTypes; ++t)
         {
@@ -1863,7 +1863,7 @@ static void testSynthX (const FailFn& fail)
         if (xs::fxName (12) != "Hyperspace reverb" || xs::kFxTypes != 15) fail ("fx: list");
     }
     {   // 3. aşama: akor modu (gamda üçlü), arpej (tutulan notalar tempoyla sırayla), strum
-        HitGenProcessor a; a.setPlayConfigDetails (0, 2, sr, 512); a.prepareToPlay (sr, 512); a.idle();
+        auto aP = std::make_unique<HitGenProcessor>(); auto& a = *aP; a.setPlayConfigDetails (0, 2, sr, 512); a.prepareToPlay (sr, 512); a.idle();
         auto prg = a.xsProgram (2); prg.getDynamicObject()->setProperty ("chd", juce::JSON::parse ("{\"m\":1,\"st\":0}")); a.setXsProgram (2, prg); a.idle();
         int cn[4]; const int nc = a.chordNotes (2, 60, cn);
         if (nc != 3 || cn[1] - 60 < 3 || cn[1] - 60 > 4 || cn[2] - 60 < 6 || cn[2] - 60 > 8) fail ("chord mode: triad on C4 is " + juce::String (cn[1] - 60) + "," + juce::String (cn[2] - 60));
