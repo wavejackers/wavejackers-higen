@@ -113,7 +113,7 @@ Stage::Figure Stage::makeFigure (bool elder, int variant)
     // hale: yatay altın halka
     {
         std::vector<std::array<float, 2>> ring; const float R = elder ? .27f : .22f;
-        for (int i = 0; i <= 8; ++i) { const float a = 2 * kPi * (float) i / 8; ring.push_back ({ R + .022f * std::cos (a), .022f * std::sin (a) }); }
+        for (int i = 0; i <= 8; ++i) { const float a = 2 * kPi * (float) i / 8; ring.push_back ({ R + .022f * std::cos (a), -.022f * std::sin (a) }); }
         lathe (f.parts[pHalo], ring, 20, { cHalo }, I); f.parts[pHalo].glowAmt = 1;
     }
     if (elder)
@@ -121,7 +121,7 @@ Stage::Figure Stage::makeFigure (bool elder, int variant)
         auto& s = f.parts[pStaff];
         lathe (s, { { .03f, 1.72f }, { .028f, -.4f } }, 6, { cWood }, I);
         ball (s, .11f, 10, 0xFFF1B8, tr (0, 1.9f, 0));
-        std::vector<std::array<float, 2>> ring; for (int i = 0; i <= 6; ++i) { const float a = 2 * kPi * (float) i / 6; ring.push_back ({ .2f + .018f * std::cos (a), .018f * std::sin (a) }); }
+        std::vector<std::array<float, 2>> ring; for (int i = 0; i <= 6; ++i) { const float a = 2 * kPi * (float) i / 6; ring.push_back ({ .2f + .018f * std::cos (a), -.018f * std::sin (a) }); }
         lathe (s, ring, 14, { cGold }, mul (tr (0, 1.9f, 0), rx (kPi * .5f)));
     }
     else
@@ -204,21 +204,21 @@ void Stage::draw (const Figure& f, int W, int H, juce::Rectangle<float>& bb)
         for (size_t t = 0; t + 2 < p.tri.size(); t += 3)
         {
             const float* a = &tv[(size_t) p.tri[t] * 5]; const float* b = &tv[(size_t) p.tri[t + 1] * 5]; const float* c = &tv[(size_t) p.tri[t + 2] * 5];
-            const float area = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]); if (std::abs (area) < 1e-4f) continue;
+            const float area = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]); if (std::abs (area) < 1e-4f || (area > 0 && ! p.wing)) continue;   // kapalı gövdelerde arka yüzler atlanır; kanatlar iki yüzlüdür
             const int minX = juce::jmax (0, (int) std::floor (juce::jmin (a[0], b[0], c[0]))), maxX = juce::jmin (W - 1, (int) std::ceil (juce::jmax (a[0], b[0], c[0])));
             const int minY = juce::jmax (0, (int) std::floor (juce::jmin (a[1], b[1], c[1]))), maxY = juce::jmin (H - 1, (int) std::ceil (juce::jmax (a[1], b[1], c[1])));
             if (minX > maxX || minY > maxY) continue;
             const juce::uint32 col = p.col[t / 3]; float cr = (float) ((col >> 16) & 255), cg = (float) ((col >> 8) & 255), cb = (float) (col & 255);
             if (f.dim < 1) { const float g = (cr + cg + cb) / 3; cr = (cr * .3f + g * .7f) * f.dim; cg = (cg * .3f + g * .7f) * f.dim; cb = (cb * .3f + g * .7f) * f.dim; }
-            const float inv = 1.0f / area;
+            const float inv = 1.0f / area, d0 = (b[1] - c[1]) * inv, d1 = (c[1] - a[1]) * inv, sx = (float) minX + .5f;
             for (int y = minY; y <= maxY; ++y)
             {
                 const float py = (float) y + .5f; juce::uint32* row = &px[(size_t) y * (size_t) W]; float* zr = &zb[(size_t) y * (size_t) W];
-                for (int x = minX; x <= maxX; ++x)
+                float w0 = ((b[0] - sx) * (c[1] - py) - (b[1] - py) * (c[0] - sx)) * inv, w1 = ((c[0] - sx) * (a[1] - py) - (c[1] - py) * (a[0] - sx)) * inv;
+                for (int x = minX; x <= maxX; ++x, w0 += d0, w1 += d1)
                 {
-                    const float pxx = (float) x + .5f;
-                    const float w0 = ((b[0] - pxx) * (c[1] - py) - (b[1] - py) * (c[0] - pxx)) * inv, w1 = ((c[0] - pxx) * (a[1] - py) - (c[1] - py) * (a[0] - pxx)) * inv, w2 = 1 - w0 - w1;
-                    if (w0 < 0 || w1 < 0 || w2 < 0) continue;
+                    const float w2 = 1 - w0 - w1;
+                    if (w0 < -1e-5f || w1 < -1e-5f || w2 < -1e-5f) continue;
                     const float z = w0 * a[2] + w1 * b[2] + w2 * c[2]; if (z >= zr[x]) continue;
                     zr[x] = z;
                     const float lit = w0 * a[3] + w1 * b[3] + w2 * c[3], rim = (w0 * a[4] + w1 * b[4] + w2 * c[4]) * 255.0f;

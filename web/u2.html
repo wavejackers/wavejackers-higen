@@ -35,6 +35,7 @@
     <button class="tab" role="tab" id="t-sound" aria-controls="p-sound" aria-selected="false" tabindex="-1" data-tab="sound" data-i="tabSound">Sound design</button>
     <button class="tab" role="tab" id="t-bank" aria-controls="p-bank" aria-selected="false" tabindex="-1" data-tab="bank" data-i="tabBank">Sound bank</button>
     <button class="tab" role="tab" id="t-export" aria-controls="p-export" aria-selected="false" tabindex="-1" data-tab="export" data-i="tabExport">Export</button>
+    <button class="tab" role="tab" id="t-choir" aria-controls="p-choir" aria-selected="false" tabindex="-1" data-tab="choir" data-i="tabChoir">Choir</button>
   </div>
 
   <main id="main" tabindex="-1">
@@ -128,6 +129,24 @@
         <p class="fine" data-ih="know2"></p>
         <p class="fine" data-ih="know3"></p>
       </section>
+    </div>
+    <div class="pane" id="p-choir" role="tabpanel" aria-labelledby="t-choir" hidden>
+      <div class="card">
+        <div class="btns chbar">
+          <button class="btn pri" id="ch-rec" type="button" data-i="chRecord" data-ti="chRecordTip">Record voice</button>
+          <label class="btn" for="ch-file" style="cursor:pointer" data-i="chLoad">Load voice</label><input id="ch-file" type="file" accept="audio/*" class="vh">
+          <button class="btn" id="ch-play" type="button" aria-pressed="false" data-i="chPlay">Play choir</button>
+          <select id="ch-src" data-ia="chSource"></select>
+          <select id="ch-rhy" data-ia="chRhythm"></select>
+          <select id="ch-size" data-ia="chCrowdSize"></select>
+          <select id="ch-pre" data-ia="chPreset"></select>
+          <button class="btn" id="ch-dl" type="button" data-i="chExport">Download choir WAV</button>
+        </div>
+        <div class="chstage"><canvas id="ch-cv" data-ia="chStage"></canvas><div class="chtags" id="ch-tags" role="group" data-ia="chParts"></div></div>
+        <div class="chwave"><canvas id="ch-wave" aria-hidden="true"></canvas><span id="ch-status" role="status" aria-live="polite"></span></div>
+        <div class="chknobs" id="ch-knobs"></div>
+        <p class="fine" data-i="chHint"></p>
+      </div>
     </div>
   </main>
   <div class="vh" id="announce" aria-live="assertive"></div>

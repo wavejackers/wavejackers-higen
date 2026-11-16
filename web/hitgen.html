@@ -92,6 +92,18 @@ body.playing .cables .c2{animation-play-state:running}
 .tab:hover{color:var(--ink)}
 .pane[hidden]{display:none}
 .pane{display:flex;flex-direction:column;gap:16px}
+.chbar{align-items:center}.chbar select{width:auto;flex:0 1 190px}
+.chstage{position:relative;border-radius:12px;overflow:hidden;aspect-ratio:1132/330;min-height:180px;background:var(--panel2)}
+.chstage canvas{position:absolute;inset:0;width:100%;height:100%;cursor:pointer}
+.chtags{position:absolute;left:0;right:0;bottom:8px;height:24px;pointer-events:none}
+.chtags .btn{position:absolute;transform:translateX(-50%);pointer-events:auto;border-radius:12px;padding:2px 14px;font-size:.76rem}
+.chtags .btn[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.chwave{display:grid;grid-template-columns:minmax(0,420px) 1fr;gap:14px;align-items:center}
+@media (max-width:700px){.chwave{grid-template-columns:minmax(0,1fr)}}
+.chwave canvas{width:100%;height:44px;background:var(--panel2);border-radius:8px}
+.chwave span{font-size:.86rem;color:var(--mute);overflow-wrap:anywhere}
+@media (max-width:600px){.chtags .btn{padding:1px 7px;font-size:.66rem}}
+.chknobs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px 18px}
 /* stil duvarı */
 .wall{display:grid;grid-template-columns:repeat(auto-fill,minmax(176px,1fr));gap:10px}
 .sty{position:relative;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 13px 13px;cursor:pointer;display:flex;flex-direction:column;gap:3px;min-width:0;overflow:hidden;transition:border-color .2s,transform .2s}
@@ -271,6 +283,7 @@ body::before{content:"";position:fixed;inset:-20%;z-index:-1;pointer-events:none
     <button class="tab" role="tab" id="t-sound" aria-controls="p-sound" aria-selected="false" tabindex="-1" data-tab="sound" data-i="tabSound">Sound design</button>
     <button class="tab" role="tab" id="t-bank" aria-controls="p-bank" aria-selected="false" tabindex="-1" data-tab="bank" data-i="tabBank">Sound bank</button>
     <button class="tab" role="tab" id="t-export" aria-controls="p-export" aria-selected="false" tabindex="-1" data-tab="export" data-i="tabExport">Export</button>
+    <button class="tab" role="tab" id="t-choir" aria-controls="p-choir" aria-selected="false" tabindex="-1" data-tab="choir" data-i="tabChoir">Choir</button>
   </div>
 
   <main id="main" tabindex="-1">
@@ -364,6 +377,24 @@ body::before{content:"";position:fixed;inset:-20%;z-index:-1;pointer-events:none
         <p class="fine" data-ih="know2"></p>
         <p class="fine" data-ih="know3"></p>
       </section>
+    </div>
+    <div class="pane" id="p-choir" role="tabpanel" aria-labelledby="t-choir" hidden>
+      <div class="card">
+        <div class="btns chbar">
+          <button class="btn pri" id="ch-rec" type="button" data-i="chRecord" data-ti="chRecordTip">Record voice</button>
+          <label class="btn" for="ch-file" style="cursor:pointer" data-i="chLoad">Load voice</label><input id="ch-file" type="file" accept="audio/*" class="vh">
+          <button class="btn" id="ch-play" type="button" aria-pressed="false" data-i="chPlay">Play choir</button>
+          <select id="ch-src" data-ia="chSource"></select>
+          <select id="ch-rhy" data-ia="chRhythm"></select>
+          <select id="ch-size" data-ia="chCrowdSize"></select>
+          <select id="ch-pre" data-ia="chPreset"></select>
+          <button class="btn" id="ch-dl" type="button" data-i="chExport">Download choir WAV</button>
+        </div>
+        <div class="chstage"><canvas id="ch-cv" data-ia="chStage"></canvas><div class="chtags" id="ch-tags" role="group" data-ia="chParts"></div></div>
+        <div class="chwave"><canvas id="ch-wave" aria-hidden="true"></canvas><span id="ch-status" role="status" aria-live="polite"></span></div>
+        <div class="chknobs" id="ch-knobs"></div>
+        <p class="fine" data-i="chHint"></p>
+      </div>
     </div>
   </main>
   <div class="vh" id="announce" aria-live="assertive"></div>
@@ -2903,6 +2934,8 @@ Object.assign(HG.I18N.en, { tabLoop: 'Loop', lfLoad: 'Load sample', lfCapture: '
 Object.assign(HG.I18N.tr, { tabLoop: 'Loop', lfLoad: 'Ses yükle', lfCapture: 'Yakala', lfCaptureTip: 'HitGen\'in son 30 saniyede çaldığı en güçlü vuruşu alır', lfPlay: 'Döngüyü çal', lfExport: 'Döngüyü DAW\'a sürükle', lfExportTip: 'Bunu bir DAW kanalına sürükle: efekt kuyruğu başa sarılmış, dikişsiz 24 bit WAV', lfBars: 'Döngü uzunluğu (ölçü)', lfSteps: 'Adım', lfPulses: 'Vuruş', lfRot: 'Döndürme', lfSwing: 'Swing', lfHuman: 'İnsan dokunuşu', lfSpace: 'Alan', lfDrive: 'Sürüş', lfMotion: 'Hareket', lfMutate: 'Üret / değiştir', lfSubtle: 'Küçük değişiklik', lfEuclid: 'Tam Öklid', lfArp: 'Melodik arpej', lfVel: 'Hız', lfCut: 'Filtre', lfPan: 'Pan', lfDecay: 'Sönüm', lfDrop: 'Tek vuruşluk bir sesi buraya bırak (WAV, AIFF, FLAC) ya da Yakala\'ya bas', lfNoSample: 'Önce bir ses yükle ya da yakala', lfCaptured: 'En güçlü vuruş yakalandı', lfCaptureFail: 'Yakalanacak ses yok: önce bir şey çal', lfLoadFail: 'Dosya okunamadı', lfTrig: 'Tetik', lfPitch: 'Perde', lfRev: 'Ters', lfRatchet: 'Ratchet' });
 Object.assign(HG.I18N.en, { lfShift: 'Timing shift', lfAttack: 'Attack', lfCapturedIn: 'Captured the loudest hit from the DAW input', lfCaptureTip: 'Takes the loudest hit from the last 30 seconds: the DAW audio routed to the "Capture In" input if you connected it, otherwise what HitGen played' });
 Object.assign(HG.I18N.tr, { lfShift: 'Zaman kaydırma', lfAttack: 'Atak', lfCapturedIn: 'DAW girişindeki en güçlü vuruş yakalandı', lfCaptureTip: 'Son 30 saniyedeki en güçlü vuruşu alır: DAW\'da "Capture In" girişine ses bağladıysan o sesi, yoksa HitGen\'in çaldığını' });
+Object.assign(HG.I18N.en, { tabChoir: 'Choir', chRecord: 'Record voice', chStop: 'Stop', chLoad: 'Load voice', chPlay: 'Play choir', chRecordTip: 'Sing or say anything for a few seconds (12 s at most). You do not need to be in tune: the choir corrects the pitch', chStageTip: 'Each angel is a voice part. Click an angel to switch that part on or off', chLevel: 'Level', chSpace: 'Cathedral', chDetune: 'Crowd', chAir: 'Air', chVibrato: 'Vibrato', chAttack: 'Soft start', chChar: 'Character', chAah: 'Built-in: Aah', chOoh: 'Built-in: Ooh', chEeh: 'Built-in: Eeh', chMmm: 'Built-in: Mmm (hum)', chOwnHold: 'My voice: held', chOwnWords: 'My voice: words', chHold: 'Hold each chord', chHalf: 'Half notes', chQuarter: 'Quarter notes', chStab: 'Off-beat stabs', chSize: '{n} per part', chPreset: 'Quick setup', chPre0: 'Cathedral', chPre1: 'Gregorian (low voices)', chPre2: 'Angels (high voices)', chPre3: 'Club stabs', chBass: 'Bass', chTenor: 'Tenor', chAlto: 'Alto', chSoprano: 'Soprano', chVoiceNone: 'No voice yet: the built-in choir is singing. Record or load a voice to hear a choir of you', chNoPitch: 'no clear pitch (whisper choir)', chNeedVoice: 'Record or load a voice first. Until then the built-in choir sings', chRecFail: 'Nothing was heard. Check the microphone and try again', chNoMic: 'No microphone could be opened. Load a voice file instead, or route audio to the Capture In input', chRecording: 'Recording: sing now', chDrop: 'Drop a voice file here', chHint: 'The choir follows the chords of your current idea and stays locked to the tempo. Record a few seconds of your voice or load any vocal: it is tuned to the chord notes and multiplied into four parts. Drag the result into your DAW as a WAV loop.', chMicDenied: 'Microphone access was not allowed. You can load a voice file instead', chExport: 'Download choir WAV', chBusy: 'Rendering the choir', chSource: 'Voice source', chRhythm: 'Rhythm', chCrowdSize: 'Singers per part', chStage: 'Choir stage: click an angel to switch its part on or off', chParts: 'Voice parts' });
+Object.assign(HG.I18N.tr, { tabChoir: 'Koro', chRecord: 'Ses kaydet', chStop: 'Durdur', chLoad: 'Ses yükle', chPlay: 'Koroyu çal', chRecordTip: 'Birkaç saniye bir şey söyle ya da mırıldan (en çok 12 sn). Doğru notada söylemen gerekmez: koro perdeyi düzeltir', chStageTip: 'Her melek bir partidir. Meleğe tıklayınca o parti açılır ya da kapanır', chLevel: 'Seviye', chSpace: 'Katedral', chDetune: 'Kalabalık', chAir: 'Hava', chVibrato: 'Vibrato', chAttack: 'Yumuşak giriş', chChar: 'Karakter', chAah: 'Dahili: Aah', chOoh: 'Dahili: Ooh', chEeh: 'Dahili: Eeh', chMmm: 'Dahili: Mmm (mırıltı)', chOwnHold: 'Kendi sesim: uzatılmış', chOwnWords: 'Kendi sesim: sözler', chHold: 'Akor boyunca uzat', chHalf: 'İkilik notalar', chQuarter: 'Dörtlük notalar', chStab: 'Ters vuruş (stab)', chSize: 'Parti başına {n}', chPreset: 'Hazır ayar', chPre0: 'Katedral', chPre1: 'Gregoryen (kalın sesler)', chPre2: 'Melekler (ince sesler)', chPre3: 'Kulüp stab', chBass: 'Bas', chTenor: 'Tenor', chAlto: 'Alto', chSoprano: 'Soprano', chVoiceNone: 'Henüz ses yok: dahili koro söylüyor. Kendi sesinden koro için ses kaydet ya da yükle', chNoPitch: 'belirgin perde yok (fısıltı korosu)', chNeedVoice: 'Önce ses kaydet ya da yükle. O zamana kadar dahili koro söyler', chRecFail: 'Ses duyulmadı. Mikrofonu kontrol edip yeniden dene', chNoMic: 'Mikrofon açılamadı. Bunun yerine ses dosyası yükle ya da sesi Capture In girişine yönlendir', chRecording: 'Kayıt: şimdi söyle', chDrop: 'Ses dosyasını buraya bırak', chHint: 'Koro, o anki fikrinin akorlarını izler ve tempoya kilitli kalır. Sesini birkaç saniye kaydet ya da herhangi bir vokal yükle: ses akor notalarına çekilir ve dört partiye çoğaltılır. Sonucu WAV döngüsü olarak DAW\'a sürükle.', chMicDenied: 'Mikrofon izni verilmedi. Bunun yerine ses dosyası yükleyebilirsin', chExport: 'Koro WAV indir', chBusy: 'Koro işleniyor', chSource: 'Ses kaynağı', chRhythm: 'Ritim', chCrowdSize: 'Parti başına şarkıcı', chStage: 'Koro sahnesi: partisini açıp kapatmak için meleğe tıkla', chParts: 'Partiler' });
 // ---- Stil metinleri: [etiket, açıklama, [varyasyon adı, not] x4]
 HG.ST = {};
 HG.ST.en = {
@@ -3397,6 +3430,414 @@ Object.assign(HG.ST.hi, {
 MB.TRIM = {"sub-sine":1,"deep-bass":1,"roll-bass":1,"808-long":1,"reese":1,"acid-303":1,"pluck-bass":1,"funk-bass":1,"neuro-lite":1,"wood-bass":1,"upright":1,"punch-bass":1,"trance-bass":1,"fm-bass":1,"warm-pad":0.999,"dub-pad":1,"glass-pad":1,"dark-drone":1,"string-machine":1,"choir-pad":1,"super-pad":1,"evolving-pad":1.001,"tape-pad":1,"sunrise-pad":1,"sad-pad":1,"hollow-pad":1,"organ-stab":1,"italo-stab":1,"rave-stab":1,"deep-stab":1,"super-stab":1,"vapor-stab":1,"brass-stab":1,"dub-chord":1,"classic-pluck":1,"pizz":1,"kalimba":1,"marimba":1,"muted-pluck":1,"harp":1,"bell-pluck":1,"glass-pluck":1,"techno-blip":1,"trance-pluck":1,"super-lead":1,"trance-lead":1,"square-lead":1,"sine-lead":1,"pulse-lead":1,"sync-lead":1,"whistle-lead":1,"mt-lead":1,"mono-lead":1,"fm-lead":1,"glass-lead":1,"afro-flute":1,"e-piano":1,"rhodes":0.999,"organ":0.999,"wurli":1,"clav":1,"lofi-keys":1,"aah-female":1,"ooh-choir":1,"eeh-vox":1,"vocoder":1,"breath-hum":1,"male-ooh":1,"vox-chop":1,"angel-aah":1,"wj-dark-pad":1,"wj-hypno-bass":1,"wj-glass-arp":1,"wj-sunrise-lead":1,"gt-piano-stab":1,"gt-pump-bass":1,"gt-anthem-lead":1,"ar-uplift-lead":1,"ar-rolling-bass":1,"dd-funk-stab":1,"dd-bounce-bass":1,"mp-hook-bass":1,"dv-screech-lead":1,"cw-acid-riff":1,"cc-909-stab":1,"mg-wide-chord":1,"mg-pluck-lead":1,"an-cine-pad":1,"an-pulse-bass":1,"an-crystal-arp":1,"al-slap-bass":1,"tt-brass-lead":1,"fa-felt-keys":1,"fi-rubber-bass":1,"ip-psy-bass":1,"ip-acid-lead":1,"sl-rumble-bass":1,"sl-hard-lead":1,"so-velvet-pad":1,"so-deep-bass":1,"so-emotive-lead":1,"mm-dream-pluck":1,"mm-prog-bass":1,"mm-silk-lead":1,"mo-sax-lead":1,"mo-ney-flute":1,"mo-warm-keys":1,"mo-deep-bass":1,"hu-latin-piano":1,"hu-latin-bass":1,"hu-brass":1,"bc-soul-keys":1,"bc-afro-sub":1,"bc-kalimba":1,"ws-sub-heavy":0.996,"ws-fat-roll":1.682,"ws-reese-wide":1.561,"ws-deep-warm-bass":1.275,"ws-super-chord":0.867,"ws-lush-pad":1.422,"ws-warm-stack":1,"ws-rave-organ":0.668,"ws-dark-wall":1.518,"ws-anthem-lead":1.203,"ws-silk-lead":1.707,"ws-wide-pluck":1.396,"ws-grand-warm":0.689,"ws-brass-hit":2.525};
 Object.assign(MB.TRIM, {"wf-sub-anchor":1.155,"wf-sub-felt":1.108,"wf-sub-pressure":2.155,"wf-sub-glide":1.17,"wf-sub-harmonic":1.242,"wf-roll-tunnel":1.801,"wf-roll-rubber":2.197,"wf-roll-fm":3.905,"wf-roll-hypno":1.714,"wf-roll-grit":3.765,"wf-roll-velvet":1.763,"wf-acid-line":0.527,"wf-acid-square":0.521,"wf-acid-sour":1.588,"wf-acid-rubber":0.784,"wf-acid-scream":0.295,"wf-lead-obsidian":1.657,"wf-lead-cathedral":1.649,"wf-lead-ghost":0.785,"wf-lead-razor":1.118,"wf-lead-shard":1.143,"wf-lead-mourning":1.863,"wf-lead-chant":0.444,"wf-pluck-analog":3.499,"wf-pluck-wood":9.033,"wf-pluck-crystal":2.476,"wf-pluck-dub":1.8,"wf-pluck-prog":3.852,"wf-pluck-mallet":1.707,"wf-stab-basement":2.333,"wf-stab-warehouse":2.493,"wf-stab-organ":1.995,"wf-stab-hammer":2.11,"wf-stab-brass":1.792,"wf-stab-chop":4.93,"wf-seq-pulse":3.914,"wf-seq-bounce":2.252,"wf-seq-hypno":1.755,"wf-seq-sparkle":2.359,"wf-seq-ring":2.725,"wf-seq-cine":2.69,"wf-pad-horizon":1.338,"wf-pad-nocturne":1.136,"wf-pad-glass":0.928,"wf-pad-warm":0.921,"wf-pad-choir":0.239,"wf-pad-strings":2.781,"wf-tex-air":1.247,"wf-tex-drone":0.552,"wf-tex-shimmer":0.712,"wf-tex-breath":0.773,"wf-tex-dust":0.622,"wf-metal-anvil":1.47,"wf-metal-clang":1.204,"wf-metal-grinder":2.04,"wf-metal-pipe":1.86,"wf-metal-rust":4.868,"wf-fx-riser":1.286,"wf-fx-impact":1.053,"wf-fx-down":2.897,"wf-fx-sweep":1.913,"wf-fx-zap":1.704});   // Wavejackers Factory 26: ön dinleme cümlesiyle ölçülen eşit ses yüksekliği (-18 LUFS, doku/FX -22)
 Object.assign(MB.TRIM, {"wf-808-clean":1.928,"wf-808-dirt":1.820,"wf-808-slide":1.207,"wf-bass-reese":1.758,"wf-bass-wobble":1.939,"wf-bass-log":1.993,"wf-bass-slap":2.392,"wf-bass-felt":2.746,"wf-keys-tine":0.903,"wf-keys-dusty":1.196,"wf-keys-house":1.250,"wf-keys-organ":1.012,"wf-pad-tape":0.840,"wf-pad-festival":0.923,"wf-stab-future":1.677,"wf-stab-tape":2.599,"wf-lead-whistle":0.940,"wf-lead-screech":1.425,"wf-lead-anthem":1.702,"wf-pluck-trapbell":0.854,"wf-pluck-pizz":4.402,"wf-pluck-future":3.237,"wf-metal-cowbell":1.883,"wf-vox-chop":0.774});   // 3.3: 24 yeni fabrika sesi
+// ---- Koro (ses işleme): eklentideki Source/Choir.cpp ile aynı yöntem.
+// Tek sesten (dahili ünlü ya da kullanıcının kaydı) akorları izleyen dört partili koro: perde tespiti (YIN),
+// formant korumalı perde düzeltme (TD-PSOLA), ses yürüyüşü, katedral reverb'ü. Döngü tempoya kilitli ve dikişsizdir.
+(function () {
+  const C = HG.Choir = {}, PI = Math.PI, TAU = 2 * PI, ACT = 32;
+  C.MAX_SECONDS = 12;
+  const PART_FORMANT = [.9, .96, 1.08, 1.16], PART_PAN = [-.12, .38, -.42, .2];
+  const VOWELS = [{ f: [730, 1090, 2440, 3400], g: [1, .55, .3, .12], bw: [90, 100, 130, 150], noise: .035 },      // Aah
+                  { f: [320, 800, 2300, 3200], g: [1, .3, .08, .04], bw: [70, 80, 110, 140], noise: .02 },          // Ooh
+                  { f: [420, 1900, 2600, 3350], g: [1, .35, .3, .12], bw: [70, 100, 130, 150], noise: .03 },        // Eeh
+                  { f: [260, 1050, 2200, 3000], g: [1, .1, .04, .02], bw: [60, 90, 120, 140], noise: .008 }];       // Mmm
+  const m12 = x => ((x % 12) + 12) % 12, lim = (a, x, b) => Math.max(a, Math.min(b, x));
+  C.defaults = () => ({ source: 0, rhythm: 0, size: 3, seed: 1, part: [true, true, true, true], level: .7, space: .6, detune: .35, air: .4, vibrato: .3, attack: .4, character: 0 });
+
+  // Dört partinin ölçü başına notaları (MIDI): bas kökte, üst sesler en yakın akor sesine gider
+  C.voicing = function (bars) {
+    const lo = [40, 48, 55, 60], hi = [52, 60, 67, 76], prev = [45, 55, 62, 69], out = [];
+    const near = (part, pc) => { let best = lo[part], bd = 999; for (let n = lo[part]; n <= hi[part]; n++) if (m12(n - pc) === 0) { const d = Math.abs(n - prev[part]); if (d <= bd) { bd = d; best = n; } } return best; };
+    for (const b of bars) {
+      const t = [m12(b.pc), m12(b.pc + b.third), m12(b.pc + b.fifth)], n = [near(0, t[0]), 0, 0, 0], used = [false, false, false];
+      for (const part of [3, 2, 1]) {
+        let bi = -1, bd = 999;
+        for (let k = 0; k < 3; k++) { if (used[k]) continue; const d = Math.abs(near(part, t[k]) - prev[part]); if (d < bd) { bd = d; bi = k; } }
+        used[bi] = true; n[part] = near(part, t[bi]);
+      }
+      for (let p = 0; p < 4; p++) prev[p] = n[p];
+      out.push(n);
+    }
+    return out;
+  };
+
+  // Tek çerçevenin perdesi (YIN); perde yoksa 0
+  C.detectPitch = function (x, off, n, sr) {
+    const minLag = Math.max(2, Math.floor(sr / 900)), maxLag = Math.min(n >> 1, Math.floor(sr / 65));
+    if (maxLag <= minLag + 2) return 0;
+    const W = n - maxLag; let en = 0;
+    for (let j = 0; j < W; j++) en += x[off + j] * x[off + j];
+    if (en / W < 1e-6) return 0;
+    const d = new Float64Array(maxLag + 1).fill(1); let run = 0;
+    for (let tau = 1; tau <= maxLag; tau++) {
+      let s = 0; for (let j = 0; j < W; j++) { const e = x[off + j] - x[off + j + tau]; s += e * e; }
+      run += s; d[tau] = run > 0 ? s * tau / run : 1;
+    }
+    let best = -1;
+    for (let tau = minLag; tau < maxLag; tau++) if (d[tau] < .15) { while (tau + 1 < maxLag && d[tau + 1] < d[tau]) tau++; best = tau; break; }
+    if (best < 0) { best = minLag; for (let tau = minLag; tau < maxLag; tau++) if (d[tau] < d[best]) best = tau; if (d[best] > .35) return 0; }
+    let tau = best;
+    if (best > 1 && best < maxLag) { const a = d[best - 1], b = d[best], c = d[best + 1], den = a - 2 * b + c; if (Math.abs(den) > 1e-12) tau += .5 * (a - c) / den; }
+    return sr / tau;
+  };
+
+  // Sesin çözümlemesi: perde işaretleri ve uzatma bölgesi. mono: Float32Array
+  C.analyse = function (mono, sr) {
+    const v = { x: new Float32Array(0), sr, f0: 0, mark: [], period: [], loopA: 0, loopB: 0, voiced: 0 };
+    let N = Math.min(mono.length, Math.floor(sr * C.MAX_SECONDS)); if (N < sr * .05) return v;
+    const x = Float32Array.from(mono.subarray(0, N)); let dc = 0, pk = 0;
+    for (let i = 0; i < N; i++) dc += x[i]; dc /= N;
+    for (let i = 0; i < N; i++) { x[i] -= dc; pk = Math.max(pk, Math.abs(x[i])); }
+    if (pk < 1e-4) return v;
+    let a = 0, z = N - 1; const thr = pk * .03, pad = Math.floor(sr * .01);
+    while (a < z && Math.abs(x[a]) < thr) a++;
+    while (z > a && Math.abs(x[z]) < thr) z--;
+    a = Math.max(0, a - pad); z = Math.min(N - 1, z + pad); N = z - a + 1; if (N < sr * .05) return v;
+    v.x = x.slice(a, a + N); for (let i = 0; i < N; i++) v.x[i] *= .9 / pk;
+    const fadeN = Math.min(N >> 1, Math.floor(sr * .004)); for (let i = 0; i < fadeN; i++) { const g = i / fadeN; v.x[i] *= g; v.x[N - 1 - i] *= g; }
+    // perde izi: ~12 kHz'e indirilmiş işaret üzerinde YIN, 10 ms adımla
+    const D = Math.max(1, Math.round(sr / 12000)), dsr = sr / D, DN = Math.floor(N / D), ds = new Float32Array(Math.max(1, DN));
+    for (let i = 0; i < DN; i++) { let s = 0; for (let k = 0; k < D; k++) s += v.x[i * D + k]; ds[i] = s / D; }
+    const F = Math.floor(dsr * .045), H = Math.max(1, Math.floor(dsr * .01)), f0 = [];
+    for (let at = 0; at + F <= DN; at += H) f0.push(C.detectPitch(ds, at, F, dsr));
+    const vf = f0.filter(f => f > 0).sort((p, q) => p - q);
+    v.voiced = f0.length ? vf.length / f0.length : 0;
+    if (v.voiced >= .15) { v.f0 = vf[vf.length >> 1]; for (let i = 0; i < f0.length; i++) { if (f0[i] > v.f0 * 1.8) f0[i] *= .5; else if (f0[i] > 0 && f0[i] < v.f0 * .55) f0[i] *= 2; } }
+    else f0.fill(0);
+    const defP = sr / (v.f0 > 0 ? v.f0 : 160);
+    const frameAt = t => f0.length ? f0[lim(0, Math.floor((t / D - F * .5) / H), f0.length - 1)] : 0;
+    const peakIn = (from, to) => { from = Math.max(0, from | 0); to = Math.min(N - 1, to | 0); let bi = from; for (let i = from; i <= to; i++) if (v.x[i] > v.x[bi]) bi = i; return bi; };
+    const vd = []; let t = peakIn(0, defP);
+    while (t < N) {
+      const f = frameAt(t), P = f > 0 ? sr / f : defP;
+      v.mark.push(t | 0); v.period.push(P); vd.push(f > 0);
+      const nx = t + P; t = f > 0 ? Math.max(t + P * .5, peakIn(nx - P * .25, nx + P * .25)) : nx;
+    }
+    const M = v.mark.length; let ba = 0, bl = 0;
+    for (let i = 0; i < M;) { if (!vd[i]) { i++; continue; } let j = i; while (j < M && vd[j]) j++; if (j - i > bl) { bl = j - i; ba = i; } i = j; }
+    if (bl >= 12) { v.loopA = ba + Math.floor(bl * .3); v.loopB = ba + bl - 1 - Math.floor(bl * .15); }
+    else { v.loopA = M >> 2; v.loopB = Math.max(v.loopA + 1, Math.floor(M * 4 / 5)); }
+    v.loopB = lim(0, v.loopB, Math.max(0, M - 1)); v.loopA = lim(0, v.loopA, v.loopB);
+    v.mark = Int32Array.from(v.mark); v.period = Float32Array.from(v.period);
+    return v;
+  };
+
+  const vibCents = (sg, sec) => { const on = lim(0, (sec - .18) / .5, 1); return sg.cents + Math.sin(TAU * sg.vibRate * sec + sg.vibPhase) * sg.vibDepth * on * on + Math.sin(TAU * .31 * sec + sg.vibPhase * 1.7) * 3; };
+
+  // Dahili ünlü: gırtlak darbesi + nefes gürültüsü, dört paralel formant süzgecinden geçer
+  function synthNote(dst, len, f0, sg, vowel, sr) {
+    const V = VOWELS[lim(0, vowel, 3)], b0 = [0, 0, 0, 0], a1 = [0, 0, 0, 0], a2 = [0, 0, 0, 0], z1 = [0, 0, 0, 0], z2 = [0, 0, 0, 0];
+    for (let k = 0; k < 4; k++) {
+      let f = V.f[k] * sg.formant; if (k === 0) f = Math.max(f, f0 * 1.02); f = Math.min(f, sr * .45);
+      const w = TAU * f / sr, al = Math.sin(w) / (2 * f / V.bw[k]), a0 = 1 + al;
+      b0[k] = al / a0; a1[k] = -2 * Math.cos(w) / a0; a2[k] = (1 - al) / a0;
+    }
+    const r = MB.rng(sg.seed); let ph = r(), lp = 0;
+    for (let i = 0; i < len; i++) {
+      const sec = i / sr, f = f0 * Math.pow(2, vibCents(sg, sec) / 1200);
+      ph += f / sr; if (ph >= 1) ph -= 1;
+      const open = ph < .6 ? .5 * (1 - Math.cos(PI * ph / .6)) : ph < .8 ? Math.cos(PI * .5 * (ph - .6) / .2) : 0;
+      const src = (open - .36) + (r() * 2 - 1) * V.noise * (.4 + open) * 6, x = src - lp; lp += (src - lp) * .002;
+      let y = 0;
+      for (let k = 0; k < 4; k++) { const o = b0[k] * x + z1[k]; z1[k] = -a1[k] * o + z2[k]; z2[k] = -b0[k] * x - a2[k] * o; y += o * V.g[k]; }
+      dst[i] += y * 2.2;
+    }
+  }
+
+  // Kullanıcının sesi: TD-PSOLA. Perde hedef notaya sabitlenir, tanecikler formantı korur
+  function psolaNote(dst, len, f0, sg, V, hold, sr) {
+    const M = V.mark.length; if (M < 4 || V.x.length < 64) return;
+    const ratio = V.sr / sr, rho = sg.formant * ratio, first = V.mark[0], end = V.mark[M - 1], X = V.x.length, mk = V.mark;
+    const la = lim(0, V.loopA, M - 2), lb = lim(la + 1, V.loopB - Math.floor(sg.loopJit * (V.loopB - V.loopA) * .3), M - 1), A = mk[la], B = mk[lb];
+    let pos = hold ? first + sg.startJit * (A - first) * .6 : first, t = 0, dir = 1;
+    while (t < len) {
+      const f = f0 * Math.pow(2, vibCents(sg, t / sr) / 1200), T = sr / f, ip = Math.floor(pos);
+      let lo = 0, hi = M; while (lo < hi) { const mid = (lo + hi) >> 1; if (mk[mid] < ip) lo = mid + 1; else hi = mid; }
+      let m = lim(0, lo, M - 1); if (m > 0 && Math.abs(mk[m - 1] - pos) < Math.abs(mk[m] - pos)) m--;
+      const Pa = V.period[m], c = mk[m], h = Pa / rho, half = Math.max(2, Math.floor(h)), g = Math.pow(lim(.3, T / h, 3), .7), t0 = Math.floor(t);
+      for (let k = -half; k <= half; k++) {
+        const o = t0 + k; if (o < 0 || o >= len) continue;
+        const sp = c + k * rho, i0 = Math.floor(sp); if (i0 < 0 || i0 + 1 >= X) continue;
+        dst[o] += (V.x[i0] + (V.x[i0 + 1] - V.x[i0]) * (sp - i0)) * (.5 + .5 * Math.cos(PI * k / half)) * g;
+      }
+      t += T; pos += dir * T * ratio;
+      if (hold) { if (pos >= B) { pos = Math.max(A, 2 * B - pos); dir = -1; } else if (dir < 0 && pos <= A) { pos = Math.min(B, 2 * A - pos); dir = 1; } }
+      else if (pos >= end) break;
+    }
+  }
+
+  // Freeverb (JUCE'nin Reverb sınıfıyla aynı yapı): 8 tarak + 4 tüm geçiren, kanal başına
+  function Reverb(sr, room, damp) {
+    const combT = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617], apT = [556, 441, 341, 225], k = sr / 44100, fb = room * .28 + .7, dp = damp * .4;
+    const mk = (t, spread) => t.map(n => ({ b: new Float32Array(Math.max(1, Math.round((n + spread) * k))), i: 0, last: 0 }));
+    const cb = [mk(combT, 0), mk(combT, 23)], ap = [mk(apT, 0), mk(apT, 23)], out = [0, 0];
+    return function (l, r) {
+      const inp = (l + r) * .015;
+      for (let ch = 0; ch < 2; ch++) {
+        let o = 0;
+        for (const c of cb[ch]) { const y = c.b[c.i]; c.last = y * (1 - dp) + c.last * dp; c.b[c.i] = inp + c.last * fb; if (++c.i >= c.b.length) c.i = 0; o += y; }
+        for (const a of ap[ch]) { const y = a.b[a.i]; a.b[a.i] = o + y * .5; if (++a.i >= a.b.length) a.i = 0; o = y - o; }
+        out[ch] = o * 3;
+      }
+      return out;
+    };
+  }
+
+  // s: ayarlar; bars: [{ pc, third, fifth }]; voice: C.analyse çıktısı ya da null; pause: uzun işte arayüze nefes aldırmak için (isteğe bağlı)
+  C.render = async function (s, barsIn, voice, bpm, sr, pause) {
+    bpm = lim(40, bpm, 240);
+    const bars = barsIn && barsIn.length ? barsIn : [{ pc: 9, third: 3, fifth: 7 }], NB = bars.length, beat = 60 / bpm * sr, barLen = beat * 4;
+    const N = Math.max(64, Math.round(barLen * NB)), dl = new Float32Array(N), dr = new Float32Array(N), act = [0, 1, 2, 3].map(() => new Float32Array(NB * ACT));
+    const own = s.source >= 4 && voice && voice.mark.length >= 4, words = own && s.source === 5, notes = C.voicing(bars), stab = s.rhythm === 3;
+    const atk = stab ? .012 : .012 + s.attack * s.attack * .6, rel = stab ? .09 : .14 + s.attack * .4, charF = Math.pow(2, s.character * .25);
+    for (let p = 0; p < 4; p++) {
+      if (!s.part[p]) continue;
+      const evs = [];
+      for (let b = 0; b < NB; b++) {
+        const m = notes[b][p], last = evs[evs.length - 1];
+        if (s.rhythm === 0) { if (!words && last && last.midi === m && last.at + last.len >= b * barLen - 1) last.len += barLen; else evs.push({ at: b * barLen, len: barLen, midi: m }); }
+        else if (s.rhythm === 1) for (let k = 0; k < 2; k++) evs.push({ at: b * barLen + k * beat * 2, len: beat * 2 * .96, midi: m });
+        else if (s.rhythm === 2) for (let k = 0; k < 4; k++) evs.push({ at: b * barLen + k * beat, len: beat * .8, midi: m });
+        else for (let k = 0; k < 4; k++) evs.push({ at: b * barLen + (k + .5) * beat, len: beat * .4, midi: m });
+      }
+      const singers = lim(1, s.size | 0, 4), gain = .5 / Math.sqrt(singers);
+      for (let q = 0; q < singers; q++) {
+        const r = MB.rng(s.seed * 7919 + p * 131 + q * 17 + 5), sp = singers > 1 ? q / (singers - 1) * 2 - 1 : 0, sg = {};
+        sg.cents = sp * s.detune * 16 + (r() - .5) * s.detune * 10; sg.delay = q === 0 ? 0 : (r() - .3) * s.detune * (stab ? .012 : .04);
+        sg.vibRate = 4.9 + r() * 1.3; sg.vibPhase = r() * TAU; sg.vibDepth = s.vibrato * (22 + r() * 16);
+        sg.formant = PART_FORMANT[p] * charF * (1 + (r() - .5) * .06); sg.startJit = q === 0 ? 0 : r(); sg.loopJit = r();
+        const pan = lim(-1, PART_PAN[p] + sp * .22, 1), pl = Math.cos((pan + 1) * PI * .25), pr = Math.sin((pan + 1) * PI * .25);
+        let ei = 0;
+        for (const e of evs) {
+          const len = Math.floor(e.len + rel * sr), aN = Math.max(8, Math.floor(atk * sr)), rN = Math.max(8, Math.floor(rel * sr)), gate = Math.floor(e.len), tmp = new Float32Array(len);
+          sg.seed = s.seed * 31 + p * 1009 + q * 101 + (ei++) * 7;
+          const f0 = 440 * Math.pow(2, (e.midi - 69) / 12);
+          if (own) psolaNote(tmp, len, f0, sg, voice, !words, sr); else synthNote(tmp, len, f0, sg, s.source, sr);
+          const at = Math.round(e.at + sg.delay * sr);
+          for (let i = 0; i < len; i++) {
+            const env = Math.min(1, i / aN) * (i < gate ? 1 : Math.max(0, 1 - (i - gate) / rN)), x = tmp[i] * env * gain, o = ((at + i) % N + N) % N;
+            dl[o] += x * pl; dr[o] += x * pr;
+            if (q === 0 && (i & 255) === 0) { const a = act[p], ai = Math.floor(o * a.length / N); if (env > a[ai]) a[ai] = env; }
+          }
+        }
+        if (pause) await pause();
+      }
+    }
+    // katedral: alçak kesim, hava, ön gecikmeli geniş reverb; iki tur (kuyruk döngünün başına sarar)
+    const rev = Reverb(sr, .6 + .38 * s.space, .35), pdN = Math.max(1, Math.floor(sr * .022)), pdL = new Float32Array(pdN), pdR = new Float32Array(pdN);
+    const hpC = 1 - Math.exp(-TAU * 90 / sr), airC = 1 - Math.exp(-TAU * 5000 / sr), wet = .95 * s.space, dryG = 1 - .35 * s.space, L = new Float32Array(N), R = new Float32Array(N);
+    let hl = 0, hr = 0, al = 0, ar = 0, pd = 0;
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < N; i++) {
+        let xl = dl[i], xr = dr[i];
+        hl += (xl - hl) * hpC; hr += (xr - hr) * hpC; xl -= hl; xr -= hr;
+        al += (xl - al) * airC; ar += (xr - ar) * airC; xl += (xl - al) * s.air * 1.2; xr += (xr - ar) * s.air * 1.2;
+        const o = rev(pdL[pd], pdR[pd]); pdL[pd] = xl; pdR[pd] = xr; if (++pd >= pdN) pd = 0;
+        L[i] = xl * dryG + o[0] * wet; R[i] = xr * dryG + o[1] * wet;
+      }
+      if (pause) await pause();
+    }
+    let pk = 0; for (let i = 0; i < N; i++) pk = Math.max(pk, Math.abs(L[i]), Math.abs(R[i]));
+    if (pk > 1e-6) { const g = .6 * s.level / pk; for (let i = 0; i < N; i++) { L[i] *= g; R[i] *= g; } }
+    return { L, R, N, bars: NB, bpm, sr, act };
+  };
+})();
+// ---- Koro sahnesi: yazılımla çizilen 3B figürler (bilge + dört melek). Eklentideki Source/Stage3D.cpp ile aynı
+// modeller ve aynı hareket: derinlik tamponlu üçgen tarayıcı doğrudan bir ImageData'ya yazar (WebGL gerekmez).
+(function () {
+  const PI = Math.PI, CAM_Y = .95, CAM_Z = 9;
+  const cRobe = 0xF4EEDF, cGold = 0xD9B14A, cSkin = 0xE8B894, cWhite = 0xECECEC, cDark = 0x3A2A22, cHalo = 0xFFD86B, cWing = 0xFAF7F0, cWing2 = 0xE6DDCB, cWood = 0x8A6A3A;
+  const HAIR = [0x7A5230, 0xD9A441, 0xB5651D, 0xE8C877], ROBE = [0xE9EEF6, 0xF4EEDF, 0xF6EDE6, 0xEEF4EA];
+  const AX = [-4.5, -2.35, 2.35, 4.5], AZ = [.5, 0, 0, .5];
+  const BODY = 0, HEAD = 1, ARML = 2, ARMR = 3, HALO = 4, WINGL = 5, WINGR = 6, MOUTH = 7, STAFF = 8;
+  const I = () => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
+  function mul(a, b) { const r = new Array(12); for (let i = 0; i < 3; i++) for (let j = 0; j < 4; j++) r[i * 4 + j] = a[i * 4] * b[j] + a[i * 4 + 1] * b[4 + j] + a[i * 4 + 2] * b[8 + j] + (j === 3 ? a[i * 4 + 3] : 0); return r; }
+  const rx = a => { const c = Math.cos(a), s = Math.sin(a); return [1, 0, 0, 0, 0, c, -s, 0, 0, s, c, 0]; };
+  const ry = a => { const c = Math.cos(a), s = Math.sin(a); return [c, 0, s, 0, 0, 1, 0, 0, -s, 0, c, 0]; };
+  const rz = a => { const c = Math.cos(a), s = Math.sin(a); return [c, -s, 0, 0, s, c, 0, 0, 0, 0, 1, 0]; };
+  const tr = (x, y, z) => [1, 0, 0, x, 0, 1, 0, y, 0, 0, 1, z];
+  const sc = (x, y, z) => [x, 0, 0, 0, 0, y, 0, 0, 0, 0, z, 0];
+  const part = () => ({ v: [], tri: [], col: [], local: I(), glow: 0 });
+
+  // Döner yüzey: (yarıçap, yükseklik) profili Y ekseni çevresinde döndürülür; cols profil dilimi başına renk
+  function lathe(p, prof, segs, cols, xf) {
+    const base = p.v.length / 3, R = prof.length;
+    for (let i = 0; i < R; i++) for (let s = 0; s < segs; s++) {
+      const a = 2 * PI * s / segs, x = prof[i][0] * Math.cos(a), y = prof[i][1], z = prof[i][0] * Math.sin(a);
+      p.v.push(xf[0] * x + xf[1] * y + xf[2] * z + xf[3], xf[4] * x + xf[5] * y + xf[6] * z + xf[7], xf[8] * x + xf[9] * y + xf[10] * z + xf[11]);
+    }
+    for (let i = 0; i + 1 < R; i++) for (let s = 0; s < segs; s++) {
+      const a = base + i * segs + s, b = base + i * segs + (s + 1) % segs, c = a + segs, d = b + segs, col = cols[Math.min(i, cols.length - 1)];
+      p.tri.push(a, b, c, b, d, c); p.col.push(col, col);
+    }
+  }
+  function ball(p, r, segs, col, xf) {
+    const prof = [], rings = Math.max(4, segs >> 1);
+    for (let i = 0; i <= rings; i++) { const a = PI * i / rings; prof.push([r * Math.sin(a), r * Math.cos(a)]); }
+    lathe(p, prof, segs, [col], xf);
+  }
+  // Kanat: her tüy ayrı bir şerit (uçları sivri); altta uzun uçuş tüyleri, üstte kısa örtü tüyleri
+  function wing(p, side) {
+    const NU = 11, NV = 4;
+    for (let layer = 0; layer < 2; layer++) for (let k = 0; k < NU; k++) {
+      const base = p.v.length / 3;
+      for (let j = 0; j <= NV; j++) for (let e = 0; e < 2; e++) {
+        const v = j / NV, taper = j === NV ? .3 : j === NV - 1 ? .06 : -.08;
+        const u = (k + (e === 0 ? taper : 1 - taper)) / NU, um = (k + .5) / NU;
+        const top = .55 * Math.sin(PI * u * .8) - .25 * u * u, len = (.35 + .75 * Math.sin(PI * (um * .85 + .1)) * (1 - .3 * um)) * (layer === 0 ? 1 : .5);
+        p.v.push(side * (.05 + 1.05 * u + (layer === 0 ? .12 * v * um : 0)), top - v * len, -.05 - .28 * u * u - .1 * v * v + (layer === 1 ? .04 : 0));
+      }
+      const col = layer === 1 ? cWing : (k % 2 === 0 ? cWing : cWing2);
+      for (let j = 0; j < NV; j++) { const a = base + j * 2; p.tri.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); p.col.push(col, col); }
+    }
+    p.wing = true;
+  }
+  function finish(p) {
+    const v = p.v = new Float32Array(p.v), n = p.n = new Float32Array(v.length), t = p.tri = new Int32Array(p.tri); p.col = new Int32Array(p.col); p.tv = new Float32Array(v.length / 3 * 5);
+    for (let k = 0; k + 2 < t.length; k += 3) {
+      const a = t[k] * 3, b = t[k + 1] * 3, c = t[k + 2] * 3;
+      const e1x = v[b] - v[a], e1y = v[b + 1] - v[a + 1], e1z = v[b + 2] - v[a + 2], e2x = v[c] - v[a], e2y = v[c + 1] - v[a + 1], e2z = v[c + 2] - v[a + 2];
+      const nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
+      for (const q of [a, b, c]) { n[q] += nx; n[q + 1] += ny; n[q + 2] += nz; }
+    }
+    for (let i = 0; i < n.length; i += 3) { const l = Math.hypot(n[i], n[i + 1], n[i + 2]); if (l > 1e-9) { n[i] /= l; n[i + 1] /= l; n[i + 2] /= l; } else { n[i] = 0; n[i + 1] = 1; n[i + 2] = 0; } }
+  }
+  function makeFigure(elder, variant) {
+    const f = { parts: [], world: I(), dim: 1 }; for (let i = 0; i < 9; i++) f.parts.push(part());
+    const robe = elder ? cRobe : ROBE[variant & 3], hair = elder ? cWhite : HAIR[variant & 3], P = f.parts;
+    if (elder) lathe(P[BODY], [[0, 1.48], [.09, 1.47], [.27, 1.38], [.31, 1.12], [.26, .86], [.27, .78], [.34, .35], [.5, -.28], [.53, -.4], [0, -.4]], 18, [cGold, robe, robe, robe, cGold, robe, robe, cGold, robe], I());
+    else lathe(P[BODY], [[0, 1.46], [.07, 1.45], [.2, 1.37], [.22, 1.15], [.17, .9], [.18, .82], [.26, .4], [.4, -.28], [.43, -.4], [0, -.4]], 16, [cGold, robe, robe, robe, cGold, robe, robe, cGold, robe], I());
+    const h = P[HEAD];
+    ball(h, .16, 12, cSkin, I());
+    ball(h, .178, 12, hair, mul(tr(0, .03, -.05), sc(1.02, 1, 1)));
+    lathe(h, [[.14, .08], [.16, -.1], [.12, elder ? -.34 : -.44], [0, elder ? -.38 : -.5]], 10, [hair], tr(0, 0, -.135));
+    for (const sx of [-.058, .058]) ball(h, .014, 6, cDark, tr(sx, .025, .148));
+    if (elder) lathe(h, [[.125, -.02], [.13, -.1], [.08, -.26], [0, -.38]], 10, [cWhite], mul(tr(0, -.02, .075), sc(1, 1, .7)));
+    for (const a of [ARML, ARMR]) {
+      const w = elder ? 1.15 : 1;
+      lathe(P[a], [[0, .02], [.085 * w, 0], [.1 * w, -.3], [.14 * w, -.56], [.05, -.57]], 10, [robe, robe, robe, cGold], I());
+      ball(P[a], .058, 8, cSkin, tr(0, -.63, 0));
+    }
+    { const ring = [], R = elder ? .27 : .22; for (let i = 0; i <= 8; i++) { const a = 2 * PI * i / 8; ring.push([R + .022 * Math.cos(a), -.022 * Math.sin(a)]); } lathe(P[HALO], ring, 20, [cHalo], I()); P[HALO].glow = 1; }
+    if (elder) {
+      const s = P[STAFF];
+      lathe(s, [[.03, 1.72], [.028, -.4]], 6, [cWood], I());
+      ball(s, .11, 10, 0xFFF1B8, tr(0, 1.9, 0));
+      const ring = []; for (let i = 0; i <= 6; i++) { const a = 2 * PI * i / 6; ring.push([.2 + .018 * Math.cos(a), -.018 * Math.sin(a)]); }
+      lathe(s, ring, 14, [cGold], mul(tr(0, 1.9, 0), rx(PI * .5)));
+    } else { wing(P[WINGL], -1); wing(P[WINGR], 1); ball(P[MOUTH], .022, 6, 0x7A3A30, I()); }
+    P.forEach(finish);
+    return f;
+  }
+
+  HG.Stage3D = function () {
+    const fig = [0, 1, 2, 3].map(i => makeFigure(false, i)); fig.push(makeFigure(true, 0));
+    const box = fig.map(() => ({ x: 0, y: 0, w: 0, h: 0 })); let glows = [], px = null, zb = null, PW = 0, PH = 0;
+    const clamp01 = x => Math.max(0, Math.min(1, x));
+    function pose(q) {
+      const t = q.t, lv = clamp01(q.level), pulse = Math.exp(-5 * q.beat) * lv, sw = Math.sin(2 * PI * q.beat), k = clamp01(lv * 3);
+      for (let i = 0; i < 4; i++) {
+        const f = fig[i], P = f.parts, on = q.on[i], v = on ? clamp01(q.voice[i]) : 0, side = i < 2 ? 1 : -1;
+        const y = .44 + (on ? .12 * Math.sin(t * 1.3 + i * 1.7) + .1 * v : -.12);
+        f.dim = on ? 1 : .45;
+        f.world = mul(tr(AX[i], y, AZ[i]), mul(ry(side * .32 + .05 * Math.sin(t * .7 + i)), mul(rz(.05 * sw * k), sc(.82, .82, .82))));
+        const idle = .18 * Math.sin(t * 1.6 + i * .9), flap = on ? .22 + idle * (1 - k) + (.3 + .45 * lv) * Math.sin(2 * PI * q.beat - i * .4) * k : -.95;
+        P[WINGL].local = mul(tr(-.1, 1.24, -.15), mul(ry(.38), rz(-flap)));
+        P[WINGR].local = mul(tr(.1, 1.24, -.15), mul(ry(-.38), rz(flap)));
+        const lift = .25 + .55 * v, fwd = .95 - .45 * v;      // susarken eller önde, söylerken kollar açılır
+        P[ARML].local = mul(tr(-.19, 1.33, 0), mul(rz(-lift), rx(-fwd)));
+        P[ARMR].local = mul(tr(.19, 1.33, 0), mul(rz(lift), rx(-fwd)));
+        P[HEAD].local = mul(tr(0, 1.6, 0), mul(rx(-.28 * v), rz(.06 * Math.sin(t * 1.1 + i))));
+        P[MOUTH].local = mul(P[HEAD].local, mul(tr(0, -.075, .15), sc(1, .3 + 1.5 * v, .6)));
+        P[HALO].local = mul(tr(0, 1.9, 0), mul(rx(.22), ry(t * .8)));
+        P[HALO].glow = on ? .55 + .45 * v : 0;
+      }
+      const f = fig[4], P = f.parts;
+      f.world = mul(tr(0, -.06 + .03 * Math.sin(t * .9), -.4), mul(ry(.07 * Math.sin(t * .5)), sc(1.2, 1.2, 1.2)));
+      P[ARML].local = mul(tr(-.27, 1.34, 0), mul(rz(-.62), rx(-.55)));                         // asayı tutan kol
+      const lift = .3 + .95 * lv + .3 * pulse;
+      P[ARMR].local = mul(tr(.27, 1.34, 0), mul(rz(lift), rx(-.35 - .25 * pulse)));             // yöneten kol: seviyeyle kalkar, vuruşta iner
+      P[HEAD].local = mul(tr(0, 1.63, 0), mul(rx(-.1 * lv), ry(.12 * Math.sin(t * .6))));
+      P[HALO].local = mul(tr(0, 1.95, 0), mul(rx(.22), ry(t * .6)));
+      P[HALO].glow = .7 + .3 * lv;
+      P[STAFF].local = tr(-.66, 0, .3);
+      P[STAFF].glow = .25 + .75 * Math.max(lv, pulse);
+    }
+    function draw(f, W, H, bb) {
+      const foc = 2.45 * Math.min(H, W / 3.3), cx = W * .5, cy = H * .5, view = tr(0, -CAM_Y, -CAM_Z), Lx = .33, Ly = .78, Lz = .53;
+      let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+      for (const p of f.parts) {
+        if (!p.tri.length) continue;
+        const M = mul(view, mul(f.world, p.local)), sN = 1 / Math.max(1e-6, Math.hypot(M[0], M[4], M[8])), v = p.v, n = p.n, tv = p.tv, g = p.glow;
+        for (let i = 0, o = 0; i < v.length; i += 3, o += 5) {
+          const x = M[0] * v[i] + M[1] * v[i + 1] + M[2] * v[i + 2] + M[3], y = M[4] * v[i] + M[5] * v[i + 1] + M[6] * v[i + 2] + M[7], z = M[8] * v[i] + M[9] * v[i + 1] + M[10] * v[i + 2] + M[11];
+          let nx = (M[0] * n[i] + M[1] * n[i + 1] + M[2] * n[i + 2]) * sN, ny = (M[4] * n[i] + M[5] * n[i + 1] + M[6] * n[i + 2]) * sN, nz = (M[8] * n[i] + M[9] * n[i + 1] + M[10] * n[i + 2]) * sN;
+          const d = Math.max(.1, -z), il = 1 / Math.sqrt(x * x + y * y + z * z);
+          let nv = (nx * -x + ny * -y + nz * -z) * il; if (nv < 0) { nx = -nx; ny = -ny; nz = -nz; nv = -nv; }   // normal kameraya baksın: kanatlar iki yüzden aydınlanır
+          const dif = Math.max(0, nx * Lx + ny * Ly + nz * Lz), rim = (1 - nv) * (1 - nv) * (1 - nv);
+          tv[o] = cx + x * foc / d; tv[o + 1] = cy - y * foc / d; tv[o + 2] = d; tv[o + 3] = (.44 + .6 * dif) * (1 - g) + 1.12 * g; tv[o + 4] = rim * .55 * f.dim;
+          if (tv[o] < x0) x0 = tv[o]; if (tv[o] > x1) x1 = tv[o]; if (tv[o + 1] < y0) y0 = tv[o + 1]; if (tv[o + 1] > y1) y1 = tv[o + 1];
+        }
+        const t = p.tri;
+        for (let k = 0; k + 2 < t.length; k += 3) {
+          const a = t[k] * 5, b = t[k + 1] * 5, c = t[k + 2] * 5;
+          const ax = tv[a], ay = tv[a + 1], bx = tv[b], by = tv[b + 1], cxx = tv[c], cyy = tv[c + 1];
+          const area = (bx - ax) * (cyy - ay) - (by - ay) * (cxx - ax); if (Math.abs(area) < 1e-4 || (area > 0 && !p.wing)) continue;   // kapalı gövdelerde arka yüzler atlanır; kanatlar iki yüzlüdür
+          const minX = Math.max(0, Math.floor(Math.min(ax, bx, cxx))), maxX = Math.min(W - 1, Math.ceil(Math.max(ax, bx, cxx)));
+          const minY = Math.max(0, Math.floor(Math.min(ay, by, cyy))), maxY = Math.min(H - 1, Math.ceil(Math.max(ay, by, cyy)));
+          if (minX > maxX || minY > maxY) continue;
+          const col = p.col[k / 3]; let cr = (col >> 16) & 255, cg = (col >> 8) & 255, cb = col & 255;
+          if (f.dim < 1) { const m = (cr + cg + cb) / 3; cr = (cr * .3 + m * .7) * f.dim; cg = (cg * .3 + m * .7) * f.dim; cb = (cb * .3 + m * .7) * f.dim; }
+          const inv = 1 / area, az = tv[a + 2], bz = tv[b + 2], cz = tv[c + 2], al = tv[a + 3], bl = tv[b + 3], cl = tv[c + 3], ar = tv[a + 4], br = tv[b + 4], crm = tv[c + 4];
+          const d0 = (by - cyy) * inv, d1 = (cyy - ay) * inv, sx = minX + .5;
+          for (let y = minY; y <= maxY; y++) {
+            const py = y + .5, row = y * W;
+            let w0 = ((bx - sx) * (cyy - py) - (by - py) * (cxx - sx)) * inv, w1 = ((cxx - sx) * (ay - py) - (cyy - py) * (ax - sx)) * inv;
+            for (let x = minX; x <= maxX; x++, w0 += d0, w1 += d1) {
+              const w2 = 1 - w0 - w1;
+              if (w0 < -1e-5 || w1 < -1e-5 || w2 < -1e-5) continue;
+              const z = w0 * az + w1 * bz + w2 * cz; if (z >= zb[row + x]) continue;
+              zb[row + x] = z;
+              const lit = w0 * al + w1 * bl + w2 * cl, rim = (w0 * ar + w1 * br + w2 * crm) * 255;
+              const r = Math.min(255, cr * lit + rim) | 0, gg = Math.min(255, cg * lit + rim * .94) | 0, bb2 = Math.min(255, cb * lit + rim * .78) | 0;
+              px[row + x] = 0xff000000 | (bb2 << 16) | (gg << 8) | r;
+            }
+          }
+        }
+      }
+      if (x1 > x0) { bb.x = x0 / W; bb.y = y0 / H; bb.w = (x1 - x0) / W; bb.h = (y1 - y0) / H; } else bb.w = bb.h = 0;
+    }
+    // img: ImageData (arka plan saydam kalır); q: { t, beat, level, voice[4], on[4] }; ss: süper örnekleme (1-3)
+    function render(img, q, ss) {
+      ss = Math.max(1, Math.min(3, ss | 0 || 2));
+      const w = img.width, h = img.height, W = w * ss, H = h * ss;
+      if (PW !== W || PH !== H) { px = new Uint32Array(W * H); zb = new Float32Array(W * H); PW = W; PH = H; }
+      px.fill(0); zb.fill(1e9);
+      pose(q);
+      for (let i = 0; i < 5; i++) draw(fig[i], W, H, box[i]);
+      const foc = 2.45 * Math.min(H, W / 3.3); glows = [];
+      const point = (f, local, x, y, z, r, a) => {
+        const M = mul(tr(0, -CAM_Y, -CAM_Z), mul(f.world, local)), d = Math.max(.1, -(M[8] * x + M[9] * y + M[10] * z + M[11]));
+        glows.push({ x: (W * .5 + (M[0] * x + M[1] * y + M[2] * z + M[3]) * foc / d) / W, y: (H * .5 - (M[4] * x + M[5] * y + M[6] * z + M[7]) * foc / d) / H, r: r * foc / d / H, a });
+      };
+      for (let i = 0; i < 4; i++) if (q.on[i]) point(fig[i], fig[i].parts[HALO].local, 0, 0, 0, .34 + .3 * q.voice[i], .22 + .5 * q.voice[i]);
+      point(fig[4], fig[4].parts[HALO].local, 0, 0, 0, .5 + .3 * q.level, .3 + .4 * q.level);
+      point(fig[4], fig[4].parts[STAFF].local, 0, 1.9, 0, .3 + .5 * q.level, .35 + .55 * q.level);
+      const out = img.data, n2 = ss * ss;      // süper örnekleme: kenarlar yumuşar, alfa kapsama oranıdır
+      for (let y = 0, o = 0; y < h; y++) for (let x = 0; x < w; x++, o += 4) {
+        let r = 0, g = 0, b = 0, cnt = 0;
+        for (let j = 0; j < ss; j++) { const s = (y * ss + j) * W + x * ss; for (let i = 0; i < ss; i++) { const c = px[s + i]; if (c === 0) continue; cnt++; r += c & 255; g += (c >> 8) & 255; b += (c >> 16) & 255; } }
+        if (cnt === 0) { out[o + 3] = 0; continue; }
+        out[o] = r / cnt; out[o + 1] = g / cnt; out[o + 2] = b / cnt; out[o + 3] = cnt * 255 / n2;
+      }
+    }
+    return {
+      render, glows: () => glows, bounds: i => box[i],
+      hit: (x, y) => { for (let i = 0; i < 4; i++) { const b = box[i]; if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return i; } return -1; },
+      triangles: () => fig.reduce((n, f) => n + f.parts.reduce((m, p) => m + p.tri.length / 3, 0), 0)
+    };
+  };
+})();
 // ---- Arayüz 1/3: durum, dil, vuruş sekmesi, çalma motoru
 const UI = {};
 (function () {
@@ -4146,7 +4587,7 @@ const UI = {};
   UI.bankCat = 'all'; let bankOnly = false;
 
   // ---------- Sekmeler (ok tuşlarıyla gezilebilir)
-  const TABS = ['hit', 'sound', 'bank', 'export'];
+  const TABS = ['hit', 'sound', 'bank', 'export', 'choir'];
   UI.tab = function (name, focus) {
     document.querySelectorAll('.tab').forEach(t => { const on = t.dataset.tab === name; t.setAttribute('aria-selected', on); t.tabIndex = on ? 0 : -1; if (on && focus) t.focus(); });
     document.querySelectorAll('.pane').forEach(p => { p.hidden = p.id !== 'p-' + name; });
@@ -4154,6 +4595,7 @@ const UI = {};
     if (name === 'sound') UI.editorRefresh();
     if (name === 'bank') { if (UI.bankCat === 'Davul') UI.bankCat = 'Davul'; buildBankBar(); renderBank(); }
     if (name === 'export') renderArr();
+    if (UI.choirShow) UI.choirShow(name === 'choir');
   };
   document.querySelectorAll('.tab').forEach(t => {
     t.addEventListener('click', () => UI.tab(t.dataset.tab));
@@ -4308,5 +4750,210 @@ const UI = {};
   $('dl-loop').addEventListener('click', dlLoop); $('dl-song').addEventListener('click', dlSong); $('dl-wav').addEventListener('click', dlWav); $('dl-stems').addEventListener('click', dlStems);
   UI.init1(); renderDaws(); UI.init2();
   UI.test = { baseName, readme, render, renderBank };
+})();
+// ---- Arayüz: Koro sekmesi. Sesini kaydet ya da yükle; koro o anki fikrin akorlarını izler, ritme kilitli çalar.
+// Sahnedeki melekler partilerdir (bas, tenor, alto, soprano): tıklayınca parti açılır / kapanır.
+(function () {
+  const { $, st, rt, toast, store } = UI, T = (k, v) => HG.t(k, v), C = HG.Choir;
+  const KN = [['level', 'chLevel', 0, 1], ['space', 'chSpace', 0, 1], ['detune', 'chDetune', 0, 1], ['air', 'chAir', 0, 1], ['vibrato', 'chVibrato', 0, 1], ['attack', 'chAttack', 0, 1], ['character', 'chChar', -1, 1]];
+  const PARTS = ['chBass', 'chTenor', 'chAlto', 'chSoprano'];
+  const PRESETS = [
+    { size: 4, space: .8, detune: .4, air: .35, vibrato: .3, attack: .55, src: 0 },
+    { part: [true, true, false, false], size: 4, space: .7, detune: .25, air: .2, vibrato: .1, attack: .5, character: -.3, src: 1 },
+    { part: [false, false, true, true], size: 3, space: .75, detune: .35, air: .7, vibrato: .45, attack: .45, character: .35, src: 0 },
+    { rhythm: 3, size: 3, space: .3, detune: .3, air: .5, vibrato: .15, attack: 0, src: 0 }];
+  let s = C.defaults(), voice = null, voiceName = '', loop = null, want = '', busy = 0, src = null, gain = null, playing = false, t0 = 0, rec = null, stage = null, raf = 0, shown = false;
+  try { const v = JSON.parse(store.get('choir') || 'null'); if (v) Object.assign(s, v, { source: Math.min(v.source | 0, 3) }); } catch (e) {}
+  const save = () => store.set('choir', JSON.stringify(s));
+  const status = m => { $('ch-status').textContent = m; };
+  const chords = () => { const r = UI.res(); return r ? r.chords.slice(0, r.bars).map(c => ({ pc: c.pc, third: c.third, fifth: c.fifth })) : []; };
+  const voiceLine = () => {
+    if (!voice) return T('chVoiceNone');
+    if (!voice.f0) return voiceName + '  ·  ' + T('chNoPitch');
+    const m = Math.round(69 + 12 * Math.log2(voice.f0 / 440));
+    return voiceName + '  ·  ' + MB.NOTES[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1) + '  ·  ' + Math.round(voice.f0) + ' Hz';
+  };
+
+  // ---------- Döngü: ayar, akor ya da tempo değişince arka planda yeniden işlenir (en son istek kazanır)
+  async function rerender() {
+    const r = UI.res(); if (!r) return;
+    const key = JSON.stringify([s, chords(), st.bpm, !!voice, voiceName]); if (key === want) return; want = key;
+    const my = ++busy, sr = (rt.ac && rt.ac.sampleRate) || 48000;
+    const pause = () => new Promise(ok => setTimeout(ok, 0)).then(() => { if (my !== busy) throw new Error('stale'); });
+    try {
+      const L = await C.render(s, chords(), s.source >= 4 ? voice : null, st.bpm, sr, pause);
+      if (my !== busy) return;
+      loop = L; if (playing) startSource();
+    } catch (e) { if (e.message !== 'stale') status(T('audioFail')); }
+  }
+  let rT = 0; const soon = () => { clearTimeout(rT); rT = setTimeout(rerender, 160); };
+
+  // ---------- Çalma: ritim çalıyorsa koro aynı ölçüye kilitlenir
+  function startSource() {
+    const ac = rt.ac; if (!ac || !loop) return;
+    const buf = ac.createBuffer(2, loop.N, loop.sr); buf.copyToChannel(loop.L, 0); buf.copyToChannel(loop.R, 1);
+    const old = src, oldG = gain, now = ac.currentTime + .05, dur = loop.N / loop.sr;
+    gain = ac.createGain(); gain.connect(ac.destination);
+    src = ac.createBufferSource(); src.buffer = buf; src.loop = true; src.connect(gain);
+    let off = 0;
+    if (rt.playing && rt.log.length) { const [lt, loc] = rt.log[0], step = 60 / st.bpm / 4; off = ((loc * step + (now - lt)) % dur + dur) % dur; }
+    else if (old) off = ((now - t0) % dur + dur) % dur;
+    t0 = now - off; src.start(now, off);
+    if (old) { oldG.gain.setTargetAtTime(0, now, .03); old.stop(now + .3); }
+  }
+  function setPlaying(on) {
+    if (on && !UI.ensureMix()) return;
+    playing = on; $('ch-play').setAttribute('aria-pressed', on); $('ch-play').classList.toggle('on', on);
+    if (on) { if (loop) startSource(); else rerender(); }
+    else if (src) { gain.gain.setTargetAtTime(0, rt.ac.currentTime, .05); src.stop(rt.ac.currentTime + .4); src = null; }
+  }
+  const activity = i => { if (!playing || !loop || !rt.ac) return 0; const a = loop.act[i], dur = loop.N / loop.sr, f = (((rt.ac.currentTime - t0) % dur) + dur) % dur / dur; return a[Math.min(a.length - 1, Math.floor(f * a.length))]; };
+
+  // ---------- Ses: kayıt (mikrofon) ve dosya
+  async function useBuffer(ab, name) {
+    const mono = new Float32Array(ab.length); for (let c = 0; c < ab.numberOfChannels; c++) { const d = ab.getChannelData(c); for (let i = 0; i < d.length; i++) mono[i] += d[i] / ab.numberOfChannels; }
+    const v = C.analyse(mono, ab.sampleRate);
+    if (v.mark.length < 4) { status(T('chRecFail')); return false; }
+    voice = v; voiceName = name; if (s.source < 4) s.source = 4;
+    syncControls(); drawWave(); status(voiceLine()); soon(); return true;
+  }
+  async function toggleRecord() {
+    const btn = $('ch-rec');
+    if (rec) { rec.stop(); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) { status(T('chNoMic')); return; }
+    let stream; try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }); }
+    catch (e) { status(T(e && e.name === 'NotAllowedError' ? 'chMicDenied' : 'chNoMic')); return; }
+    const ac = UI.ensureMix() ? rt.ac : null, chunks = [], mr = new MediaRecorder(stream), began = performance.now();
+    let an = null, meter = 0; if (ac) { an = ac.createAnalyser(); an.fftSize = 1024; ac.createMediaStreamSource(stream).connect(an); }
+    const buf = new Float32Array(1024);
+    meter = setInterval(() => {
+      const sec = (performance.now() - began) / 1000; let pk = 0; if (an) { an.getFloatTimeDomainData(buf); for (const x of buf) pk = Math.max(pk, Math.abs(x)); }
+      status('● ' + sec.toFixed(1) + ' s  ' + '|'.repeat(Math.min(24, Math.round(pk * 30))));
+      if (sec >= C.MAX_SECONDS - .1) mr.stop();
+    }, 100);
+    mr.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+    mr.onstop = async () => {
+      clearInterval(meter); stream.getTracks().forEach(t => t.stop()); rec = null; btn.textContent = T('chRecord'); btn.classList.remove('on');
+      try { const ab = await rt.ac.decodeAudioData(await new Blob(chunks).arrayBuffer()); await useBuffer(ab, 'Voice'); }
+      catch (e) { status(T('chRecFail')); }
+    };
+    rec = mr; mr.start(); btn.textContent = T('chStop'); btn.classList.add('on'); status(T('chRecording'));
+  }
+  async function loadFile(f) {
+    if (!f || !UI.ensureMix()) return;
+    try { const ab = await rt.ac.decodeAudioData(await f.arrayBuffer()); if (!await useBuffer(ab, f.name.replace(/\.[^.]+$/, ''))) status(T('lfLoadFail')); }
+    catch (e) { status(T('lfLoadFail')); }
+  }
+  async function download() {
+    if (!loop) { await rerender(); if (!loop) return; }
+    const wav = MB.wav({ numberOfChannels: 2, length: loop.N, sampleRate: loop.sr, getChannelData: c => (c ? loop.R : loop.L) });
+    const name = 'HitGen Choir ' + loop.bars + 'bar ' + Math.round(loop.bpm) + 'bpm.wav';
+    if (!UI.dl) { toast(T('dlOff')); status(T('dlOff')); return; }
+    try { await UI.dl.save({ filename: name, data: new Blob([wav], { type: 'audio/wav' }) }); status(T('saved', { f: name })); }
+    catch (e) { status(e && e.code === 'declined' ? T('declined') : T('dlFail', { c: (e && e.code) || '?' })); }
+  }
+
+  // ---------- Denetimler
+  function fill(sel, keys, val) { sel.innerHTML = ''; keys.forEach((k, i) => { const o = document.createElement('option'); o.value = i; o.textContent = k; sel.appendChild(o); }); sel.value = val; }
+  function build() {
+    fill($('ch-src'), ['chAah', 'chOoh', 'chEeh', 'chMmm', 'chOwnHold', 'chOwnWords'].map(k => T(k)), s.source);
+    fill($('ch-rhy'), ['chHold', 'chHalf', 'chQuarter', 'chStab'].map(k => T(k)), s.rhythm);
+    fill($('ch-size'), [1, 2, 3, 4].map(n => T('chSize', { n })), s.size - 1);
+    fill($('ch-pre'), [T('chPreset')].concat(['chPre0', 'chPre1', 'chPre2', 'chPre3'].map(k => T(k))), 0);
+    $('ch-rec').title = T('chRecordTip'); $('ch-cv').title = T('chStageTip'); $('ch-rec').textContent = T(rec ? 'chStop' : 'chRecord');
+    const kn = $('ch-knobs'); kn.innerHTML = '';
+    KN.forEach(([id, key, lo, hi]) => {
+      const f = document.createElement('div'); f.className = 'field';
+      f.innerHTML = '<label class="lab"><span></span> <em></em></label><input type="range" min="' + lo * 100 + '" max="' + hi * 100 + '" step="1">';
+      const r = f.querySelector('input'), em = f.querySelector('em'); r.id = 'ch-' + id; f.querySelector('label').htmlFor = r.id; f.querySelector('span').textContent = T(key);
+      r.value = Math.round(s[id] * 100); em.textContent = r.value + '%';
+      r.addEventListener('input', () => { s[id] = r.value / 100; em.textContent = r.value + '%'; save(); soon(); });
+      kn.appendChild(f);
+    });
+    const tags = $('ch-tags'); tags.innerHTML = '';
+    PARTS.forEach((k, i) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn sm'; b.id = 'ch-tag' + i; b.textContent = T(k); b.addEventListener('click', () => togglePart(i)); tags.appendChild(b); });
+    syncControls(); status(voiceLine());
+  }
+  function syncControls() {
+    $('ch-src').value = s.source; $('ch-rhy').value = s.rhythm; $('ch-size').value = s.size - 1;
+    KN.forEach(([id]) => { const r = $('ch-' + id); if (r) { r.value = Math.round(s[id] * 100); r.previousElementSibling.querySelector('em').textContent = r.value + '%'; } });
+    PARTS.forEach((k, i) => { const b = $('ch-tag' + i); if (b) b.setAttribute('aria-pressed', s.part[i]); });
+  }
+  function togglePart(i) { s.part[i] = !s.part[i]; save(); syncControls(); soon(); }
+  function applyPreset(i) {
+    const p = PRESETS[i], own = s.source >= 4 && voice;
+    Object.assign(s, { part: [true, true, true, true], rhythm: 0, character: 0 }, p); delete s.src;
+    if (!own) s.source = p.src;
+    save(); syncControls(); soon();
+  }
+  $('ch-src').addEventListener('change', e => { s.source = +e.target.value; if (s.source >= 4 && !voice) status(T('chNeedVoice')); save(); soon(); });
+  $('ch-rhy').addEventListener('change', e => { s.rhythm = +e.target.value; save(); soon(); });
+  $('ch-size').addEventListener('change', e => { s.size = +e.target.value + 1; save(); soon(); });
+  $('ch-pre').addEventListener('change', e => { const i = +e.target.value - 1; e.target.value = 0; if (i >= 0) applyPreset(i); });
+  $('ch-rec').addEventListener('click', toggleRecord);
+  $('ch-file').addEventListener('change', e => { loadFile(e.target.files[0]); e.target.value = ''; });
+  $('ch-play').addEventListener('click', () => setPlaying(!playing));
+  $('ch-dl').addEventListener('click', download);
+  const pane = $('p-choir');
+  pane.addEventListener('dragover', e => { e.preventDefault(); });
+  pane.addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer && e.dataTransfer.files[0]; if (f) loadFile(f); });
+
+  // ---------- Sahne ve dalga
+  function drawWave() {
+    const c = $('ch-wave'), w = c.clientWidth, h = c.clientHeight; if (!w) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1); c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+    const x = c.getContext('2d'), cs = getComputedStyle(document.documentElement); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, w, h);
+    if (!voice) { x.fillStyle = cs.getPropertyValue('--mute'); x.font = '12px sans-serif'; x.textAlign = 'center'; x.fillText(T('chDrop'), w / 2, h / 2 + 4); return; }
+    const d = voice.x, n = Math.floor(w - 8); x.fillStyle = s.source >= 4 ? cs.getPropertyValue('--accent') : cs.getPropertyValue('--mute');
+    let mx = 1e-4; const pk = new Float32Array(n);
+    for (let i = 0; i < n; i++) { const a = Math.floor(i * d.length / n), z = Math.max(a + 1, Math.floor((i + 1) * d.length / n)); for (let k = a; k < z; k++) pk[i] = Math.max(pk[i], Math.abs(d[k])); mx = Math.max(mx, pk[i]); }
+    for (let i = 0; i < n; i++) { const y = pk[i] / mx * (h / 2 - 4); x.fillRect(4 + i, h / 2 - y, 1, y * 2 + 1); }
+  }
+  const smooth = [0, 0, 0, 0]; let lvl = 0, clock = 0, frameN = 0, img = null, off = null;
+  function frame() {
+    raf = requestAnimationFrame(frame);
+    if (!shown) return;
+    const motion = document.documentElement.dataset.motion !== 'off', eco = st.quality === 'eco';
+    if (!motion && img && frameN > 0) return;
+    frameN++; if (eco && frameN % 2) return;
+    const cv = $('ch-cv'), w = cv.clientWidth, h = cv.clientHeight; if (!w || !h) return;
+    if (!stage) stage = HG.Stage3D();
+    const dpr = Math.min(1.5, window.devicePixelRatio || 1), W = Math.round(w * dpr), H = Math.round(h * dpr);
+    if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; img = null; }
+    if (!img) { off = document.createElement('canvas'); off.width = W; off.height = H; img = off.getContext('2d').createImageData(W, H); }
+    // seviye: ana karışımın analizörü (ritim çalarken) ya da koronun kendi etkinliği
+    let pk = 0; const an = rt.mx && rt.mx.an;
+    if (an && rt.playing) { const b = new Float32Array(an.fftSize); an.getFloatTimeDomainData(b); for (let i = 0; i < b.length; i += 4) pk = Math.max(pk, Math.abs(b[i])); }
+    for (let i = 0; i < 4; i++) { const a = playing ? activity(i) : lvl * .55; smooth[i] += (a - smooth[i]) * (a > smooth[i] ? .4 : .15); pk = Math.max(pk, smooth[i] * .7); }
+    lvl += (Math.min(1, pk / .891) - lvl) * .35; clock += 1 / 60;
+    let beat = 0; if (rt.ac) beat = (((rt.ac.currentTime - (playing ? t0 : 0)) * st.bpm / 60) % 1 + 1) % 1;
+    const q = motion ? { t: clock, beat, level: lvl, voice: smooth.slice(), on: s.part } : { t: 0, beat: 0, level: 0, voice: [0, 0, 0, 0], on: s.part };
+    stage.render(img, q, eco ? 1 : 2); off.getContext('2d').putImageData(img, 0, 0);
+    // arka plan: gökten inen ışık, bulutlar, ışıltılar; sonra figürler
+    const x = cv.getContext('2d'), cs = getComputedStyle(document.documentElement), light = document.documentElement.dataset.theme === 'light' || cs.getPropertyValue('color-scheme').includes('light');
+    const g0 = x.createLinearGradient(0, 0, 0, H); g0.addColorStop(0, light ? '#f2ead6' : '#2a2618'); g0.addColorStop(1, light ? '#e2e6ec' : '#121418'); x.fillStyle = g0; x.fillRect(0, 0, W, H);
+    const eb = stage.bounds(4), top = eb.x * W + eb.w * W / 2;
+    const rg = x.createRadialGradient(top, (eb.y + eb.h * .25) * H, 0, top, (eb.y + eb.h * .25) * H, H * 1.25); rg.addColorStop(0, 'rgba(255,214,120,' + (.2 + .3 * lvl) + ')'); rg.addColorStop(1, 'rgba(255,214,120,0)'); x.fillStyle = rg; x.fillRect(0, 0, W, H);
+    for (let i = 0; i < 9; i++) {
+      const a = (i - 4) * .2 + .05 * Math.sin(q.t * .3 + i), half = .035 + .012 * Math.sin(q.t * .7 + i * 2);
+      x.beginPath(); x.moveTo(top, 0); x.lineTo(top + Math.tan(a - half) * H * 1.2, H * 1.2); x.lineTo(top + Math.tan(a + half) * H * 1.2, H * 1.2); x.closePath();
+      x.fillStyle = 'rgba(255,214,120,' + ((.035 + .06 * lvl) * (i % 2 ? .6 : 1)) + ')'; x.fill();
+    }
+    for (let i = 0; i < 5; i++) {
+      const b = stage.bounds(i); if (!b.w) continue; const cx = (b.x + b.w / 2) * W, cy = Math.min(H - 10, (b.y + b.h) * H - 4), cw = (i === 4 ? .3 : .2) * H * 2.2;
+      x.fillStyle = light ? 'rgba(255,255,255,.5)' : 'rgba(255,255,255,.1)';
+      for (let k = -1; k <= 1; k++) { x.beginPath(); x.ellipse(cx + k * cw * .3, cy, cw / 2, k === 0 ? 17 : 12, 0, 0, 2 * Math.PI); x.fill(); }
+    }
+    const bloom = k => stage.glows().forEach(gl => { const gx = gl.x * W, gy = gl.y * H, r = gl.r * H, gg = x.createRadialGradient(gx, gy, 0, gx, gy, r); gg.addColorStop(0, 'rgba(255,233,168,' + Math.min(1, gl.a * k) + ')'); gg.addColorStop(1, 'rgba(255,233,168,0)'); x.fillStyle = gg; x.fillRect(gx - r, gy - r, r * 2, r * 2); });
+    bloom(1); x.drawImage(off, 0, 0); bloom(.35);
+    PARTS.forEach((k, i) => { const b = $('ch-tag' + i), r = stage.bounds(i); if (b && r.w) b.style.left = ((r.x + r.w / 2) * 100) + '%'; });
+  }
+  $('ch-cv').addEventListener('click', e => { if (!stage) return; const r = e.currentTarget.getBoundingClientRect(), i = stage.hit((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height); if (i >= 0) togglePart(i); });
+
+  // ---------- Bağlantılar: sekme, dil, akor ve tempo değişimi
+  UI.choirShow = on => { shown = on; if (on) { frameN = 0; build(); drawWave(); soon(); cancelAnimationFrame(raf); raf = requestAnimationFrame(frame); } };
+  const prevLang = UI.onLang2; UI.onLang2 = function () { if (prevLang) prevLang(); if (shown) build(); };
+  setInterval(() => { if (shown || playing) { const key = JSON.stringify([chords(), st.bpm]); if (UI.__chKey !== key) { UI.__chKey = key; soon(); } } }, 400);
+  UI.choir = { get: () => s, render: rerender, loaded: () => !!loop, togglePart, applyPreset, useBuffer, setPlaying };
 })();
 </script>

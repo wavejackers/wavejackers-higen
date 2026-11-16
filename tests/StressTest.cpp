@@ -1499,6 +1499,8 @@ static void testChoir (const juce::File& outDir, const FailFn& fail, bool shots)
         static const int lo[4] = { 40, 48, 55, 60 }, hi[4] = { 52, 60, 67, 76 };
         const auto v = ch::voicing (prog);
         if (v.size() != prog.size()) fail ("choir: voicing size");
+        static const int web[4][4] = { { 45, 52, 60, 69 }, { 41, 53, 60, 69 }, { 48, 52, 60, 67 }, { 43, 50, 59, 67 } };   // tools/test-choir.js ile aynı beklenti
+        for (size_t b = 0; b < v.size() && b < 4; ++b) for (int k = 0; k < 4; ++k) if (v[b][(size_t) k] != web[b][k]) { fail ("choir: voicing differs from the web version"); break; }
         for (size_t b = 0; b < v.size(); ++b)
         {
             std::set<int> pcs;
@@ -1633,7 +1635,7 @@ static void testChoir (const juce::File& outDir, const FailFn& fail, bool shots)
     {   // 3B sahne: figürler çizilir, hareket kareyi değiştirir, melek tıklaması doğru partiyi bulur
         s3d::Stage st; juce::Image a (juce::Image::ARGB, 566, 165, true), b (juce::Image::ARGB, 566, 165, true);
         s3d::Pose q0; st.render (a, q0, 2);
-        if (st.triangles() < 2000) fail ("stage: too few triangles (" + juce::String (st.triangles()) + ")");
+        if (st.triangles() != 8676) fail ("stage: triangle count " + juce::String (st.triangles()) + " differs from the web version (8676)");
         auto opaque = [] (const juce::Image& im) { int n = 0; for (int y = 0; y < im.getHeight(); y += 2) for (int x = 0; x < im.getWidth(); x += 2) n += im.getPixelAt (x, y).getAlpha() > 128 ? 1 : 0; return n; };
         if (opaque (a) < 2500) fail ("stage: figures not drawn");
         for (int i = 0; i < 5; ++i) { const auto r = st.bounds (i); if (r.isEmpty() || r.getX() < 0 || r.getRight() > 1 || r.getY() < 0 || r.getBottom() > 1) fail ("stage: figure " + juce::String (i) + " is outside the stage"); }

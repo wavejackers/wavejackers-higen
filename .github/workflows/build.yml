@@ -56,6 +56,10 @@ jobs:
           "$exe" > gen.txt
           diff <(tr -d '\r' < gen.txt) <(tr -d '\r' < tests/reference.txt)
 
+      - name: Web korosu ve 3B sahne (eklentiyle aynı sonuç)
+        if: runner.os == 'Linux'
+        run: node tools/test-choir.js
+
       - name: Kararlılık testi
         shell: bash
         run: |

@@ -310,3 +310,24 @@ Belgedeki tariften kalan farklar: arayüz WebView yerine HitGen'in kendi arayüz
 Doğrulanmayan: kulakla dinleme, DAW'a sürükleme (FL Studio, Ableton), macOS ve Windows'ta elle deneme.
 
 **English.** New Loop tab: drop or capture a one-shot, build a Euclidean step pattern with per-step pitch (scale locked), reverse, ratchet, velocity, filter, pan and decay, shape it with Space / Drive / Motion, play it locked to the host and drag a seamless 24-bit WAV to the DAW (effect tails wrap around). Per-step timing shift (±50 ms) and attack; Loop macros and Euclid settings are automatable; an optional "Capture In" input (off by default) lets Capture record DAW audio. 24 new factory sounds for rap, R&B, bass music, house and hard styles. Not verified by ear or in a DAW.
+
+## Koro sekmesi ve 3B sahne / Choir tab and 3D stage
+
+**TR.** Yeni **Koro** sekmesi hem eklentide hem web sürümünde var. Sesini birkaç saniye kaydet (en çok 12 sn) ya da herhangi bir vokal dosyası yükle; koro o anki fikrin akorlarını izleyen dört partiye (bas, tenor, alto, soprano) dönüşür ve tempoya kilitli, dikişsiz bir döngü olarak çalar. Ses yoksa dahili koro (Aah, Ooh, Eeh, Mmm) söyler.
+
+- **Perde düzeltme:** sesin perdesi YIN ile bulunur, TD-PSOLA ile her partinin notasına çekilir. Formant korunduğu için ses incelip "sincap" gibi olmaz. Doğru notada söylemen gerekmez.
+- **Ses yürüyüşü:** bas akorun kökünde, üst üç ses akoru tamamlar ve en kısa yoldan bir sonraki akora geçer.
+- **Kendi sesim: uzatılmış** ünlüyü akor boyunca uzatır; **Kendi sesim: sözler** kaydı her notada baştan söyler.
+- **Ritim:** akor boyunca, ikilik, dörtlük ya da ters vuruş (stab). **Parti başına 1-4 şarkıcı**; her şarkıcının kendi perde sapması, gecikmesi, vibratosu ve sahne konumu var.
+- **Makrolar:** Seviye, Katedral (ön gecikmeli geniş reverb), Kalabalık, Hava, Vibrato, Yumuşak giriş, Karakter (koyu/parlak formant). Eklentide hepsi DAW otomasyonuna açık (`ch_*`).
+- **Hazır ayarlar:** Katedral, Gregoryen (yalnızca kalın sesler), Melekler (yalnızca ince sesler), Kulüp stab.
+- **Kayıt:** eklentide DAW'ın Capture In girişi bağlıysa oradan, değilse bilgisayarın mikrofonundan; web'de tarayıcı mikrofonundan. Kayıt proje klasörüne değil, `Wavejackers HitGen/Choir` altına WAV olarak yazılır ve projeyle geri yüklenir.
+- **Dışa aktarma:** eklentide "Drag loop to DAW" düğmesinden sürükle (24 bit WAV); web'de "Koro WAV indir".
+
+**3B sahne:** bilge ve dört melek gerçek 3B modellerdir (8676 üçgen), derinlik tamponlu yazılım çiziciyle çizilir. OpenGL ya da WebGL gerekmez, her DAW'da aynı görünür. Melekler kendi partileri söylerken ağızlarını açar, kollarını kaldırır; kanatlar vuruşla çırpar; bilge yöneten koluyla vuruşu verir, asasındaki küre seviyeyle parlar. Meleğe tıklayınca partisi açılır ya da kapanır. Animasyon kapalıyken sahne sabit kalır; Eco modunda yarı hızda ve düşük çözünürlükte çizilir.
+
+**Sınama:** `tests/StressTest.cpp` içindeki `testChoir` (eklenti) ve `node tools/test-choir.js` (web) aynı beklentileri denetler: ses yürüyüşü iki sürümde birebir aynı, perde ±%2 içinde, formant yerinde, dikişsiz döngü, -1 dBFS altında tepe, aynı üçgen sayısı.
+
+**Henüz doğrulanmayanlar:** koro kulakla dinlenmedi; gerçek bir mikrofonla kayıt (eklenti ve tarayıcı) denenmedi; FL Studio ve Ableton'da sürükleme denenmedi. Tarayıcıda mikrofon izni sayfanın açıldığı yere bağlıdır; izin yoksa dosya yükleme çalışır.
+
+**EN.** The new **Choir** tab exists in the plugin and the web version. Record a few seconds of your voice (12 s max) or load any vocal: it becomes a four-part choir (bass, tenor, alto, soprano) that follows the chords of the current idea and plays as a tempo-locked, seamless loop. Without a voice the built-in choir sings (Aah, Ooh, Eeh, Mmm). Pitch is detected with YIN and moved to each part's note with formant-preserving TD-PSOLA. The 3D stage (an elder and four angels, 8676 triangles) is drawn by a software rasteriser, so it needs no OpenGL or WebGL; angels sing their part, wings flap on the beat, and clicking an angel toggles its part. Not yet verified: listening tests, recording with a real microphone, and dragging into FL Studio or Ableton.

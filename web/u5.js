@@ -6,7 +6,7 @@
   UI.bankCat = 'all'; let bankOnly = false;
 
   // ---------- Sekmeler (ok tuşlarıyla gezilebilir)
-  const TABS = ['hit', 'sound', 'bank', 'export'];
+  const TABS = ['hit', 'sound', 'bank', 'export', 'choir'];
   UI.tab = function (name, focus) {
     document.querySelectorAll('.tab').forEach(t => { const on = t.dataset.tab === name; t.setAttribute('aria-selected', on); t.tabIndex = on ? 0 : -1; if (on && focus) t.focus(); });
     document.querySelectorAll('.pane').forEach(p => { p.hidden = p.id !== 'p-' + name; });
@@ -14,6 +14,7 @@
     if (name === 'sound') UI.editorRefresh();
     if (name === 'bank') { if (UI.bankCat === 'Davul') UI.bankCat = 'Davul'; buildBankBar(); renderBank(); }
     if (name === 'export') renderArr();
+    if (UI.choirShow) UI.choirShow(name === 'choir');
   };
   document.querySelectorAll('.tab').forEach(t => {
     t.addEventListener('click', () => UI.tab(t.dataset.tab));
