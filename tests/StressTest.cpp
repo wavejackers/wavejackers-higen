@@ -1905,6 +1905,12 @@ static void testSynthX (const FailFn& fail)
             if (! X.loadSequence (mfile) || p.xsProgram (sp.currentPart())["seq"]["n"].size() != 3) fail ("sequence: MIDI file not loaded");
             mfile.deleteFile();
         }
+        {   // program kaydet / yükle
+            const auto f = X.saveProgram ("HitGen Test Program"); auto before = juce::JSON::toString (xs::Program::toVar (p.xsProgram (sp.currentPart())));
+            X.applyTemplate (0);
+            if (! f.existsAsFile() || ! X.loadProgram (f) || juce::JSON::toString (xs::Program::toVar (p.xsProgram (sp.currentPart()))) != before) fail ("synthx: saved program did not load back");
+            f.deleteFile();
+        }
         X.showTab (8); X.setValue ("fx.0.0", 12); X.setValue ("fx.1.0", 1); X.showTab (8);
         auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f);
         auto f = juce::File ("/tmp/b-asan/synthx-fx.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os);

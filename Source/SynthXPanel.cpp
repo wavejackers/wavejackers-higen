@@ -68,7 +68,18 @@ SynthXPanel::SynthXPanel (HitGenProcessor& p, hgui::LookAndFeel& l) : proc (p), 
     };
     seqClear.onClick = [this] { if (active() && prog.getDynamicObject() != nullptr) { prog.getDynamicObject()->removeProperty ("seq"); commit(); rebuild(); } };
     initBtn.onClick = [this] { applyTemplate (0); };
-    templBox.onChange = [this] { const int i = templBox.getSelectedId() - 1; templBox.setSelectedId (0, dontSendNotification); if (i >= 0) applyTemplate (i); };
+    templBox.onChange = [this]
+    {
+        const int id = templBox.getSelectedId(); templBox.setSelectedId (0, dontSendNotification);
+        if (id >= 1000) { if (id - 1000 < userProgs.size()) loadProgram (userProgs[id - 1000]); } else if (id >= 1) applyTemplate (id - 1);
+    };
+    addAndMakeVisible (saveBtn);
+    saveBtn.onClick = [this]
+    {
+        auto* w = new AlertWindow (T ("sxSave", "Save"), T ("sxSaveName", "Name"), MessageBoxIconType::NoIcon, this);
+        w->addTextEditor ("n", data.soundName (proc.soundId (part == 2 ? hg::kMelody : part), lang)); w->addButton ("OK", 1, KeyPress (KeyPress::returnKey)); w->addButton (T ("cancel", "Cancel"), 0, KeyPress (KeyPress::escapeKey));
+        w->enterModalState (true, ModalCallbackFunction::create ([this, w] (int r) { if (r == 1) { const auto f = saveProgram (w->getTextEditorContents ("n")); sfLbl.setText (f.existsAsFile() ? f.getFileNameWithoutExtension() : String(), dontSendNotification); } }), true);
+    };
     sfBtn.onClick = [this]
     {
         chooser = std::make_unique<FileChooser> (T ("sxLoadSf", "Load SoundFont"), File(), "*.sf2");
@@ -95,8 +106,8 @@ void SynthXPanel::setLanguage (const String& l)
     convertBtn.setButtonText (T ("sxConvert", "From sound")); convertBtn.setTooltip (T ("sxConvertTip", "Rebuild this program from the selected sound (your edits are replaced)"));
     xgenBtn.setButtonText ("X-Gen"); xgenBtn.setTooltip (T ("sxXgenTip", "Generate a new random sound that suits this part"));
     initBtn.setButtonText (T ("sxInit", "Init")); sfBtn.setButtonText (T ("sxLoadSf", "Load SoundFont"));
-    templBox.clear (dontSendNotification); int id = 1; for (auto& t : templates()) templBox.addItem (T (t.key, t.en), id++);
-    templBox.setTextWhenNothingSelected (T ("sxTemplate", "Templates"));
+    fillTemplates();
+    saveBtn.setButtonText (T ("sxSave", "Save")); saveBtn.setTooltip (T ("sxSaveTip", "Save this program; it appears in the list next to the templates"));
     for (int i = 0; i < 10; ++i) tabs[(size_t) i].setButtonText (T (kTabKeys[i], kTabEn[i]));
     rebuild();
 }
@@ -197,6 +208,32 @@ bool SynthXPanel::loadSequence (const File& f)
     auto* q = new DynamicObject(); q->setProperty ("n", ns); q->setProperty ("b", jmax (1.0, std::ceil (end / 4) * 4)); q->setProperty ("nm", f.getFileNameWithoutExtension());
     prog.getDynamicObject()->setProperty ("seq", var (q)); if (auto* a = resolve (prog, "arp.on")) *a = 0;
     commit(); rebuild(); return true;
+}
+
+File SynthXPanel::userDir() { return File::getSpecialLocation (File::userApplicationDataDirectory).getChildFile ("Wavejackers HitGen").getChildFile ("Synth X"); }
+
+void SynthXPanel::fillTemplates()
+{
+    templBox.clear (dontSendNotification); int id = 1;
+    for (auto& t : templates()) templBox.addItem (T (t.key, t.en), id++);
+    userProgs = userDir().findChildFiles (File::findFiles, false, "*.hgx"); userProgs.sort();
+    if (! userProgs.isEmpty()) { templBox.addSeparator(); templBox.addSectionHeading (T ("sxMine", "My programs")); for (int i = 0; i < userProgs.size(); ++i) templBox.addItem (userProgs[i].getFileNameWithoutExtension(), 1000 + i); }
+    templBox.setTextWhenNothingSelected (T ("sxTemplate", "Templates"));
+}
+
+File SynthXPanel::saveProgram (const String& name)
+{
+    if (! active() || name.trim().isEmpty()) return {};
+    userDir().createDirectory();
+    auto f = userDir().getChildFile (File::createLegalFileName (name.trim()) + ".hgx");
+    if (! f.replaceWithText (JSON::toString (prog, false))) return {};
+    fillTemplates(); return f;
+}
+
+bool SynthXPanel::loadProgram (const File& f)
+{
+    const auto v = JSON::parse (f.loadFileAsString()); if (! v.isObject()) return false;
+    prog = xs::Program::toVar (v); commit(); syncAll(); rebuild(); return true;
 }
 
 void SynthXPanel::paramKnob (const char* id, const String& label, Rectangle<int> r)
@@ -451,7 +488,7 @@ void SynthXPanel::paint (Graphics& g)
 void SynthXPanel::resized()
 {
     int x = 16; auto put = [&] (Component& c, int w) { c.setBounds (x, 8, w, 28); x += w + 8; };
-    put (convertBtn, 120); put (initBtn, 70); put (templBox, 180); put (xgenBtn, 80); put (sfBtn, 140); sfLbl.setBounds (x, 8, getWidth() - x - 16 - 190, 28);
+    put (convertBtn, 110); put (initBtn, 64); put (templBox, 180); put (saveBtn, 64); put (xgenBtn, 70); put (sfBtn, 130); sfLbl.setBounds (x, 8, getWidth() - x - 16 - 190, 28);
     for (int i = 0; i < 10; ++i) tabs[(size_t) i].setBounds (16 + i * 100, 42, 96, 26);
     steps.setBounds (16, 92, getWidth() - 32, 170);
     seqBtn.setBounds (310, 76 + 250 + 26, 260, 28); seqClear.setBounds (576, 76 + 250 + 26, 28, 28);
