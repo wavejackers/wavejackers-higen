@@ -160,6 +160,7 @@ HG.generate = function (P) {
       const cnt = ((role === 1 || role === 3) && dropLast && !cad) ? n - 1 : n;
       // geçiş notası: cümle sonunda (2. ve 4. ölçü) sonraki ölçünün ilk notasına alttan bir adımla bağlanır
       const pu = (role === 1 || role === 3) && b < bars - 1 && hits[0][0] === 0 && hits[cnt - 1][0] < 13 && dens >= .3;
+      let loD = 99, hiD = -99;
       for (let j = 0; j < cnt; j++) {
         let dg = clamp(anchor + rel[j] + seqShift, 0, 10);
         if (j === cnt - 1) {
@@ -171,11 +172,15 @@ HG.generate = function (P) {
         const s = hits[j][0], nx = j + 1 < cnt ? hits[j + 1][0] : 16;
         let l = cad && j === cnt - 1 ? 16 - s : Math.min(hits[j][1], nx - s);
         if (pu && j === cnt - 1) l = Math.min(l, 14 - s);
+        loD = Math.min(loD, dg); hiD = Math.max(hiD, dg);
         addM(b, s, l, mbase + deg(dg), j === peak ? 108 : s % 4 === 0 ? 100 : 84);
       }
       if (pu) {
-        const cN = chords[b + 1], dN = clamp(snapFix(A0, cTones(cN)) + rel[0] + ((b + 1) % 4 === 3 ? -1 : 0), 0, 10);
-        addM(b, 14, 2, mbase + deg(dN > 0 ? dN - 1 : dN + 1), 78);
+        // geçiş: bu ölçünün akor sesi, sonraki ölçünün ilk notasına en yakın (ölçünün aralığı ve tepesi içinde)
+        const cN = chords[b + 1], dN = clamp(snapFix(A0, cTones(cN)) + rel[0] + ((b + 1) % 4 === 3 ? -1 : 0), 0, 10), ct = cTones(c);
+        let best = -1, bd = 99;
+        for (let d = loD; d <= hiD; d++) if (ct.includes(((d % 7) + 7) % 7) && d !== dN && Math.abs(d - dN) < bd) { bd = Math.abs(d - dN); best = d; }
+        if (best >= 0) addM(b, 14, 2, mbase + deg(best), 78);
       }
     }
   } else if (mmode === 'arp') {

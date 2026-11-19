@@ -321,6 +321,7 @@ Result generate (const Data& data, const GenParams& P)
             const int anchor = snapFix (A0, cTones (c)), seqShift = role == 3 ? -1 : 0;
             const int cnt = ((role == 1 || role == 3) && dropLast && ! cad) ? n - 1 : n;
             const bool pu = (role == 1 || role == 3) && b < bars - 1 && hits[0][0] == 0 && hits[(size_t) cnt - 1][0] < 13 && dens >= .3;   // geçiş notası
+            int loD = 99, hiD = -99;
             for (int j = 0; j < cnt; ++j)
             {
                 int dg = clampT (anchor + rel[(size_t) j] + seqShift, 0, 10);
@@ -334,13 +335,17 @@ Result generate (const Data& data, const GenParams& P)
                 const double s = hits[(size_t) j][0], nx = j + 1 < cnt ? hits[(size_t) j + 1][0] : 16;
                 double l = cad && j == cnt - 1 ? 16 - s : std::min (hits[(size_t) j][1], nx - s);
                 if (pu && j == cnt - 1) l = std::min (l, 14 - s);
+                loD = std::min (loD, dg); hiD = std::max (hiD, dg);
                 addM (b, s, l, mbase + deg (dg), j == peak ? 108 : ((int) s) % 4 == 0 ? 100 : 84);
             }
             if (pu)
             {
+                // geçiş: bu ölçünün akor sesi, sonraki ölçünün ilk notasına en yakın (ölçünün aralığı ve tepesi içinde)
                 const auto& cN = R.chords[(size_t) b + 1];
                 const int dN = clampT (snapFix (A0, cTones (cN)) + rel[0] + ((b + 1) % 4 == 3 ? -1 : 0), 0, 10);
-                addM (b, 14, 2, mbase + deg (dN > 0 ? dN - 1 : dN + 1), 78);
+                const auto ct = cTones (c); int best = -1, bd = 99;
+                for (int d = loD; d <= hiD; ++d) if (std::find (ct.begin(), ct.end(), mod7 (d)) != ct.end() && d != dN && std::abs (d - dN) < bd) { bd = std::abs (d - dN); best = d; }
+                if (best >= 0) addM (b, 14, 2, mbase + deg (best), 78);
             }
         }
     }
