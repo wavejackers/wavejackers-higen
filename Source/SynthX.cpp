@@ -967,16 +967,23 @@ float Program::measureDb (int note, double secs) const
     for (int i = 0; i < N; i += 256) render (*V, *this, c, L.data() + i, R.data() + i, juce::jmin (256, N - i));
     // en yüksek kısa süreli düzey (50 ms pencere): kısa pluck ve uzun pad aynı ölçekle karşılaştırılır
     const int W = juce::jmax (64, (int) (sr * .05)), H = juce::jmax (16, W / 5); double best = 0;
+    double all = 0;
     for (int a = 0; a + W <= N; a += H) { double acc = 0; for (int i = a; i < a + W; ++i) acc += .5 * ((double) L[(size_t) i] * L[(size_t) i] + (double) R[(size_t) i] * R[(size_t) i]); best = juce::jmax (best, acc / W); }
-    return (float) (10 * std::log10 (best + 1e-12));
+    for (int i = 0; i < N; ++i) all += .5 * ((double) L[(size_t) i] * L[(size_t) i] + (double) R[(size_t) i] * R[(size_t) i]);
+    // algılanan düzey: tepe ile ortalamanın karışımı. Hızla sönen pluck, aynı tepedeki pad'den daha cılız duyulur;
+    // ortalama payı bunu telafi eder (en çok +9 dB), pad'lerde ortalama ≈ tepe olduğundan etkisi yoktur.
+    const double pk = 10 * std::log10 (best + 1e-12), av = 10 * std::log10 (all / juce::jmax (1, N) + 1e-12);
+    return (float) (pk - juce::jlimit (0.0, 10.0, .65 * (pk - av)));
 }
 
 float calibratedVolume (const juce::var& program, int part, double sr)
 {
     auto P = Program::fromVar (program, sr); auto Q = std::make_shared<Program> (*P); Q->vol = 1;
     const int note = part == 1 ? 41 : part == 0 ? 60 : 72; const float target = part == 0 ? -24.0f : -18.0f;
-    const float db = Q->measureDb (note, .45);
+    float db = Q->measureDb (note, .45);
     if (db < -110) return .7f;   // sessiz program: ölçülemez
+    // sürekli çalan akor pad'i (ölçü boyunca hiç susmaz) melodiyi örter: 2 dB geri çekilir
+    if (part == 0 && Q->measureDb (note, 1.2) > db - 1.0f) db += 2.0f;
     return juce::jlimit (.02f, 16.0f, std::pow (10.0f, (target - db) / 20.0f));
 }
 }

@@ -108,7 +108,7 @@ struct Program
     static std::shared_ptr<const Program> fromVar (const juce::var& v, double sampleRate);
     static juce::var toVar (const juce::var& v);   // normalleştirilmiş kopya (eksik alanlar varsayılanla)
     static juce::var init();
-    float measureDb (int note, double secs) const;   // tek notanın en yüksek kısa süreli (50 ms) RMS düzeyi (dBFS, vol dahil)                        // başlangıç programı: tek testere, açık filtre
+    float measureDb (int note, double secs) const;   // tek notanın algılanan düzeyi: 50 ms tepe RMS, hızlı sönüm kadar düşürülür (dBFS, vol dahil)                        // başlangıç programı: tek testere, açık filtre
     float releaseTime() const noexcept { return env[0].r; }
 };
 
