@@ -283,7 +283,14 @@ Result generate (const Data& data, const GenParams& P)
         const double rep = has (mel, "rep") ? num (mel["rep"]) : .4;   // özgünlük melodiye eklenmez
         const double keep = clampT (.5 + dens, .55, 1.0);
         std::vector<std::vector<double>> hits;
-        for (size_t j = 0; j < tp.size(); ++j) if (j == 0 || rm() <= keep) hits.push_back (tp[j]);
+        std::vector<size_t> used;
+        for (size_t j = 0; j < tp.size(); ++j) if (j == 0 || rm() <= keep) used.push_back (j);
+        {   // en az 3-5 nota: düşen vuruşlar sırayla geri gelir (JS ile aynı)
+            const size_t minN = std::min (tp.size(), (size_t) (3 + jsRound (clampT (dens, 0.0, 1.0) * 2)));
+            for (size_t j = 1; j < tp.size() && used.size() < minN; ++j) if (std::find (used.begin(), used.end(), j) == used.end()) used.push_back (j);
+            std::stable_sort (used.begin(), used.end(), [&] (size_t a, size_t z) { return tp[a][0] < tp[z][0]; });
+            for (auto j : used) hits.push_back (tp[j]);
+        }
         const int n = (int) hits.size();
         std::vector<int> strong; for (int j = 1; j < n; ++j) if (((int) hits[(size_t) j][0]) % 4 == 0) strong.push_back (j);
         int peak;
@@ -313,6 +320,7 @@ Result generate (const Data& data, const GenParams& P)
             const auto& c = R.chords[(size_t) b]; const int role = b % 4; const bool cad = b == bars - 1;
             const int anchor = snapFix (A0, cTones (c)), seqShift = role == 3 ? -1 : 0;
             const int cnt = ((role == 1 || role == 3) && dropLast && ! cad) ? n - 1 : n;
+            const bool pu = (role == 1 || role == 3) && b < bars - 1 && hits[0][0] == 0 && hits[(size_t) cnt - 1][0] < 13 && dens >= .3;   // geçiş notası
             for (int j = 0; j < cnt; ++j)
             {
                 int dg = clampT (anchor + rel[(size_t) j] + seqShift, 0, 10);
@@ -324,8 +332,15 @@ Result generate (const Data& data, const GenParams& P)
                     if (j != peak && dg > pk) { dg = pk - 1; while (dg > pk - 7 && std::find (tones.begin(), tones.end(), mod7 (dg)) == tones.end()) --dg; }   // tepeyi aşmaz
                 }
                 const double s = hits[(size_t) j][0], nx = j + 1 < cnt ? hits[(size_t) j + 1][0] : 16;
-                const double l = cad && j == cnt - 1 ? 16 - s : std::min (hits[(size_t) j][1], nx - s);
+                double l = cad && j == cnt - 1 ? 16 - s : std::min (hits[(size_t) j][1], nx - s);
+                if (pu && j == cnt - 1) l = std::min (l, 14 - s);
                 addM (b, s, l, mbase + deg (dg), j == peak ? 108 : ((int) s) % 4 == 0 ? 100 : 84);
+            }
+            if (pu)
+            {
+                const auto& cN = R.chords[(size_t) b + 1];
+                const int dN = clampT (snapFix (A0, cTones (cN)) + rel[0] + ((b + 1) % 4 == 3 ? -1 : 0), 0, 10);
+                addM (b, 14, 2, mbase + deg (dN > 0 ? dN - 1 : dN + 1), 78);
             }
         }
     }
@@ -352,7 +367,7 @@ Result generate (const Data& data, const GenParams& P)
     else if (mmode == "riff")
     {
         // riff: gam içinde kalan kısa kalıp; her ölçü aynen tekrar eder, 4. ölçüler tek notayı geçici olarak değiştirir (dönüş)
-        const std::vector<int> cand { 0, 2, 3, 4, 6, 7, 8, 10, 11, 12, 14, 15 }, offs { 0, 0, 0, 4, 6, 7, 2, 3 };
+        const std::vector<int> cand { 0, 2, 3, 4, 6, 7, 8, 10, 11, 12, 14, 15 }, walk { 0, 1, -1, 2, -2, 1, -1, 3 };
         const int cnt = (int) jsRound (3 + dens * 8);
         struct RN { int s, o; double l; };
         std::vector<RN> riff; auto pool = cand;
@@ -360,14 +375,15 @@ Result generate (const Data& data, const GenParams& P)
         {
             size_t i = (size_t) std::floor (rm() * (double) pool.size());
             int s = pool[i]; pool.erase (pool.begin() + (long) i);
-            const int o = pickFrom (rm, offs); riff.push_back ({ s, o, rm() < .3 ? 2.0 : 1.0 });
+            const int o = pickFrom (rm, walk); riff.push_back ({ s, o, rm() < .3 ? 2.0 : 1.0 });
         }
         std::stable_sort (riff.begin(), riff.end(), [] (auto& a, auto& z) { return a.s < z.s; });
+        for (size_t j = 0; j < riff.size(); ++j) riff[j].o = j == 0 ? 0 : clampT (riff[j - 1].o + riff[j].o, 0, 7);   // adımla yürür
         const int oc = (int) orDef (mel["oct"], 60);
         for (int b = 0; b < bars; ++b)
         {
             const auto& c = R.chords[(size_t) b]; int ti = -1, to = 0;
-            if (b % 4 == 3 && riff.size() > 2 && rm() < .4) { ti = (int) std::floor (rm() * (double) riff.size()); to = pickFrom (rm, offs); }
+            if (b % 4 == 3 && riff.size() > 2 && rm() < .4) { ti = (int) std::floor (rm() * (double) riff.size()); to = clampT (riff[(size_t) ti].o + pickFrom (rm, walk), 0, 7); }
             const int rootM = oc + ((c.pc - (oc % 12) + 12) % 12);
             for (size_t j = 0; j < riff.size(); ++j)
             {
@@ -380,12 +396,13 @@ Result generate (const Data& data, const GenParams& P)
     {
         // kulüp hook'u (JS ile aynı): 2-5 notalık tek ölçülük motif, çift ölçüde cevap (son nota boş), 4. ölçüde dönüş
         const std::vector<int> cand { 0, 3, 6, 8, 10, 11, 14 };
-        const int cnt = clampT ((int) jsRound (2 + dens * 4), 2, 5);
+        const int cnt = clampT ((int) jsRound (3 + dens * 4), 3, 6);   // en az 3 nota
         auto pool = cand; std::vector<int> hits;
         while ((int) hits.size() < cnt && ! pool.empty()) { size_t i = (size_t) std::floor (rm() * (double) pool.size()); hits.push_back (pool[i]); pool.erase (pool.begin() + (long) i); }
         std::stable_sort (hits.begin(), hits.end());
         std::vector<int> shape, lens;
-        for (size_t j = 0; j < hits.size(); ++j) shape.push_back (pickFrom (rm, std::vector<int> { 0, 0, 2, 4, 7, -1 }));
+        std::vector<int> stp; for (size_t j = 0; j < hits.size(); ++j) stp.push_back (pickFrom (rm, std::vector<int> { 0, 1, -1, 2, -2, 1 }));
+        for (size_t j = 0; j < stp.size(); ++j) shape.push_back (j == 0 ? (stp[0] > 0 ? 2 : 0) : clampT (shape[j - 1] + stp[j], -1, 7));   // motif adımla yürür
         for (size_t j = 0; j < hits.size(); ++j) lens.push_back (rm() < .7 ? 1 : 2);
         const int resp = pickFrom (rm, std::vector<int> { 2, -1, 4 });
         for (int b = 0; b < bars; ++b)
@@ -395,7 +412,9 @@ Result generate (const Data& data, const GenParams& P)
             for (int j = 0; j < n; ++j)
             {
                 const int s = hits[(size_t) j]; const double nx = j + 1 < n ? hits[(size_t) j + 1] : 16;
-                const int dg = c.d + shape[(size_t) j] + ((b % 4 == 3 && j == n - 1) ? resp : 0);
+                int sh = shape[(size_t) j] + ((b % 4 == 3 && j == n - 1) ? resp : 0);
+                if (s % 4 == 0) { int bst = sh, bd = 99; for (int t : { -3, 0, 2, 4, 7, 9 }) { const int d = std::abs (t - sh); if (d < bd) { bd = d; bst = t; } } sh = bst; }   // güçlü vuruş akor sesinde
+                const int dg = c.d + sh;
                 addM (b, s, std::min ((double) lens[(size_t) j], nx - s), mbase + deg (dg), s % 4 == 0 ? 104 : 90);
             }
         }
@@ -417,7 +436,7 @@ Result generate (const Data& data, const GenParams& P)
         for (auto* h : { &A, &B }) for (int s : *h)
         {
             if (tone[s] >= 0) continue;
-            if (rm() >= .45) last = (int) std::floor (rm() * 6);
+            if (rm() >= .45) last = clampT (last + pickFrom (rm, std::vector<int> { -1, 1, -2, 2, 1, -1 }), 0, 5);
             tone[s] = last; len[s] = rm() < .5 ? 1.0 : 2.0;
         }
         const int oc = (int) orDef (mel["oct"], 72);

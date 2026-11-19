@@ -471,7 +471,7 @@ void SynthXPanel::rebuild()
         knob ("arp.gt", T ("sxGate", "Gate"), .05, 1, { 456, Y + 160, 82, 92 });
         knob ("kp", T ("sxKeyPan", "Key panning"), -1, 1, { 16, Y + 250, 82, 92 }, 0, false, [] (double v) { const int x = roundToInt (v * 100); return (x > 0 ? "+" : "") + String (x) + "%"; });
         paramKnob ("xs_alpha", T ("sxAlpha", "Alpha knob"), { 640, Y + 10, 82, 92 });
-        toggle ("chd.sl", T ("sxScaleLock", "Scale lock (remap to key)"), { 16, Y + 76, 280, 26 });
+        toggle ("chd.sl", T ("sxScaleLock", "Scale lock (remap to key)"), { 16, Y + 76, 204, 26 });
         choice ("chd.sd", T ("sxSplitSide", "Helpers play on"), [this] { return StringArray { T ("sxWhole", "Whole keyboard"), T ("sxBelow", "Below split"), T ("sxAbove", "Above split") }; }, { 640, Y + 150, 200, 26 });
         knob ("chd.sp", T ("sxSplit", "Split key"), 24, 96, { 850, Y + 124, 82, 92 }, 0, true, [this] (double v) { const int n = roundToInt (v); return data.noteNames[n % 12] + String (n / 12 - 1); });
         choice ("glm", T ("sxGlideMode", "Glide"), [this] { return StringArray { T ("sxGlideAll", "Every note"), T ("sxGlideLeg", "Auto (legato only)") }; }, { 640, Y + 250, 200, 26 });

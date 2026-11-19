@@ -3,6 +3,7 @@
 //  - rastgele parametre otomasyonu, değişken blok boyutu ve örnekleme hızları
 //  - durum kaydet/yükle, MIDI giriş, editörün 6 dilde ekran görüntüsü
 #include <juce_audio_utils/juce_audio_utils.h>
+#include <typeinfo>
 #include "../Source/PluginProcessor.h"
 #include "../Source/FlpWriter.h"
 #include "../Source/AlsWriter.h"
@@ -1964,6 +1965,80 @@ static void testSynthX (const FailFn& fail)
     std::cout << "synthx: ok\n";
 }
 
+// Parti seviyeleri: her stilde melodi, akor ve bas tek başına (normalleştirme kapalı) RMS ve tepe; melodinin cılız kalıp kalmadığını ölçer
+static void printPartLevels()
+{
+    const double sr = 48000; auto pP = std::make_unique<HitGenProcessor>(); auto& p = *pP; p.setPlayConfigDetails (0, 2, sr, 512); p.prepareToPlay (sr, 512); p.idle();
+    auto setP = [&] (const char* id, float plain) { auto* pr = p.apvts.getParameter (id); pr->setValueNotifyingHost (pr->convertTo0to1 (plain)); };
+    setP ("loudness", 0);
+    const auto& D = hg::Data::get(); const char* parts[4] = { "chords", "bass", "drums", "melody" };
+    for (int si = 0; si < D.numStyles(); ++si)
+    {
+        setP ("style", (float) si); p.idle(); p.idle();
+        double rms[4] {}; float pk[4] {};
+        for (int solo : { 0, 1, 3 })
+        {
+            for (int t = 0; t < 4; ++t) setP ((juce::String ("mute_") + parts[t]).toRawUTF8(), t == solo ? 0.0f : 1.0f);
+            p.previewPlaying.store (true); juce::MidiBuffer mid; juce::AudioBuffer<float> blk (2, 512); double acc = 0; int cnt = 0;
+            for (int i = 0; i < 900; ++i) { blk.clear(); p.processBlock (blk, mid); mid.clear(); if (i > 100) { for (int k = 0; k < 512; ++k) acc += blk.getSample (0, k) * blk.getSample (0, k); cnt += 512; pk[solo] = juce::jmax (pk[solo], blk.getMagnitude (0, 512)); } }
+            p.previewPlaying.store (false); for (int i = 0; i < 100; ++i) { blk.clear(); p.processBlock (blk, mid); }
+            rms[solo] = 10 * std::log10 (acc / juce::jmax (1, cnt) + 1e-12);
+        }
+        std::printf ("%-14s chords %6.1f dB  bass %6.1f dB  melody %6.1f dB  (mel-ch %5.1f)  melSound %s\n", D.styleId (si).toRawUTF8(), rms[0], rms[1], rms[3], rms[3] - rms[0], p.soundId (hg::kMelody).toRawUTF8());
+    }
+}
+
+// Arayüz çakışma denetimi: görünür etkileşimli kardeş bileşenler üst üste binmemeli; düğme yazısı sığmalı
+static int uiOverlapScan (juce::Component& root, const juce::String& where, const FailFn& fail, int maxReports)
+{
+    int found = 0;
+    std::function<void (juce::Component&)> walk = [&] (juce::Component& c)
+    {
+        std::vector<juce::Component*> kids;
+        for (auto* k : c.getChildren())
+            if (k->isVisible() && ! k->getBounds().isEmpty() && (dynamic_cast<juce::Button*> (k) || dynamic_cast<juce::ComboBox*> (k) || dynamic_cast<juce::Slider*> (k) || dynamic_cast<juce::TextEditor*> (k) || dynamic_cast<hgui::Knob*> (k)))
+                kids.push_back (k);
+        for (size_t i = 0; i < kids.size(); ++i)
+            for (size_t j = i + 1; j < kids.size(); ++j)
+            {
+                const auto a = kids[i]->getBounds(), b = kids[j]->getBounds(), x = a.getIntersection (b);
+                if (x.getWidth() > 2 && x.getHeight() > 2 && found < maxReports)
+                {
+                    auto nm = [] (juce::Component* k) { if (auto* bt = dynamic_cast<juce::Button*> (k)) if (bt->getButtonText().isNotEmpty()) return bt->getButtonText(); return k->getTitle().isNotEmpty() ? k->getTitle() : juce::String (typeid (*k).name()); };
+                    fail ("ui overlap [" + where + "] '" + nm (kids[i]) + "' " + a.toString() + " x '" + nm (kids[j]) + "' " + b.toString()); ++found;
+                }
+            }
+        for (auto* k : kids)
+            if (auto* tb = dynamic_cast<juce::TextButton*> (k); tb != nullptr && tb->getButtonText().isNotEmpty() && found < maxReports)
+            {
+                const auto f = tb->getLookAndFeel().getTextButtonFont (*tb, tb->getHeight());
+                const float w = juce::GlyphArrangement::getStringWidth (f, tb->getButtonText());
+                if (w > (float) tb->getWidth() - 4) { fail ("ui text too long [" + where + "] '" + tb->getButtonText() + "' needs " + juce::String ((int) w) + " px, has " + juce::String (tb->getWidth())); ++found; }
+            }
+        for (auto* k : c.getChildren()) if (k->isVisible()) walk (*k);
+    };
+    walk (root);
+    return found;
+}
+
+static void testUiOverlaps (const FailFn& fail)
+{
+    auto pP = std::make_unique<HitGenProcessor>(); auto& p = *pP; p.setPlayConfigDetails (0, 2, 48000, 512); p.prepareToPlay (48000, 512); p.idle();
+    std::unique_ptr<HitGenEditor> ed (dynamic_cast<HitGenEditor*> (p.createEditor()));
+    int total = 0;
+    for (auto lang : { "en", "tr" })
+    {
+        ed->setLanguage (lang);
+        for (int t = 0; t <= 7; ++t) { ed->setTab (t); total += uiOverlapScan (ed->contentComponent(), juce::String (lang) + " tab " + juce::String (t), fail, 40); }
+        for (int w = 0; w < 4; ++w) { ed->setWorkspace (w); total += uiOverlapScan (ed->contentComponent(), juce::String (lang) + " workspace " + juce::String (w), fail, 40); }
+        ed->setTab (1); auto& sp = ed->sounds();
+        for (auto v : { SoundPage::vBrowse, SoundPage::vSynth }) { sp.setView (v); total += uiOverlapScan (ed->contentComponent(), juce::String (lang) + " sound view " + juce::String ((int) v), fail, 40); }
+        sp.setView (SoundPage::vSynth);
+        for (int t = 0; t < 12; ++t) { sp.synthX().showTab (t); total += uiOverlapScan (ed->contentComponent(), juce::String (lang) + " synth x tab " + juce::String (t), fail, 40); }
+    }
+    std::cout << "ui overlaps: " << total << "\n";
+}
+
 static void testSoundPageUi (const juce::File& outDir, const FailFn& fail, bool shots)
 {
     HitGenProcessor p; p.setPlayConfigDetails (0, 2, 48000, 256); p.prepareToPlay (48000, 256);
@@ -2353,6 +2428,8 @@ int main (int argc, char** argv)
     auto fail = [&] (const juce::String& m) { std::cout << "FAIL " << m << "\n"; ++failures; };
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_DEMO", {}).isNotEmpty()) { testLoudness (outDir, fail, false); return failures == 0 ? 0 : 1; }   // yalnızca dinleme demoları
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_CALIBRATE", {}).isNotEmpty()) { testFactoryBank (fail, true); return 0; }   // fabrika bankası seviye ayarı
+    if (juce::SystemStats::getEnvironmentVariable ("HITGEN_UI", {}).isNotEmpty()) { testUiOverlaps (fail); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
+    if (juce::SystemStats::getEnvironmentVariable ("HITGEN_LEVELS", {}).isNotEmpty()) { printPartLevels(); return 0; }
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_SYNTHX", {}).isNotEmpty()) { testSynthX (fail); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_CHOIR", {}).isNotEmpty()) { testChoir (outDir, fail, true); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_SHOT", {}).isNotEmpty()) { testSoundPageUi (outDir, fail, true); testLoopForge (outDir, fail, true); testChoir (outDir, fail, true); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }

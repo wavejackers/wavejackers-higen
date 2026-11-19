@@ -133,6 +133,10 @@ HG.generate = function (P) {
     const hrk = V.hr || S.mel.hr, tp = HG.HR[hrk[Math.floor(rm() * hrk.length)]], rep = S.mel.rep == null ? .4 : S.mel.rep;   // özgünlük melodiye eklenmez
     const keep = clamp(.5 + dens, .55, 1), hits = [];
     tp.forEach((h, j) => { if (j === 0 || rm() <= keep) hits.push(h); });
+    // en az 3-5 nota: düşen vuruşlar sırayla geri gelir (cılız, iki notalık hook olmaz)
+    const minN = Math.min(tp.length, 3 + Math.round(clamp(dens, 0, 1) * 2));
+    for (let j = 1; j < tp.length && hits.length < minN; j++) if (hits.indexOf(tp[j]) < 0) hits.push(tp[j]);
+    hits.sort((x, z) => x[0] - z[0]);
     const n = hits.length;
     const strong = []; for (let j = 1; j < n; j++) if (hits[j][0] % 4 === 0) strong.push(j);
     let peak;   // %25 inen hook (tepe ilk notada), aksi halde güçlü vuruşlardan biri
@@ -154,6 +158,8 @@ HG.generate = function (P) {
       const c = chords[b], role = b % 4, cad = b === bars - 1;
       const anchor = snapFix(A0, cTones(c)), seqShift = role === 3 ? -1 : 0;
       const cnt = ((role === 1 || role === 3) && dropLast && !cad) ? n - 1 : n;
+      // geçiş notası: cümle sonunda (2. ve 4. ölçü) sonraki ölçünün ilk notasına alttan bir adımla bağlanır
+      const pu = (role === 1 || role === 3) && b < bars - 1 && hits[0][0] === 0 && hits[cnt - 1][0] < 13 && dens >= .3;
       for (let j = 0; j < cnt; j++) {
         let dg = clamp(anchor + rel[j] + seqShift, 0, 10);
         if (j === cnt - 1) {
@@ -163,8 +169,13 @@ HG.generate = function (P) {
           if (j !== peak && dg > pk) { dg = pk - 1; while (dg > pk - 7 && !tones.includes(((dg % 7) + 7) % 7)) dg--; }   // tepeyi aşmaz
         }
         const s = hits[j][0], nx = j + 1 < cnt ? hits[j + 1][0] : 16;
-        const l = cad && j === cnt - 1 ? 16 - s : Math.min(hits[j][1], nx - s);
+        let l = cad && j === cnt - 1 ? 16 - s : Math.min(hits[j][1], nx - s);
+        if (pu && j === cnt - 1) l = Math.min(l, 14 - s);
         addM(b, s, l, mbase + deg(dg), j === peak ? 108 : s % 4 === 0 ? 100 : 84);
+      }
+      if (pu) {
+        const cN = chords[b + 1], dN = clamp(snapFix(A0, cTones(cN)) + rel[0] + ((b + 1) % 4 === 3 ? -1 : 0), 0, 10);
+        addM(b, 14, 2, mbase + deg(dN > 0 ? dN - 1 : dN + 1), 78);
       }
     }
   } else if (mmode === 'arp') {
@@ -186,27 +197,32 @@ HG.generate = function (P) {
     const cand = [0, 2, 3, 4, 6, 7, 8, 10, 11, 12, 14, 15], offs = [0, 0, 0, 4, 6, 7, 2, 3];   // derece: kök, beşli, yedili, oktav, üçlü, dörtlü
     const cnt = Math.round(3 + dens * 8);
     const riff = [], pool = cand.slice();
-    while (riff.length < cnt && pool.length) { const i = Math.floor(rm() * pool.length); riff.push([pool.splice(i, 1)[0], pick(rm, offs), rm() < .3 ? 2 : 1]); }
+    const walk = [0, 1, -1, 2, -2, 1, -1, 3];   // riff çoğunlukla adımla ilerler (gelişigüzel sıçramaz)
+    while (riff.length < cnt && pool.length) { const i = Math.floor(rm() * pool.length); riff.push([pool.splice(i, 1)[0], pick(rm, walk), rm() < .3 ? 2 : 1]); }
     riff.sort((a, z) => a[0] - z[0]);
+    riff.forEach((r, j) => { r[1] = j === 0 ? 0 : clamp(riff[j - 1][1] + r[1], 0, 7); });
     for (let b = 0; b < bars; b++) {
       const c = chords[b]; let ti = -1, to = 0;
-      if (b % 4 === 3 && riff.length > 2 && rm() < .4) { ti = Math.floor(rm() * riff.length); to = pick(rm, offs); }
+      if (b % 4 === 3 && riff.length > 2 && rm() < .4) { ti = Math.floor(rm() * riff.length); to = clamp(riff[ti][1] + pick(rm, walk), 0, 7); }
       const rootM = (S.mel.oct || 60) + ((c.pc - ((S.mel.oct || 60) % 12) + 12) % 12);
       riff.forEach(([s, o, l], j) => { const nx = j + 1 < riff.length ? riff[j + 1][0] : 16; addM(b, s, Math.min(nx - s, l), rootM + deg(c.d + (j === ti ? to : o)) - deg(c.d), s % 4 === 0 ? 102 : 84); });
     }
   } else if (mmode === 'motif') {
     // kulüp hook'u: 2-5 notalık tek ölçülük kısa motif; her ölçü tekrar edilir, çift ölçüler "cevap" olarak son notayı boş bırakır,
     // 4. ölçü son notayı küçük bir adımla döndürür. Notalar akorun derecesini izler (uzun melodi yerine akılda kalan kısa bir motif).
-    const cand = [0, 3, 6, 8, 10, 11, 14], cnt = clamp(Math.round(2 + dens * 4), 2, 5);
+    const cand = [0, 3, 6, 8, 10, 11, 14], cnt = clamp(Math.round(3 + dens * 4), 3, 6);   // en az 3 nota: cılız motif olmaz
     const pool = cand.slice(), hits = [];
     while (hits.length < cnt && pool.length) hits.push(pool.splice(Math.floor(rm() * pool.length), 1)[0]);
     hits.sort((a, z) => a - z);
-    const shape = hits.map(() => pick(rm, [0, 0, 2, 4, 7, -1])), lens = hits.map(() => rm() < .7 ? 1 : 2), resp = pick(rm, [2, -1, 4]);
+    const stp = hits.map(() => pick(rm, [0, 1, -1, 2, -2, 1])), lens = hits.map(() => rm() < .7 ? 1 : 2), resp = pick(rm, [2, -1, 4]);
+    const shape = []; stp.forEach((x, j) => shape.push(j === 0 ? (x > 0 ? 2 : 0) : clamp(shape[j - 1] + x, -1, 7)));   // motif adımla yürür
     for (let b = 0; b < bars; b++) {
       const c = chords[b], n = (b % 2 === 1 && hits.length > 2) ? hits.length - 1 : hits.length;
       for (let j = 0; j < n; j++) {
         const s = hits[j], nx = j + 1 < n ? hits[j + 1] : 16;
-        const dg = c.d + shape[j] + ((b % 4 === 3 && j === n - 1) ? resp : 0);
+        let sh = shape[j] + ((b % 4 === 3 && j === n - 1) ? resp : 0);
+        if (s % 4 === 0) { let bst = sh, bd = 99; [-3, 0, 2, 4, 7, 9].forEach(t => { const d = Math.abs(t - sh); if (d < bd) { bd = d; bst = t; } }); sh = bst; }   // güçlü vuruş akor sesinde
+        const dg = c.d + sh;
         addM(b, s, Math.min(lens[j], nx - s), mbase + deg(dg), s % 4 === 0 ? 104 : 90);
       }
     }
@@ -215,7 +231,7 @@ HG.generate = function (P) {
     const mk = () => { const p = cand.slice(), out = []; while (out.length < cnt && p.length) out.push(p.splice(Math.floor(rm() * p.length), 1)[0]); return out.sort((a, z) => a - z); };
     let A = mk(), B = A.slice(); B[Math.floor(rm() * B.length)] = pick(rm, cand); B = Array.from(new Set(B)).sort((a, z) => a - z);
     const tone = {}, len = {}; let last = 0;   // adım -> akor sesi dizini (0 kök, 1 üçlü, 2 beşli, 3-5 bir oktav üstü) ve uzunluk
-    A.concat(B).forEach(s => { if (tone[s] != null) return; if (rm() >= .45) last = Math.floor(rm() * 6); tone[s] = last; len[s] = rm() < .5 ? 1 : 2; });
+    A.concat(B).forEach(s => { if (tone[s] != null) return; if (rm() >= .45) last = clamp(last + pick(rm, [-1, 1, -2, 2, 1, -1]), 0, 5); tone[s] = last; len[s] = rm() < .5 ? 1 : 2; });
     for (let b = 0; b < bars; b++) {
       const c = chords[b], hits = (b % 2 === 0) ? A : B, tn = [0, c.third, c.fifth, 12, 12 + c.third, 12 + c.fifth];
       const rootM = (S.mel.oct || 72) + ((c.pc - ((S.mel.oct || 72) % 12) + 12) % 12) - 12;

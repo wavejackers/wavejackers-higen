@@ -729,10 +729,12 @@ void HitGenEditor::layoutContent()
     place (presetBtn, { 700, 10, 180, 32 }); place (saveBtn, { 886, 10, 64, 32 }); place (settingsBtn, { 956, 10, 94, 32 }); place (helpBtn, { 1056, 10, 66, 32 });
     place (orb, { 1126, 2, 48, 48 });
     // gezinme (y 56-90): dört çalışma alanı, ayraç, üç stüdyo sayfası
-    for (int i = 0; i < 4; ++i) place (tabBtns[(size_t) i], { 16 + i * 112, 56, 108, 34 });
-    for (int i = 0; i < 3; ++i) place (tabBtns[(size_t) (4 + i)], { 468 + i * 93, 56, 90, 34 });
-    place (tabBtns[7], { 468 + 3 * 93, 56, 90, 34 }); place (tabBtns[8], { 468 + 4 * 93, 56, 90, 34 }); place (tabBtns[9], { 468 + 5 * 93, 56, 90, 34 }); place (tabBtns[10], { 468 + 6 * 93, 56, 90, 34 });
-    place (seed, { 934, 58, 104, 30 }); place (newBtn, { 1044, 58, 112, 30 }); place (seedLabel, { 0, 0, 0, 0 });
+    {   // gezinme: 11 sekme eşit genişlikte tek satır (hiçbiri başka düğmeye binmez)
+        const int w = (kW - 32) / 11;
+        for (int i = 0; i < 11; ++i) place (tabBtns[(size_t) i], { 16 + i * w, 56, w - 4, 34 });
+    }
+
+    place (seed, { 930, 112, 104, 30 }); place (newBtn, { 1040, 112, 122, 30 }); place (seedLabel, { 0, 0, 0, 0 });
     // ayarlar paneli (yalnızca açıkken görünür)
     settingsPanelBounds = Rectangle<int> (760, 94, 396, 306);
     place (midiBtn, { 780, 254, 360, 28 }); place (loudBtn, { 780, 292, 360, 28 }); place (introBtn, { 780, 328, 360, 28 });
@@ -747,7 +749,7 @@ void HitGenEditor::layoutContent()
     place (keyLabel, { 16, 704, 100, 14 }); place (keyBox, { 16, 718, 96, 28 });
     place (scaleLabel, { 118, 704, 130, 14 }); place (scaleBox, { 118, 718, 132, 28 });
     place (barsLabel, { 256, 704, 84, 14 }); place (barsBox, { 256, 718, 84, 28 });
-    place (chords, { 362, 106, 800, 44 });
+    place (chords, { 362, 106, 560, 44 });
     for (int t = 0; t < 4; ++t)
     {
         const int y0 = 158 + t * 80;
@@ -756,8 +758,8 @@ void HitGenEditor::layoutContent()
     }
     place (roll, { 596, 158, 566, 288 });
     place (editBtn, { 596, 450, 128, 28 });
-    for (int i = 0; i < 4; ++i) place (laneBtns[(size_t) i], { 728 + i * 66, 450, 64, 28 });
-    place (undoBtn, { 994, 450, 40, 28 }); place (redoBtn, { 1036, 450, 40, 28 }); place (revertBtn, { 1080, 450, 82, 28 });
+    for (int i = 0; i < 4; ++i) place (laneBtns[(size_t) i], { 728 + i * 60, 450, 58, 28 });
+    place (undoBtn, { 970, 450, 40, 28 }); place (redoBtn, { 1012, 450, 40, 28 }); place (revertBtn, { 1056, 450, 106, 28 });
     place (soundLabel, { 362, 496, 180, 26 });
     for (int i = 0; i < 3; ++i) place (partBtns[(size_t) i], { 546 + i * 112, 494, 106, 28 });
     for (int i = 0; i < 8; ++i) place (partKnobs[(size_t) i], { 362 + i * 100, 528, 100, 86 });

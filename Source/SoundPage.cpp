@@ -347,8 +347,8 @@ SoundPage::SoundPage (HitGenProcessor& p, hgui::LookAndFeel& l)
     catBtn.onClick = [this] { showCatMenu(); };
     nameBtn.onClick = [this] { setView (view == vBrowse ? vMacro : vBrowse); };
     prevBtn.onClick = [this] { stepSound (-1); }; nextBtn.onClick = [this] { stepSound (1); };
-    randBtn.onClick = [this] { proc.randomizeSound (part); };
-    resetBtn.onClick = [this] { proc.resetSoundDesign (part); };
+    randBtn.onClick = [this] { synthPanel.xgen ((uint32_t) Random::getSystemRandom().nextInt()); };   // yeni motor: X-Gen
+    resetBtn.onClick = [this] { proc.setXsProgram (part, var()); synthPanel.refresh(); };            // seçili sesten yeniden kur
     for (auto& d : adsr) { d = std::make_unique<Dial> (*this); addAndMakeVisible (*d); }
     addAndMakeVisible (volDial);
     orb.owner = this; addAndMakeVisible (orb);
@@ -390,7 +390,7 @@ SoundPage::SoundPage (HitGenProcessor& p, hgui::LookAndFeel& l)
     catList.setRowHeight (38); soundList.setRowHeight (66);
     for (auto* lb : { &catList, &soundList }) { addChildComponent (*lb); lb->setColour (ListBox::backgroundColourId, Colours::transparentBlack); lb->setColour (ListBox::outlineColourId, Colours::transparentBlack); }
     fillCombos(); rebuildList (false); bind();
-    setView (vMacro);
+    setView (vSynth);   // yalnızca yeni motor: düzenleyici Synth X
 }
 
 SoundPage::~SoundPage() { proc.stopDemo(); sa.clear(); ca.clear(); ba.clear(); catList.setModel (nullptr); soundList.setModel (nullptr); }
@@ -506,6 +506,7 @@ void SoundPage::setPart (int p)
 
 void SoundPage::setView (View v)
 {
+    if (v == vMacro || v == vEdit) v = vSynth;   // eski motorun görünümleri yok
     view = v;
     if (v != vSynth) (v == vMacro ? viewMacro : v == vEdit ? viewEdit : viewBrowse).setToggleState (true, dontSendNotification);
     else for (auto* b : { &viewMacro, &viewEdit, &viewBrowse }) b->setToggleState (false, dontSendNotification);
@@ -683,7 +684,7 @@ void SoundPage::resized()
     for (int i = 0; i < 3; ++i) B (*partBtns[(size_t) i], { 22 + i * 80, 18, 80, 32 });
     B (catBtn, { 286, 18, 140, 32 }); B (prevBtn, { 432, 18, 30, 32 }); B (nameBtn, { 462, 18, 250, 32 }); B (nextBtn, { 712, 18, 30, 32 });
     B (randBtn, { 750, 18, 34, 32 }); B (resetBtn, { 788, 18, 34, 32 });
-    for (int k = 0; k < 4; ++k) B (*adsr[(size_t) k], { 850 + k * 41, 16, 36, 36 });
+    for (int k = 0; k < 4; ++k) adsr[(size_t) k]->setBounds ({});   // eski motorun ADSR'si kaldırıldı (zarflar Synth X'te)
     B (volDial, { 1036, 16, 36, 36 });
     // küre ve yaylar (merkez sayfa ortasında; RTL'de açılar aynalanır)
     const Point<float> c (582.0f, 256.0f); const float R = 172, band = 26;
@@ -700,7 +701,8 @@ void SoundPage::resized()
     B (descLbl, { 232, 452, 700, 22 }); B (useLbl, { 232, 474, 700, 20 });
     B (hint, { 232, 494, 700, 18 });
     // görünüm çubuğu ve alt satır
-    B (viewMacro, { 516, 522, 44, 36 }); B (viewEdit, { 560, 522, 44, 36 }); B (viewBrowse, { 604, 522, 44, 36 }); B (viewSynth, { 656, 526, 92, 28 });
+    viewMacro.setVisible (false); viewEdit.setVisible (false); for (auto& k : adsr) k->setVisible (false);
+    B (viewBrowse, { 528, 522, 44, 36 }); B (viewSynth, { 580, 526, 92, 28 });
     synthPanel.setBounds (8, 58, 1148, 458);
     B (keyboard, { 262, 572, 640, 76 });
     B (octDown, { 168, 598, 32, 32 }); B (octUp, { 204, 598, 32, 32 });
@@ -884,6 +886,6 @@ void SoundPage::doImport()
         const int pt = info.ok ? jlimit (0, 2, part) : part;
         auto msg = T (key).replace ("{n}", info.name.isNotEmpty() ? info.name : f.getFileNameWithoutExtension()).replace ("{f}", info.format).replace ("{p}", T (kPartKeys[pt])).replace ("{e}", info.error);
         if (pt != part) setPart (pt);
-        rebuildList (true); setView (vMacro); hint.setText (msg, dontSendNotification); msgUntil = Time::currentTimeMillis() + 9000; repaint();
+        rebuildList (true); setView (vSynth); hint.setText (msg, dontSendNotification); msgUntil = Time::currentTimeMillis() + 9000; repaint();
     });
 }
