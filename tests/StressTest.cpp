@@ -1962,6 +1962,20 @@ static void testSynthX (const FailFn& fail)
         { auto f = juce::File ("/tmp/b-asan/synthx-macro.png"); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img2, os); }
         X.setAccent ({});
     }
+    {   // her melodi sesi çevrildiğinde duyulur ve parti hedefinin (-21 dBFS) yakınındadır: cılız ya da sessiz melodi kalmaz
+        auto mP = std::make_unique<HitGenProcessor>(); auto& m = *mP; m.setPlayConfigDetails (0, 2, sr, 512); m.prepareToPlay (sr, 512); m.idle();
+        const auto& D = hg::Data::get(); int checked = 0;
+        for (int pt = 0; pt < 3; ++pt)   // akor, bas, melodi: her ses duyulur ve parti hedefinde (akor -24, bas ve melodi -18 dBFS)
+            for (int i = 0; i < D.numSounds(); ++i)
+            {
+                const auto& snd = D.sound (i); if (! snd["r"].toString().containsChar ("cbm"[pt])) continue;
+                const int tr = pt == 0 ? hg::kChords : pt == 1 ? hg::kBass : hg::kMelody;
+                m.setSound (tr, snd["id"].toString(), true); ++checked;
+                auto P = xs::Program::fromVar (m.xsProgram (pt), sr); const float db = P->measureDb (pt == 1 ? 41 : pt == 0 ? 60 : 72, .45), want = pt == 0 ? -24.0f : -18.0f;
+                if (! (std::abs (db - want) < 3.5f)) fail ("part level: " + juce::String ("cbm"[pt]) + " " + snd["id"].toString() + " " + juce::String (db, 1) + " dBFS (target " + juce::String (want, 0) + ")");
+            }
+        if (checked < 150) fail ("part level: only " + juce::String (checked) + " sounds");
+    }
     std::cout << "synthx: ok\n";
 }
 
@@ -1980,7 +1994,7 @@ static void printPartLevels()
         {
             for (int t = 0; t < 4; ++t) setP ((juce::String ("mute_") + parts[t]).toRawUTF8(), t == solo ? 0.0f : 1.0f);
             p.previewPlaying.store (true); juce::MidiBuffer mid; juce::AudioBuffer<float> blk (2, 512); double acc = 0; int cnt = 0;
-            for (int i = 0; i < 900; ++i) { blk.clear(); p.processBlock (blk, mid); mid.clear(); if (i > 100) { for (int k = 0; k < 512; ++k) acc += blk.getSample (0, k) * blk.getSample (0, k); cnt += 512; pk[solo] = juce::jmax (pk[solo], blk.getMagnitude (0, 512)); } }
+            for (int i = 0; i < 500; ++i) { blk.clear(); p.processBlock (blk, mid); mid.clear(); if (i > 60) { for (int k = 0; k < 512; ++k) acc += blk.getSample (0, k) * blk.getSample (0, k); cnt += 512; pk[solo] = juce::jmax (pk[solo], blk.getMagnitude (0, 512)); } }
             p.previewPlaying.store (false); for (int i = 0; i < 100; ++i) { blk.clear(); p.processBlock (blk, mid); }
             rms[solo] = 10 * std::log10 (acc / juce::jmax (1, cnt) + 1e-12);
         }
@@ -2037,6 +2051,26 @@ static void testUiOverlaps (const FailFn& fail)
         for (int t = 0; t < 12; ++t) { sp.synthX().showTab (t); total += uiOverlapScan (ed->contentComponent(), juce::String (lang) + " synth x tab " + juce::String (t), fail, 40); }
     }
     std::cout << "ui overlaps: " << total << "\n";
+}
+
+// Dinleme örnekleri: seçili stillerde 8 ölçülük döngüyü (önizleme çalımı, ses yüksekliği normalleştirmesi açık) WAV olarak yazar
+static void renderDemos (const juce::File& dir, const juce::StringArray& styles)
+{
+    const double sr = 44100; auto pP = std::make_unique<HitGenProcessor>(); auto& p = *pP; p.setPlayConfigDetails (0, 2, sr, 512); p.prepareToPlay (sr, 512); p.idle();
+    const auto& D = hg::Data::get(); dir.createDirectory();
+    { juce::MidiBuffer mid; juce::AudioBuffer<float> blk (2, 512); for (int i = 0; i < 300; ++i) { blk.clear(); p.processBlock (blk, mid); } }
+    for (auto& id : styles)
+    {
+        int si = -1; for (int i = 0; i < D.numStyles(); ++i) if (D.styleId (i) == id) si = i; if (si < 0) continue;
+        auto* pr = p.apvts.getParameter ("style"); pr->setValueNotifyingHost (pr->convertTo0to1 ((float) si)); p.idle(); p.idle();
+        const double bpm = p.apvts.getRawParameterValue ("bpm")->load(); const int N = (int) (sr * 60.0 / bpm * 4 * 8);
+        juce::AudioBuffer<float> out (2, N); out.clear(); juce::MidiBuffer mid; p.previewPlaying.store (true);
+        for (int pos = 0; pos < N; pos += 512) { const int n = juce::jmin (512, N - pos); juce::AudioBuffer<float> blk (2, 512); blk.clear(); p.processBlock (blk, mid); for (int c = 0; c < 2; ++c) out.copyFrom (c, pos, blk, c, 0, n); }
+        p.previewPlaying.store (false); { juce::AudioBuffer<float> blk (2, 512); for (int i = 0; i < 80; ++i) { blk.clear(); p.processBlock (blk, mid); } }
+        auto f = dir.getChildFile ("HitGen " + id + ".wav"); f.deleteFile();
+        if (auto os = f.createOutputStream()) if (std::unique_ptr<juce::AudioFormatWriter> w { juce::WavAudioFormat().createWriterFor (os.get(), sr, 2, 16, {}, 0) }) { os.release(); w->writeFromAudioSampleBuffer (out, 0, N); }
+        std::cout << "demo " << id << " peak " << out.getMagnitude (0, N) << "\n";
+    }
 }
 
 static void testSoundPageUi (const juce::File& outDir, const FailFn& fail, bool shots)
@@ -2428,6 +2462,7 @@ int main (int argc, char** argv)
     auto fail = [&] (const juce::String& m) { std::cout << "FAIL " << m << "\n"; ++failures; };
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_DEMO", {}).isNotEmpty()) { testLoudness (outDir, fail, false); return failures == 0 ? 0 : 1; }   // yalnızca dinleme demoları
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_CALIBRATE", {}).isNotEmpty()) { testFactoryBank (fail, true); return 0; }   // fabrika bankası seviye ayarı
+    if (auto d = juce::SystemStats::getEnvironmentVariable ("HITGEN_DEMOS", {}); d.isNotEmpty()) { renderDemos (juce::File (d), juce::StringArray::fromTokens (juce::SystemStats::getEnvironmentVariable ("HITGEN_DEMO_STYLES", "techhouse,trap,dubstep,deephouse,garrix,armin"), ",", "")); return 0; }
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_UI", {}).isNotEmpty()) { testUiOverlaps (fail); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_LEVELS", {}).isNotEmpty()) { printPartLevels(); return 0; }
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_SYNTHX", {}).isNotEmpty()) { testSynthX (fail); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }

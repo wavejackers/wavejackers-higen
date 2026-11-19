@@ -60,6 +60,10 @@ jobs:
         if: runner.os == 'Linux'
         run: node tools/test-choir.js
 
+      - name: Melodi kalitesi (adım, sıçrama, yoğunluk)
+        if: runner.os == 'Linux'
+        run: node tools/melody-stats.js web
+
       - name: Kararlılık testi
         shell: bash
         run: |

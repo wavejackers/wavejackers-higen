@@ -5,6 +5,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_data_structures/juce_data_structures.h>
 #include <array>
+#include <functional>
 #include <atomic>
 #include <vector>
 
@@ -41,7 +42,7 @@ Voice analyse (const juce::AudioBuffer<float>&, double sr);
 double detectPitch (const float* x, int n, double sr);     // tek çerçeve (YIN); perde yoksa 0
 
 struct Loop { juce::AudioBuffer<float> buf; double bpm = 120, sr = 48000; int bars = 1; std::array<std::vector<float>, kParts> act; };   // act: parti zarfı (ölçü başına 32 nokta)
-std::unique_ptr<Loop> render (const Settings&, const std::vector<Bar>&, const Voice&, double bpm, double sr);
+std::unique_ptr<Loop> render (const Settings&, const std::vector<Bar>&, const Voice&, double bpm, double sr, const std::function<bool()>& cancelled = {});   // cancelled: kapatılırken işlemeyi keser
 
 class Engine : private juce::Thread
 {

@@ -199,7 +199,7 @@ void Settings::fromTree (const juce::ValueTree& t)
     level = F ("level", .7f); space = F ("space", .6f); detune = F ("detune", .35f); air = F ("air", .4f); vibrato = F ("vibrato", .3f); attack = F ("attack", .4f); character = F ("character", 0, -1.0f);
 }
 
-std::unique_ptr<Loop> render (const Settings& s, const std::vector<Bar>& barsIn, const Voice& voice, double bpm, double sr)
+std::unique_ptr<Loop> render (const Settings& s, const std::vector<Bar>& barsIn, const Voice& voice, double bpm, double sr, const std::function<bool()>& cancelled)
 {
     bpm = juce::jlimit (40.0, 240.0, bpm);
     std::vector<Bar> bars = barsIn; if (bars.empty()) bars.push_back ({});
@@ -229,6 +229,7 @@ std::unique_ptr<Loop> render (const Settings& s, const std::vector<Bar>& barsIn,
         const int singers = juce::jlimit (1, 4, s.size); const float gain = .5f / std::sqrt ((float) singers);
         for (int q = 0; q < singers; ++q)
         {
+            if (cancelled && cancelled()) return L;
             juce::Random r ((juce::int64) s.seed * 7919 + p * 131 + q * 17 + 5);
             Singer sg; const double sp = singers > 1 ? (double) q / (singers - 1) * 2 - 1 : 0.0;   // -1..1: şarkıcılar sahneye yayılır
             sg.cents = sp * s.detune * 16 + (r.nextDouble() - .5) * s.detune * 10; sg.delay = q == 0 ? 0.0 : (r.nextDouble() - .3) * s.detune * (stab ? .012 : .04);
@@ -366,7 +367,8 @@ void Engine::run()
         if (want == doneVersion.load()) { wait (200); continue; }
         Settings cs; std::vector<Bar> cb; Voice cv; double bpm, osr;
         { const juce::ScopedLock sl (lock); cs = s; cb = bars; if (cs.source >= sOwnHold) cv = voice; bpm = tempo; osr = sr; }
-        auto L = render (cs, cb, cv, bpm, osr);
+        auto L = render (cs, cb, cv, bpm, osr, [this] { return threadShouldExit(); });
+        if (threadShouldExit()) break;
         { const juce::ScopedLock sl (lock); last = std::make_unique<Loop> (*L); }
         delete pending.exchange (L.release());
         doneVersion.store (want);

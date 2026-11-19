@@ -389,7 +389,7 @@ std::shared_ptr<const Program> Program::fromVar (const juce::var& v, double samp
             P->seq.push_back ({ (float) (double) (*y)[0], (float) (double) (*y)[1], juce::jlimit (-48, 48, (int) (*y)[2]), juce::jlimit (1, 127, (int) (*y)[3]) });
     }
     P->sine = &basicTable (3, sampleRate);   // FM taşıyıcısı (ses iş parçacığı kilitsiz okur)
-    P->vol = F (v, "vol", .7, 0, 1); P->glide = F (v, "gl", 0, 0, 2); P->bend = F (v, "bd", 2, 0, 24);
+    P->vol = F (v, "vol", .7, 0, 16); P->glide = F (v, "gl", 0, 0, 2); P->bend = F (v, "bd", 2, 0, 24);
     return P;
 }
 
@@ -954,5 +954,29 @@ void MasterFx::process (const Master& m, float* L, float* R, int n) noexcept
         const float M = (l + r) * .5f, S = (l - r) * .5f * w; l = M + S; r = M - S;
         L[i] = l * ceil; R[i] = r * ceil;
     }
+}
+}
+
+namespace xs
+{
+float Program::measureDb (int note, double secs) const
+{
+    auto V = std::make_unique<Voice>(); Ctx c; c.sr = sr; c.maxPh = 16;
+    start (*V, *this, note, 100, 1, 4242, c);
+    const int N = (int) (secs * sr); std::vector<float> L ((size_t) N, 0.0f), R ((size_t) N, 0.0f);
+    for (int i = 0; i < N; i += 256) render (*V, *this, c, L.data() + i, R.data() + i, juce::jmin (256, N - i));
+    // en yüksek kısa süreli düzey (50 ms pencere): kısa pluck ve uzun pad aynı ölçekle karşılaştırılır
+    const int W = juce::jmax (64, (int) (sr * .05)), H = juce::jmax (16, W / 5); double best = 0;
+    for (int a = 0; a + W <= N; a += H) { double acc = 0; for (int i = a; i < a + W; ++i) acc += .5 * ((double) L[(size_t) i] * L[(size_t) i] + (double) R[(size_t) i] * R[(size_t) i]); best = juce::jmax (best, acc / W); }
+    return (float) (10 * std::log10 (best + 1e-12));
+}
+
+float calibratedVolume (const juce::var& program, int part, double sr)
+{
+    auto P = Program::fromVar (program, sr); auto Q = std::make_shared<Program> (*P); Q->vol = 1;
+    const int note = part == 1 ? 41 : part == 0 ? 60 : 72; const float target = part == 0 ? -24.0f : -18.0f;
+    const float db = Q->measureDb (note, .45);
+    if (db < -110) return .7f;   // sessiz program: ölçülemez
+    return juce::jlimit (.02f, 16.0f, std::pow (10.0f, (target - db) / 20.0f));
 }
 }

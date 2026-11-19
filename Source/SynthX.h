@@ -107,7 +107,8 @@ struct Program
 
     static std::shared_ptr<const Program> fromVar (const juce::var& v, double sampleRate);
     static juce::var toVar (const juce::var& v);   // normalleştirilmiş kopya (eksik alanlar varsayılanla)
-    static juce::var init();                        // başlangıç programı: tek testere, açık filtre
+    static juce::var init();
+    float measureDb (int note, double secs) const;   // tek notanın en yüksek kısa süreli (50 ms) RMS düzeyi (dBFS, vol dahil)                        // başlangıç programı: tek testere, açık filtre
     float releaseTime() const noexcept { return env[0].r; }
 };
 
@@ -142,6 +143,8 @@ void migrate (Voice&, const Program&, const Ctx&);   // canlı düzenleme: sesle
 void release (Voice&) noexcept;
 // L/R'ye ekler; ses bittiğinde v.done olur
 void render (Voice&, const Program&, const Ctx&, float* L, float* R, int n) noexcept;
+// Çevrilen seslerin seviyesi: en yüksek kısa süreli düzey parti hedefine (akor nota başına -24, bas ve melodi -18 dBFS) gelecek şekilde "vol"
+float calibratedVolume (const juce::var& program, int part, double sampleRate);
 }
 
 // ---- 2. aşama: parti başına efekt rafı (5 yuva) ve master bölümü

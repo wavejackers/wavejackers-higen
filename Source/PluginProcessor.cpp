@@ -316,7 +316,8 @@ juce::var HitGenProcessor::xsFromClassic (int part) const
         }
     set (P, "gl", s["gl"].isVoid() ? 0.0 : (double) s["gl"]);
     // klasik sesin diğer özellikleri: alt osilatör, gürültü, FM, perde zarfı, vibrato, katlama, ünlü, seviye
-    const int used = oa != nullptr ? juce::jmin (3, oa->size()) : 0;
+    int used = oa != nullptr ? juce::jmin (3, oa->size()) : 0;
+    if (used == 0) { auto O = P["o"][0]; set (O, "t", 1); set (O, "a", 3); set (O, "lv", .8); set (O["f"], "t", f != nullptr ? ftype : 0); used = 1; }   // yalnızca FM'li sesler: taşıyıcı sinüs
     auto num = [&s] (const char* k) { return s[k].isVoid() ? 0.0 : (double) s[k]; };
     if (num ("sub") > 0 && used < 3) { auto O = P["o"][used]; set (O, "t", 1); set (O, "a", 3); set (O, "oc", -1); set (O, "lv", juce::jlimit (0.0, 1.0, num ("sub"))); set (O["f"], "t", 0); }
     if (num ("noi") > 0) { auto L = P["lx"]; set (L, "on", 1); set (L, "w", -1); set (L, "t", 1); set (L, "c", 2000); set (L, "lv", juce::jlimit (0.0, 1.0, num ("noi") * 2)); }
@@ -345,9 +346,15 @@ juce::var HitGenProcessor::xsFromClassic (int part) const
         const auto vw = s["vow"].toString(); const int vi = vw == "e" ? 1 : vw == "i" ? 2 : vw == "o" ? 3 : vw == "u" ? 4 : 0;
         auto O = P["o"][0]; set (O, "t", 2); set (O, "a", 15 * 8 + vi);
     }
-    const auto id = sounds[(size_t) trackOfPart (juce::jlimit (0, 2, part))];
-    set (P, "vol", juce::jlimit (.05, 1.0, (s["vol"].isVoid() ? .2 : (double) s["vol"]) * data.trim (id) / .24));
-    return xs::Program::toVar (P);
+    if (part == 2)
+    {   // melodi dolgun olsun: tek sesli lead/synth/vokal seslere hafif unison
+        const auto cat = s["cat"].toString(); auto O = P["o"][0];
+        if ((int) O["u"] <= 1 && (cat == "Lead" || cat == "Synth" || cat == "Vox" || cat == "Brass")) { set (O, "u", 3); set (O, "d", .14); set (O, "sp", .6); }
+    }
+    set (P, "vol", .7);
+    auto out = xs::Program::toVar (P);
+    if (auto* o = out.getDynamicObject()) o->setProperty ("vol", xs::calibratedVolume (out, part, sr > 0 ? sr : 48000.0));   // otomatik seviye: parti hedefine
+    return out;
 }
 
 void HitGenProcessor::resetSoundDesign (int part)

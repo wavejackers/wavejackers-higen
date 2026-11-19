@@ -188,6 +188,7 @@ void SynthXPanel::applyTemplate (int i)
     prog = xs::Program::toVar (xs::Program::init());
     if (keepSf.isNotEmpty()) prog.getDynamicObject()->setProperty ("sf", keepSf);
     for (auto& [path, v] : templates()[(size_t) i].set) if (auto* x = resolve (prog, path)) *x = v;
+    prog.getDynamicObject()->setProperty ("vol", xs::calibratedVolume (prog, part, proc.getSampleRate() > 0 ? proc.getSampleRate() : 48000.0));   // şablonlar da partinin seviyesinde
     commit(); syncAll();
 }
 
@@ -310,7 +311,7 @@ void SynthXPanel::xgen (uint32_t seed)
     if (R.nextBool()) { set ("lfo.0.w", R.nextInt (xs::kLfoShapes)); set ("lfo.0.sy", 1); set ("lfo.0.r", 3 + R.nextInt (7)); set ("lfo.0.d.0", Array<var> { 11, f (.1, .4) }); }
     if (R.nextInt (3) == 0) { set ("fx.0", Array<var> { 11, f (.2, .7), f (.2, .5), f (0, 1), .5, f (.1, .3) }); }
     if (! bass && R.nextBool()) { set ("fx.1", Array<var> { 12, f (.3, .9), .5, 1, .1, f (.1, .35) }); }
-    set ("vol", .7);
+    set ("vol", .7); set ("vol", xs::calibratedVolume (prog, part, proc.getSampleRate() > 0 ? proc.getSampleRate() : 48000.0));
     commit(); syncAll(); rebuild();
 }
 
@@ -506,7 +507,7 @@ void SynthXPanel::rebuild()
             choice ("mtx." + String (m) + ".s", T ("sxSource", "Source") + " " + String (m + 1), [this] { StringArray s; for (int i = 0; i < xs::kNumSources; ++i) s.add (N ("Src", i, xs::sourceName (i))); return s; }, { x, Y + 16, 200, 26 });
             routes ("mtx." + String (m) + ".d", x, Y + 60, 420);
         }
-        knob ("vol", T ("sxVolume", "Volume"), 0, 1, { 900, Y + 10, 82, 92 });
+        knob ("vol", T ("sxVolume", "Volume"), 0, 2, { 900, Y + 10, 82, 92 });
         knob ("gl", T ("sxGlide", "Glide"), 0, 2, { 986, Y + 10, 82, 92 }, .3, false, [] (double v) { return v <= 0 ? String ("-") : String (roundToInt (v * 1000)) + " ms"; });
     }
     for (auto& c : ctls)
