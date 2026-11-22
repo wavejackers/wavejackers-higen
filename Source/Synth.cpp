@@ -114,6 +114,8 @@ std::unique_ptr<Patch> Patch::fromVar (const juce::var& v, const Data& data, dou
     p->glide = (float) juce::jlimit (0.0, 2.0, num (v["gl"])); p->fold = (float) juce::jlimit (0.0, 1.0, num (v["fold"]));
     if (auto* rg = v["ring"].getArray()) { p->ringRatio = (float) num ((*rg)[0], 1); p->ringMix = (float) juce::jlimit (0.0, 1.0, num ((*rg)[1])); }
     p->velFilt = (float) juce::jlimit (0.0, 1.0, num (v["vf"])); p->monoHz = (float) juce::jlimit (0.0, 400.0, num (v["mono"])); p->phaseReset = num (v["pr"]) > 0;
+    if (p->xs != nullptr && p->xs->mono > 0) p->monoHz = p->xs->mono;                          // Synth X: mono alt frekans
+    if (p->xs != nullptr && p->xs->own) { p->rv = p->dl = p->ch = p->dr = p->fd = 0; p->chordsHalf = false; }   // tarif edilen ses: yalnız kendi efektleri
     // wavetable (web ile aynı: 48 harmonik, geçiş ve parlaklık 1/16 adımlı)
     bool needWt = false; for (int i = 0; i < p->numOsc; ++i) if (p->osc[(size_t) i].wave == 4) needWt = true;
     p->tableRate = sampleRate;

@@ -390,6 +390,7 @@ std::shared_ptr<const Program> Program::fromVar (const juce::var& v, double samp
     }
     P->sine = &basicTable (3, sampleRate);   // FM taşıyıcısı (ses iş parçacığı kilitsiz okur)
     P->vol = F (v, "vol", .7, 0, 16); P->glide = F (v, "gl", 0, 0, 2); P->bend = F (v, "bd", 2, 0, 24);
+    P->mono = F (v, "mono", 0, 0, 400); P->own = num (v, "own", 0) > 0;
     return P;
 }
 
@@ -437,6 +438,7 @@ juce::var Program::toVar (const juce::var& v)
     juce::Array<juce::var> mx; for (const auto& M : P->mtx) { auto* m = new juce::DynamicObject(); m->setProperty ("s", M.src); m->setProperty ("d", routesVar (M.to)); mx.add (juce::var (m)); }
     o->setProperty ("mtx", mx); o->setProperty ("vol", P->vol); o->setProperty ("gl", P->glide); o->setProperty ("bd", P->bend);
     o->setProperty ("fx", fxToVar (P->fx)); o->setProperty ("kp", P->keyPan);
+    if (P->mono > 0) o->setProperty ("mono", P->mono); if (P->own) o->setProperty ("own", 1);
     { auto* a = new juce::DynamicObject(); a->setProperty ("on", P->arp.on ? 1 : 0); a->setProperty ("md", P->arp.mode); a->setProperty ("dv", P->arp.div); a->setProperty ("oc", P->arp.oct); a->setProperty ("gt", P->arp.gate); o->setProperty ("arp", juce::var (a)); }
     { auto* c = new juce::DynamicObject(); c->setProperty ("m", P->chord.mode); c->setProperty ("st", P->chord.strum); c->setProperty ("sl", P->chord.scaleLock ? 1 : 0); c->setProperty ("sp", P->chord.split); c->setProperty ("sd", P->chord.side); c->setProperty ("h1", P->chord.h1); c->setProperty ("h2", P->chord.h2); c->setProperty ("hk", P->chord.hKey ? 1 : 0); o->setProperty ("chd", juce::var (c)); }
     o->setProperty ("glm", P->glideMode); o->setProperty ("glq", P->glideSync); if (P->cat.isNotEmpty()) o->setProperty ("cat", P->cat);

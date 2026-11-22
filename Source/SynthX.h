@@ -95,6 +95,8 @@ struct Program
     Layer layer; std::array<Env, kEnvs> env {}; std::array<Routes, kEnvs> envTo {};   // envTo[0] kullanılmaz (1. zarf ses düzeyi)
     std::array<Lfo, kLfos> lfo {}; Step step; std::array<Mtx, kMtx> mtx {};
     float vol = .7f, glide = 0, bend = 2, keyPan = 0;
+    float mono = 0;      // bu frekansın (Hz) altı tek kanal: bas temiz ve kick ile uyumlu kalır (0 kapalı)
+    bool own = false;    // metinden tasarlanan program: eski sesin reverb/delay/koro/sürüş ayarları eklenmez
     FxChain fx {};
     struct Arp { bool on = false; int mode = 0, div = 2, oct = 1; float gate = .8f; } arp;   // mode: 0 yukarı 1 aşağı 2 yukarı-aşağı 3 rastgele 4 çalındığı sıra; div: 0 1/4, 1 1/8, 2 1/16, 3 1/8T, 4 1/16T, 5 1/32
     struct Chord { int mode = 0; float strum = 0; bool scaleLock = false; int split = 60, side = 0; int h1 = 0, h2 = 0; bool hKey = true; } chord;   // h1/h2: harmonizer (0 kapalı; hKey: gam adımı, değilse yarım ton)

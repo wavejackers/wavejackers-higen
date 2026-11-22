@@ -6,6 +6,7 @@
 #include "PluginProcessor.h"
 #include "Ui.h"
 #include "SynthXPanel.h"
+#include "DescribePanel.h"
 
 class SoundPage : public juce::Component
 {
@@ -22,8 +23,9 @@ public:
     void resized() override;
     void visibilityChanged() override;
     static constexpr int kW = 1164, kH = 654;
-    enum View { vMacro, vEdit, vBrowse, vSynth };
+    enum View { vMacro, vEdit, vBrowse, vSynth, vDescribe };
     SynthXPanel& synthX() { return synthPanel; }
+    DescribePanel& describer() { return describe; }
     void setView (View v);
     View currentView() const noexcept { return view; }
     juce::StringArray browserIds() const { return list; }   // testler: tarayıcıda görünen sesler (sırasıyla)
@@ -113,6 +115,8 @@ private:
     IconButton demoBtn { *this, 12 }, importBtn { *this, 13 };
     juce::TextButton viewSynth { "SYNTH X" };
     SynthXPanel synthPanel { proc, lnf };
+    juce::TextButton viewDescribe { "TARIF" };
+    DescribePanel describe { proc, lnf };    // metinden ses (varsayılan görünüm)
     juce::MidiKeyboardComponent keyboard; int baseNote = 48;
     // tüm parametreler
     EditPanel editPanel; juce::Viewport editView;

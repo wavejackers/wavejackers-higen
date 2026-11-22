@@ -10,6 +10,7 @@
 #include "RefEngine.h"
 #include "LoopForge.h"
 #include "Choir.h"
+#include "ClipPlayer.h"
 #include "MidiLearn.h"
 #include "SampleLib.h"
 #include "CoProducer.h"
@@ -64,6 +65,7 @@ public:
     void suggestAlternative (int track);   // yalnızca o izin MIDI'sini başka bir fikirle değiştir
     juce::String lang = "en";
     lf::Engine loop;
+    ClipPlayer clip;                   // ses tasarımı: metinden üretilen sesin ön dinlemesi (çevrimdışı işlenmiş klip)
     ch::Engine choir;                  // Koro: kayıttan ya da dahili ünlüden, akorları izleyen dört partili koro
    
     std::atomic<bool> captureFromInput { false };   // yakalama girişi DAW'da bağlı mı (Loop sayfası gösterir)                       // LoopForge: tek vuruştan dikişsiz döngü (kendi çıkışını da yakalar)

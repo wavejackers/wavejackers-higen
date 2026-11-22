@@ -10,6 +10,8 @@
 #include "../Source/AutoMix.h"
 #include "../Source/Demo.h"
 #include "../Source/Synth.h"
+#include "../Source/SoundPrompt.h"
+#include "../Source/DescribePanel.h"
 #include "../Source/Data.h"
 #include <juce_dsp/juce_dsp.h>
 #include "../Source/Arrangement.h"
@@ -2046,11 +2048,113 @@ static void testUiOverlaps (const FailFn& fail)
         for (int t = 0; t <= 7; ++t) { ed->setTab (t); total += uiOverlapScan (ed->contentComponent(), juce::String (lang) + " tab " + juce::String (t), fail, 40); }
         for (int w = 0; w < 4; ++w) { ed->setWorkspace (w); total += uiOverlapScan (ed->contentComponent(), juce::String (lang) + " workspace " + juce::String (w), fail, 40); }
         ed->setTab (1); auto& sp = ed->sounds();
-        for (auto v : { SoundPage::vBrowse, SoundPage::vSynth }) { sp.setView (v); total += uiOverlapScan (ed->contentComponent(), juce::String (lang) + " sound view " + juce::String ((int) v), fail, 40); }
+        for (auto v : { SoundPage::vBrowse, SoundPage::vSynth, SoundPage::vDescribe }) { sp.setView (v); total += uiOverlapScan (ed->contentComponent(), juce::String (lang) + " sound view " + juce::String ((int) v), fail, 40); }
         sp.setView (SoundPage::vSynth);
         for (int t = 0; t < 12; ++t) { sp.synthX().showTab (t); total += uiOverlapScan (ed->contentComponent(), juce::String (lang) + " synth x tab " + juce::String (t), fail, 40); }
     }
     std::cout << "ui overlaps: " << total << "\n";
+}
+
+// Metinden ses: tarif çözümleme, otomatik tamamlama, program, ön dinleme, WAV ve Tarif paneli (erişilebilir denetimler)
+static void testPrompt (const juce::File& outDir, const FailFn& fail)
+{
+    const auto& data = hg::Data::get(); const double sr = 48000;
+    sp::Context c; c.bpm = 126; c.key = 9; c.minor = true; c.part = 2; c.lang = "tr";
+    const juce::String ex = juce::String::fromUTF8 ("124 BPM, Fa diyez minörde, Afro House için sıcak ve derin bir bass üret. Kısa ve vurucu başlasın, hafif analog distortion ve ritmik LFO hareketi olsun. Alt frekansları mono ve temiz tut; kick\xe2\x80\x99" "e yer bıraksın.");
+    auto D = sp::design (ex, c, 1);
+    auto chk = [&] (bool ok, const juce::String& what) { if (! ok) fail ("prompt: " + what); };
+    chk (D.kind == sp::kBass && D.part == 1, "kind bass");
+    chk (std::abs (D.bpm - 124) < .01, "bpm 124 (" + juce::String (D.bpm) + ")");
+    chk (D.key == 6 && D.minor, "key F# minor (" + juce::String (D.key) + ")");
+    chk (D.genre == "afrohouse", "genre afro house");
+    chk (D.warm > 0 && D.deep > 0 && D.punch > 0 && D.shortness > 0, "warm/deep/punchy/short");
+    chk (D.dirt > 0 && D.dirt < .8f && D.dirtMode == 2, "light analog distortion (" + juce::String (D.dirt) + ", mode " + juce::String (D.dirtMode) + ")");
+    chk (D.lfo && D.mono > 0 && D.side > 0, "lfo, mono lows, sidechain");
+    const auto P = sp::build (D, sr);
+    bool hasDist = false, hasSide = false; if (auto* fx = P["fx"].getArray()) for (auto& f : *fx) { if ((int) f[0] == 1) hasDist = true; if ((int) f[0] == 13) hasSide = true; }
+    chk (hasDist && hasSide, "program has distortion and sidechain");
+    chk ((int) P["lfo"][0]["sy"] == 1 && (double) P["mono"] > 0 && (int) P["own"] == 1, "program lfo sync, mono, own");
+    chk ((double) P["env"][0][0] <= .002, "punchy attack");
+    {   // program motorda çalışır ve kaydedilir/geri okunur
+        auto prog = xs::Program::fromVar (P, sr); chk (prog->mono > 0 && prog->own, "program round trip");
+        const float db = prog->measureDb (41, .45); chk (db > -30 && db < -8, "bass level " + juce::String (db, 1) + " dBFS");
+    }
+    auto buf = sp::render (D, P, data, sr);
+    chk (buf != nullptr && buf->getNumSamples() > (int) (sp::phraseSeconds (D) * sr * .95), "render length");
+    if (buf != nullptr)
+    {
+        bool fin = true; double acc = 0; for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < buf->getNumSamples(); ++i) { const float x = buf->getSample (ch, i); fin = fin && std::isfinite (x); acc += x * x; }
+        const float pk = buf->getMagnitude (0, buf->getNumSamples()); const double rms = 10 * std::log10 (acc / (2.0 * buf->getNumSamples()) + 1e-12);
+        chk (fin && pk > .8f && pk < .95f && rms > -36, "render audible (peak " + juce::String (pk, 2) + ", rms " + juce::String (rms, 1) + ")");
+        const auto f = outDir.getChildFile ("prompt-afro-bass.wav"); chk (sp::writeWav (*buf, sr, f) && f.getSize() > 10000, "wav written");
+    }
+    {   // kısa tarif: eksikler bağlamdan
+        sp::Context b = c; b.part = 1;
+        const auto dk = sp::design (juce::String::fromUTF8 ("karanlık bass"), b, 1), br = sp::design ("parlak bass", b, 1);
+        chk (dk.kind == sp::kBass && dk.bpm == 126 && dk.key == 9 && dk.minor && dk.filled.size() >= 2, "short prompt uses project bpm/key");
+        chk ((double) sp::build (dk, sr)["o"][0]["f"]["c"] < (double) sp::build (br, sr)["o"][0]["f"]["c"], "dark is darker than bright");
+        const auto em = sp::design ("", b, 1); chk (em.kind == sp::kBass && sp::render (em, sp::build (em, sr), data, sr) != nullptr, "empty prompt still makes a sound");
+    }
+    {   // İngilizce, olumsuzluk, ton biçimleri, arpej ve hız
+        const auto e = sp::design ("dark wobble bass for dubstep, 140 bpm, in E minor, no reverb", c, 1);
+        chk (e.kind == sp::kBass && e.bpm == 140 && e.key == 4 && e.minor && e.wobble && e.lfo && e.space == 0, "english wobble prompt");
+        const auto r = sp::design (juce::String::fromUTF8 ("reverb olmasın, parlak bir lead"), c, 1); chk (r.kind == sp::kLead && r.space == 0, "negated reverb stays off");
+        const auto a = sp::design ("C major pluck with arp at 1/16", c, 1); chk (a.kind == sp::kPluck && a.key == 0 && ! a.minor && a.arp && sp::rateName (a.rate) == "1/16", "pluck arp 1/16");
+        const auto m = sp::design ("Ebm pad", c, 1); chk (m.kind == sp::kPad && m.key == 3 && m.minor, "Ebm pad");
+        const auto q = sp::design (juce::String::fromUTF8 ("güzel bir lead mi olur"), c, 1); chk (q.key == 9, "question particle is not a key");
+        const auto s4 = sp::design (juce::String::fromUTF8 ("8 saniyelik uzun pad"), c, 1); chk (s4.bars == 4, "seconds to bars (" + juce::String (s4.bars) + ")");
+        juce::StringArray seen; for (int i = 0; i < sp::kNumRates; ++i) seen.addIfNotAlreadyThere (sp::rateName (i)); chk (seen.size() == sp::kNumRates, "rate names");
+        for (int k = 0; k < sp::kNumKinds; ++k)
+        {   // her tür ve yeniden üretme: sonlu, duyulur, uygun seviye
+            sp::Context kc = c; kc.part = k == sp::kBass ? 1 : k <= sp::kChord ? 0 : 2;
+            const char* words[] = { "bass", "pad", "chord stab", "lead", "pluck", "bell" };
+            for (uint32_t seed : { 1u, 2u, 3u })
+            {
+                auto dd = sp::design (words[k], kc, seed); dd.lfo = seed == 2; dd.arp = seed == 3; dd.bars = 1;
+                auto pp = sp::build (dd, sr); auto bb = sp::render (dd, pp, data, sr);
+                const float pk = bb != nullptr ? bb->getMagnitude (0, bb->getNumSamples()) : 0.0f;
+                chk (dd.kind == k && pk > .5f && pk < .95f, juce::String (words[k]) + " seed " + juce::String (seed) + " peak " + juce::String (pk, 2));
+            }
+        }
+    }
+    {   // örnek tarifler (dinleme dosyaları)
+        const char* ex2[][2] = { { "1-afro-bass", nullptr }, { "2-karanlik-bas", "karanlık bas" }, { "3-trance-lead", "geniş, parlak supersaw lead, trance, 138 BPM, delay" },
+                                 { "4-lofi-pad", "yumuşak ve sıcak pad, lofi, La minör" }, { "5-deephouse-organ", "deep house organ akor stab" }, { "6-dubstep-wobble", "dubstep wobble bass 140 bpm" },
+                                 { "7-trap-808", "trap 808 glide, distortion" }, { "8-kristal-can", "kristal gibi çan, arpej 1/16" } };
+        for (auto& e : ex2)
+        {
+            sp::Context ec = c; ec.part = 2; const auto dd = sp::design (e[1] == nullptr ? ex : juce::String::fromUTF8 (e[1]), ec, 1);
+            const auto pp = sp::build (dd, sr); if (auto bb = sp::render (dd, pp, data, sr)) sp::writeWav (*bb, sr, outDir.getChildFile (juce::String ("example-") + e[0] + ".wav"));
+        }
+    }
+    {   // Tarif paneli: üret, LFO/arpej, hız, gelişmiş, WAV, ön dinleme; çakışma yok
+        auto pP = std::make_unique<HitGenProcessor>(); auto& p = *pP; p.setPlayConfigDetails (0, 2, sr, 512); p.prepareToPlay (sr, 512); p.idle();
+        std::unique_ptr<HitGenEditor> ed (dynamic_cast<HitGenEditor*> (p.createEditor())); ed->setLanguage ("tr");
+        ed->setTab (1); auto& page = ed->sounds(); page.setPart (2); page.setView (SoundPage::vDescribe); auto& dp = page.describer();
+        chk (page.currentView() == SoundPage::vDescribe && dp.isVisible(), "describe view visible");
+        dp.generate (ex);
+        chk (dp.hasSound() && page.currentPart() == 1 && (int) p.xsProgram (1)["own"] == 1, "panel generates into the bass part");
+        chk (dp.statusText().isNotEmpty(), "status text");
+        const auto r0 = dp.rateText(); dp.cycleRate(); chk (dp.rateText() != r0, "rate cycles"); for (int i = 0; i < sp::kNumRates - 1; ++i) dp.cycleRate(); chk (dp.rateText() == r0, "rate wraps");
+        dp.setLfo (false); chk (! dp.design().lfo && (int) p.xsProgram (1)["lfo"][0]["d"][0][0] < 0, "lfo off clears routes");
+        dp.setLfo (true); chk (dp.design().lfo && (int) p.xsProgram (1)["lfo"][0]["sy"] == 1, "lfo on, synced");
+        dp.setArp (true); chk ((int) p.xsProgram (1)["arp"]["on"] == 1, "arp on");
+        dp.setArp (false);
+        dp.setAdvancedOpen (true); dp.setAdvanced (0, 3000); chk (std::abs ((double) p.xsProgram (1)["o"][0]["f"]["c"] - 3000) < 1, "advanced brightness");
+        auto shot = [&] (const char* nm) { auto img = ed->contentComponent().createComponentSnapshot ({ 0, 0, HitGenEditor::kW, HitGenEditor::kH }, true, 1.0f); auto f = outDir.getChildFile (nm); f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png; png.writeImageToStream (img, os); };
+        shot ("describe-advanced.png");
+        int ov = uiOverlapScan (ed->contentComponent(), "describe", fail, 20); dp.setAdvancedOpen (false); ov += uiOverlapScan (ed->contentComponent(), "describe closed", fail, 20); shot ("describe.png");
+        chk (ov == 0, "no overlaps");
+        const auto wf = dp.exportTo (outDir.getChildFile ("prompt-panel.wav")); chk (wf.existsAsFile() && wf.getSize() > 10000, "panel wav export");
+        dp.regenerate(); chk (dp.hasSound() && dp.design().seed == 2 && dp.design().lfo, "regenerate keeps toggles");
+        dp.togglePlay(); chk (p.clip.isPlaying(), "preview plays");
+        juce::AudioBuffer<float> blk (2, 512); juce::MidiBuffer mid; float pk = 0;
+        for (int i = 0; i < 40; ++i) { blk.clear(); p.processBlock (blk, mid); mid.clear(); pk = juce::jmax (pk, blk.getMagnitude (0, 512)); }
+        chk (pk > .05f, "preview reaches the output (" + juce::String (pk, 3) + ")");
+        dp.togglePlay(); chk (! p.clip.isPlaying(), "preview stops");
+        p.idle();
+    }
+    std::cout << "prompt: ok\n";
 }
 
 // Dinleme örnekleri: seçili stillerde 8 ölçülük döngüyü (önizleme çalımı, ses yüksekliği normalleştirmesi açık) WAV olarak yazar
@@ -2465,6 +2569,7 @@ int main (int argc, char** argv)
     if (auto d = juce::SystemStats::getEnvironmentVariable ("HITGEN_DEMOS", {}); d.isNotEmpty()) { renderDemos (juce::File (d), juce::StringArray::fromTokens (juce::SystemStats::getEnvironmentVariable ("HITGEN_DEMO_STYLES", "techhouse,trap,dubstep,deephouse,garrix,armin"), ",", "")); return 0; }
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_UI", {}).isNotEmpty()) { testUiOverlaps (fail); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_LEVELS", {}).isNotEmpty()) { printPartLevels(); return 0; }
+    if (juce::SystemStats::getEnvironmentVariable ("HITGEN_PROMPT", {}).isNotEmpty()) { testPrompt (outDir, fail); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_SYNTHX", {}).isNotEmpty()) { testSynthX (fail); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_CHOIR", {}).isNotEmpty()) { testChoir (outDir, fail, true); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
     if (juce::SystemStats::getEnvironmentVariable ("HITGEN_SHOT", {}).isNotEmpty()) { testSoundPageUi (outDir, fail, true); testLoopForge (outDir, fail, true); testChoir (outDir, fail, true); std::cout << (failures == 0 ? "ALL PASSED\n" : "FAILURES\n"); return failures == 0 ? 0 : 1; }
@@ -2723,6 +2828,7 @@ int main (int argc, char** argv)
     testLoopForge (outDir, fail, false);
     testChoir (outDir, fail, false);
     testSynthX (fail);
+    testPrompt (outDir, fail);
     testMultiOut (fail);
     testReference (outDir, fail); testSampler (fail); testLibrary (fail); testMidiLearn (outDir, fail);
     testLoudness (outDir, fail, quick); testDrumMachine (outDir, fail); testGuideAndAssistant (outDir, fail);

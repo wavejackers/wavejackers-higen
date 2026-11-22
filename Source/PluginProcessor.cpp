@@ -660,7 +660,7 @@ void HitGenProcessor::timerCallback()
         int mask = 0; if (const auto* iv = data.scale (r->P.scale)["iv"].getArray()) for (auto& x : *iv) mask |= 1 << (((int) x % 12 + 12) % 12);
         if (mask != 0) { scaleMask.store (mask); scaleKey.store (r->P.key); }
     }
-    { const double hb = hostBpm.load(); loop.setTempo (hb > 0 ? hb : (double) p ("bpm")->load()); syncLoopParams(); loop.collect(); choir.setTempo (hb > 0 ? hb : (double) p ("bpm")->load()); syncChoirParams(); choir.collect(); }
+    { const double hb = hostBpm.load(); loop.setTempo (hb > 0 ? hb : (double) p ("bpm")->load()); syncLoopParams(); loop.collect(); choir.setTempo (hb > 0 ? hb : (double) p ("bpm")->load()); syncChoirParams(); choir.collect(); clip.collect(); }
     // ses iş parçacığının bıraktığı eski desenleri ve yamaları sil
     int s1, n1, s2, n2; patTrash.prepareToRead (patTrash.getNumReady(), s1, n1, s2, n2);
     for (int i = 0; i < n1; ++i) delete patTrashSlots[(size_t) (s1 + i)];
@@ -890,6 +890,7 @@ void HitGenProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     loop.capture (fromIn ? capIn : buffer, n);                  // son 30 sn: DAW girişi ya da HitGen çıkışı (döngünün kendisi hariç)
     loop.process (buffer, n, hostPlay || preview, ppq, bpm);
     choir.process (buffer, n, hostPlay || preview, ppq, bpm);
+    clip.process (buffer, n);
     sampleClock += n; wasRunning = run;
 }
 
